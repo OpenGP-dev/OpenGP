@@ -1,1 +1,30 @@
+# Game data: never commit anything that comes from the games.
+# Put your own images in private/ (see README.md, "Legal").
+private/
 *.iso
+*.gcm
+*.dol
+*.rel
+*.img
+*.nand
+*.bin
+*.gdi
+*.chd
+*.rvz
+*.wbfs
+*.ciso
+*.gcz
+
+# Build output (recompiled code is derived from the game, so it lives here too)
+build/
+out/
+generated/
+.cache/
+compile_commands.json
+CMakeUserPresets.json
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
