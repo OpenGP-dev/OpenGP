@@ -95,7 +95,7 @@ template <typename... F>
 struct SigDef {
   static constexpr std::size_t count = sizeof...(F);
   using Tuple = std::tuple<typename F::type...>;
-  static constexpr Tuple args(u32 raw) { return Tuple{F::get(raw)...}; }
+  static constexpr Tuple args([[maybe_unused]] u32 raw) { return Tuple{F::get(raw)...}; }
   static constexpr std::array<FieldDesc, sizeof...(F)> descs{F::desc...};
 };
 
