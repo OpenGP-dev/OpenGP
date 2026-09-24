@@ -4,6 +4,7 @@ add_library(ppc_runtime STATIC
   ppc/hooks.cpp
   ppc/interpreter.cpp
   ppc/memory.cpp
+  ppc/module.cpp
   ppc/ops.cpp
 )
 target_include_directories(ppc_runtime PUBLIC .)

@@ -11,10 +11,15 @@
 // __imp__<name>, and a weak <name> that forwards to it. Defining a strong
 // <name> elsewhere (runtime HLE or a game patch) replaces the function; the
 // replacement can still call __imp__<name>.
-#define PPC_FUNC(name) void name(::ppc::Context& ctx, ::ppc::u8* base)
+//
+// `ctx` is __restrict: guest memory (reached through `base`) never overlaps
+// the host-side register context, which lets the compiler keep registers in
+// host registers across guest loads and stores.
+#define PPC_FUNC(name) \
+  void name([[maybe_unused]] ::ppc::Context& __restrict ctx, [[maybe_unused]] ::ppc::u8* base)
 #define PPC_FUNC_IMPL(name) PPC_FUNC(name)
 #define PPC_WEAK_FUNC(name) __attribute__((weak, noinline)) PPC_FUNC(name)
 #define PPC_EXTERN_FUNC(name) extern PPC_FUNC(name)
 
-// Mid-function hook signature (see recomp.toml [[hook]]).
+// Mid-function hook (see recomp.toml [[hook]]).
 #define PPC_HOOK(name) void name(::ppc::Context& ctx, ::ppc::u8* base)

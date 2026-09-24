@@ -41,6 +41,7 @@ target_include_directories(doctest SYSTEM INTERFACE thirdparty/doctest)
 
 add_subdirectory(common/gekko)
 add_subdirectory(runtime)
+add_subdirectory(tools/gekkorecomp)
 
 if(OPENGP_BUILD_TESTS)
   enable_testing()
