@@ -10,8 +10,9 @@ compiled together with a runtime that stands in for the Triforce hardware (GameC
 DSP, AM-Baseboard, AM-Mediaboard), so the game runs as a normal native program, with room for
 modern features such as higher resolutions, widescreen and remappable controls.
 
-> **Status: early development, not playable yet.** Milestone 1 (recompiler + CPU runtime + test
-> suite) is in progress. See the [roadmap](#roadmap).
+> **Status: early development, not playable yet.** Milestone 1 is done: the recompiler, the CPU
+> runtime and the test suite. Next is milestone 2, running the recompiler on the real game. See the
+> [roadmap](#roadmap).
 
 ## How it works
 
@@ -71,7 +72,7 @@ marked as such in the source. Vendored third-party code in `thirdparty/` keeps i
 
 | # | Milestone | Needs the game |
 |---|-----------|----------------|
-| M1 | Scaffolding, recompiler, CPU runtime, test suite, CI | no |
+| M1 | Scaffolding, recompiler, CPU runtime, test suite, CI (**done**) | no |
 | M2 | MKAGP2 (GGPE02) analysis: symbol map, SDK functions identified, whole game recompiles and builds | yes |
 | M3 | Boot to the main loop: OS HLE, media board, JVS stubs, VI retrace, hardware-check patches | yes |
 | M4 | Graphics: GX FIFO decoder, TEV ubershader, first frames, attract mode | yes |

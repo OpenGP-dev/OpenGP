@@ -33,3 +33,7 @@ target_compile_definitions(test_diff PRIVATE
   FIXTURE_GENERATED="${FIXTURE_DIR}/generated")
 target_link_libraries(test_diff PRIVATE ppc_runtime doctest opengp_warnings)
 add_test(NAME diff COMMAND test_diff)
+
+add_executable(test_recomp_inputs test_recomp_inputs.cpp)
+target_link_libraries(test_recomp_inputs PRIVATE gekkorecomp_lib doctest opengp_warnings)
+add_test(NAME recomp_inputs COMMAND test_recomp_inputs)
