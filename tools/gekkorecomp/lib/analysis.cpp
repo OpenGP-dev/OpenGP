@@ -294,6 +294,11 @@ AccessKind classify_access(const RegState& s, u32 raw, Op op) {
       // Indexed forms: EA = (rA|0) + rB.
       if (base_known && s.is_known(rb)) return classify_address(base_value + s.value[rb]);
       if ((!base_zero && is_stack_or_sda(ra)) || is_stack_or_sda(rb)) return AccessKind::Ram;
+      // A known RAM address plus an unknown index (array or jump-table access)
+      // stays in RAM: reaching the I/O page would need an index near 0x4C000000.
+      if ((!base_zero && base_known && classify_address(base_value) == AccessKind::Ram) ||
+          (s.is_known(rb) && classify_address(s.value[rb]) == AccessKind::Ram))
+        return AccessKind::Ram;
       return AccessKind::Checked;
     }
   }

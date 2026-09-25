@@ -38,7 +38,7 @@ Details are in [docs/architecture.md](docs/architecture.md). Notes on the arcade
 
 ## Building
 
-You need CMake 3.24+, Ninja, and GCC 12+ or Clang 16+. On Windows, use clang-cl: the recompiled
+You need CMake 3.25+, Ninja, and GCC 12+ or Clang 16+. On Windows, use clang-cl: the recompiled
 code relies on weak symbols, which MSVC does not support.
 
 ```sh
@@ -58,6 +58,7 @@ includes the recompiler's output, because it is derived from the game.
 To play, you will need your own copy of the game:
 - Put your images in `private/`, for example `private/GGPE02.iso`. The folder is gitignored.
 - The build and the executable read the images from there.
+- [docs/game-files.md](docs/game-files.md) explains how to prepare them.
 
 Mario Kart is a trademark of Nintendo. This project is not affiliated with Nintendo, Namco
 (Bandai Namco) or Sega.

@@ -52,15 +52,30 @@ Adding or fixing an instruction therefore happens in one place.
 
 ### Code generation
 
-Each guest function becomes one C++ function:
+Each guest function becomes one C++ function in `namespace guest`. This is real
+output for a small `switch`:
 
 ```cpp
-PPC_FUNC_IMPL(__imp__fn_80012340) {
-    // 80012340: stwu r1, -0x10(r1)
-    ppc::op::stwu<ppc::Mem::Ram>(ctx, base, 1, 1, -16);
-    ...
+PPC_FUNC_IMPL(__imp__fn_switch) {
+  const ::ppc::u32 entry_lr = ctx.lr;
+  const ::ppc::u32 entry_sp = ctx.gpr[1];
+  // 80003164: cmplwi r3, 0x4
+  ::ppc::op::cmpli(ctx, 0, 3, 0x4);
+  // 80003168: bgt 0x800031AC
+  if (::ppc::bc_cond(ctx, 12, 1)) { goto loc_800031AC; }
+  // 8000316C: lis r5, 0x8020
+  ::ppc::op::addis(ctx, 5, 0, -32736);
+  ...
+  // 80003178: lwzx r0, r5, r0
+  ::ppc::op::lwzx<::ppc::Mem::Ram>(ctx, base, 0, 5, 0);
+  // 8000317C: mtctr r0
+  ::ppc::op::mtspr(ctx, base, 9, 0);
+  // 80003180: bctr
+  switch (ctx.ctr & ~3u) { case 0x80003184u: goto loc_80003184; ... default: ::ppc::jump(...); return; }
+loc_80003184:
+  ...
 }
-PPC_WEAK_FUNC(fn_80012340) { __imp__fn_80012340(ctx, base); }
+PPC_WEAK_FUNC(fn_switch) { __imp__fn_switch(ctx, base); }
 ```
 
 Control flow:
@@ -71,15 +86,17 @@ Control flow:
 | `bl` | Sets `ctx.lr`, then a direct C++ call |
 | `b` into another function | Tail call followed by `return` |
 | `bctr` through a jump table | `switch` on the target address |
-| `bctrl`, `blrl`, unresolved `bctr` | `ppc::call()`: looks up a flat table of function pointers indexed by address, and falls back to the interpreter if nothing is found |
+| `bctrl`, `blrl`, unresolved `bctr` | `ppc::call()` / `ppc::jump()`: looks up a flat table of function pointers indexed by address, and falls back to the interpreter if nothing is found |
 | Falling off the end of a function into the next one (e.g. the `_savegpr_N` chains) | Tail call to the next function |
-| Backward branch (loop) | Also polls for pending interrupts, so the runtime can deliver them |
+| Backward branch (loop) | Also polls for pending interrupts, so the runtime can deliver interrupts |
 
 Instruction semantics are **not** duplicated in the generator:
-- The generator emits a call to a helper in `runtime/ppc/ops.h`, with the operands as constants,
-  e.g. `ppc::op::addi(ctx, 3, 4, 16)`.
+- The generator emits a call to a helper in `runtime/ppc/ops.h`, with the operands as constants.
 - The helpers are `inline`, so the compiler folds them down to the equivalent hand-written C++.
 - The interpreter calls the same helpers.
+
+Performance work comes later and is not needed for correctness. The plan is to keep guest registers
+in C++ locals rather than in `ctx`, as XenonRecomp does.
 
 ### Address classification
 
@@ -118,8 +135,21 @@ Every generated function is emitted twice:
 - as a *weak* `<name>`, which simply calls `__imp__<name>`.
 
 The runtime or a game patch can define a strong `<name>` to replace the function (HLE). The
-replacement can still call `__imp__<name>` to reach the original. This is the same technique as
-XenonRecomp.
+replacement can still call the original. This is the same technique as XenonRecomp:
+
+```cpp
+namespace guest {
+PPC_FUNC(OSReport) {
+  log_guest_string(ctx.gpr[3]);   // replacement
+}
+PPC_FUNC(SomeFunction) {
+  __imp__SomeFunction(ctx, base);  // run the original, then adjust the result
+  ctx.gpr[3] = 1;
+}
+}  // namespace guest
+```
+
+Hooks declared in `recomp.toml` are defined the same way, with `PPC_HOOK(Name) { ... }`.
 
 ## CPU runtime (`runtime/ppc`)
 
