@@ -160,24 +160,22 @@ bool GuestMemory::init(u32 mem1_size, std::string* error) {
       {MEM1_UNCACHED, mem1_size},
       {LOCKED_CACHE_BASE, LOCKED_CACHE_SIZE},
   };
+  // Regions are in ascending order, so the placeholder that contains the next
+  // region always starts at `ph_start` and runs to the end of the reservation.
+  // A split must name the start of the placeholder being split.
+  u64 ph_start = 0;
   for (const auto& r : regions) {
-    // Split off everything below the region, then the region itself. The
-    // placeholder containing `offset` always starts at or below it.
-    MEMORY_BASIC_INFORMATION mbi{};
-    VirtualQuery(base_ + r[0], &mbi, sizeof(mbi));
-    u8* ph_base = static_cast<u8*>(mbi.BaseAddress);
-    const u64 ph_off = static_cast<u64>(ph_base - base_);
-    const u64 ph_end = ph_off + mbi.RegionSize;
-    if (r[0] > ph_off && !split(ph_off, r[0] - ph_off)) {
+    if (r[0] > ph_start && !split(ph_start, r[0] - ph_start)) {
       set_error(error, "failed to split placeholder");
       shutdown();
       return false;
     }
-    if (r[0] + r[1] < ph_end && !split(r[0], r[1])) {
+    if (r[0] + r[1] < kReserveSize && !split(r[0], r[1])) {
       set_error(error, "failed to split placeholder");
       shutdown();
       return false;
     }
+    ph_start = r[0] + r[1];
   }
 
   mem1_handle_ = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, mem1_size,
@@ -197,9 +195,8 @@ bool GuestMemory::init(u32 mem1_size, std::string* error) {
     }
   }
   void* lc = w.virtual_alloc2(nullptr, base_ + LOCKED_CACHE_BASE, LOCKED_CACHE_SIZE,
-                              MEM_RESERVE | MEM_COMMIT | MEM_REPLACE_PLACEHOLDER, PAGE_READWRITE,
-                              nullptr, 0);
-  if (!lc) {
+                              MEM_RESERVE | MEM_REPLACE_PLACEHOLDER, PAGE_READWRITE, nullptr, 0);
+  if (!lc || !VirtualAlloc(lc, LOCKED_CACHE_SIZE, MEM_COMMIT, PAGE_READWRITE)) {
     set_error(error, "failed to map the locked cache");
     shutdown();
     return false;
@@ -216,7 +213,7 @@ void GuestMemory::shutdown() {
     while (p < base_ + kReserveSize) {
       MEMORY_BASIC_INFORMATION mbi{};
       if (!VirtualQuery(p, &mbi, sizeof(mbi)) || mbi.RegionSize == 0) break;
-      if (mbi.State == MEM_RESERVE) VirtualFree(mbi.BaseAddress, 0, MEM_RELEASE);
+      if (mbi.State == MEM_RESERVE) VirtualFree(mbi.AllocationBase, 0, MEM_RELEASE);
       p = static_cast<u8*>(mbi.BaseAddress) + mbi.RegionSize;
     }
   }
