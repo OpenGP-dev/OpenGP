@@ -8,6 +8,7 @@
 //
 //   opengp-mkgp2 [--iso PATH] [--timeout SECONDS] [--status SECONDS]
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -127,11 +128,13 @@ int main(int argc, char** argv) {
   };
 
   std::thread([timeout_s, status_s, print_status] {
-    const auto start = std::chrono::steady_clock::now();
+    using clock = std::chrono::steady_clock;
+    const auto deadline = clock::now() + std::chrono::seconds(timeout_s);
     for (;;) {
-      std::this_thread::sleep_for(std::chrono::seconds(status_s));
-      const auto elapsed = std::chrono::steady_clock::now() - start;
-      if (elapsed >= std::chrono::seconds(timeout_s)) {
+      auto wake = deadline;
+      if (status_s > 0) wake = std::min(wake, clock::now() + std::chrono::seconds(status_s));
+      std::this_thread::sleep_until(wake);
+      if (clock::now() >= deadline) {
         print_status("timeout");
         std::fflush(stdout);
         std::_Exit(0);

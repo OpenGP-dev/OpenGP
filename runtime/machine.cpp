@@ -6,7 +6,9 @@
 
 #include "hw/dsp.h"
 #include "hw/exi.h"
+#include "hw/si.h"
 #include "hw/vi.h"
+#include "triforce/baseboard.h"
 
 namespace opengp {
 
@@ -46,7 +48,9 @@ bool Machine::boot(const std::string& image_path, os::BootResult* boot, std::str
   h.map(0x4000, 0x1000, std::make_unique<hw::RegisterFile>(h, "MI", 0x80, 8));
   h.map(0x5000, 0x1000, std::make_unique<hw::DspDevice>(h));
   h.map(0x6000, 0x0400, std::make_unique<hw::RegisterFile>(h, "DI", 0x40, 64));
-  h.map(0x6400, 0x0400, std::make_unique<hw::RegisterFile>(h, "SI", 0x100, 64));
+  auto si = std::make_unique<hw::SiBus>(h);
+  si->attach(0, std::make_unique<triforce::BaseboardSi>(disc_.game_id(), user_dir_, [this] { return controls(); }));
+  h.map(0x6400, 0x0400, std::move(si));
   h.map(0x6800, 0x0400, std::make_unique<hw::ExiBus>(h, user_dir_, disc_.game_id()));
   h.map(0x6C00, 0x0400, std::make_unique<hw::RegisterFile>(h, "AI", 0x20, 32));
 

@@ -20,11 +20,17 @@ add_library(opengp_machine STATIC
   hw/dsp.cpp
   hw/exi.cpp
   hw/hardware.cpp
+  hw/si.cpp
   hw/vi.cpp
   machine.cpp
   os/boot.cpp
   os/printf.cpp
   os/threads.cpp
+  triforce/baseboard.cpp
+  triforce/io_ports.cpp
+  triforce/jvsio.cpp
+  triforce/magcard.cpp
+  triforce/mkgp.cpp
 )
 target_include_directories(opengp_machine PUBLIC .)
 find_package(Threads REQUIRED)

@@ -5,7 +5,9 @@
 // creates one, boots the disc, installs the recompiled module and runs it.
 #pragma once
 
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 
 #include "disc/disc.h"
@@ -14,6 +16,7 @@
 #include "os/threads.h"
 #include "ppc/memory.h"
 #include "ppc/module.h"
+#include "triforce/io_ports.h"
 
 namespace opengp {
 
@@ -26,6 +29,16 @@ class Machine {
 
   // Folder for files the machine writes (backup memory, card saves).
   void set_user_dir(std::string dir) { user_dir_ = std::move(dir); }
+
+  // The player's controls, as the cabinet's I/O board reads them (thread-safe).
+  void set_controls(const triforce::Controls& controls) {
+    std::lock_guard lock(controls_mutex_);
+    controls_ = controls;
+  }
+  triforce::Controls controls() const {
+    std::lock_guard lock(controls_mutex_);
+    return controls_;
+  }
 
   // Opens the disc image, sizes RAM from its bi2.bin, maps the hardware and
   // runs the boot ROM emulation (apploader). Fills `boot` on success.
@@ -54,6 +67,8 @@ class Machine {
   ppc::Context ctx_{};
   u32 entry_ = 0;
   std::string user_dir_ = "user";
+  mutable std::mutex controls_mutex_;
+  triforce::Controls controls_{};
 };
 
 }  // namespace opengp
