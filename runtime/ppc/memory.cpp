@@ -12,8 +12,12 @@
 #ifndef NTDDI_VERSION
 #define NTDDI_VERSION 0x0A000005  // NTDDI_WIN10_RS4 (1803)
 #endif
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #else
 #include <fcntl.h>
@@ -119,8 +123,11 @@ struct Win32Api {
     HMODULE kb = GetModuleHandleW(L"kernelbase.dll");
     if (!kb) kb = LoadLibraryW(L"kernelbase.dll");
     if (!kb) return;
-    virtual_alloc2 = reinterpret_cast<VirtualAlloc2Fn>(GetProcAddress(kb, "VirtualAlloc2"));
-    map_view_of_file3 = reinterpret_cast<MapViewOfFile3Fn>(GetProcAddress(kb, "MapViewOfFile3"));
+    // Go through void* so GCC's -Wcast-function-type accepts the FARPROC cast.
+    virtual_alloc2 = reinterpret_cast<VirtualAlloc2Fn>(
+        reinterpret_cast<void*>(GetProcAddress(kb, "VirtualAlloc2")));
+    map_view_of_file3 = reinterpret_cast<MapViewOfFile3Fn>(
+        reinterpret_cast<void*>(GetProcAddress(kb, "MapViewOfFile3")));
   }
 };
 
