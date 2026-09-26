@@ -18,3 +18,9 @@ file_count = 64
 sda_base = 0x806D6980   # r13, _SDA_BASE_
 sda2_base = 0x806D9EC0  # r2, _SDA2_BASE_
 interrupt_checks = true
+
+# SelectThread's idle loop ("while (RunQueueBits == 0) {}" with interrupts
+# enabled): wait for an interrupt instead of spinning a host core.
+[[hook]]
+address = 0x8025BA28
+function = "OSIdleWait"

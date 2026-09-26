@@ -45,6 +45,16 @@ class GuestMemory {
   // Host pointer for a guest address, or nullptr if not RAM.
   u8* pointer(u32 addr, u32 size = 1) const { return is_ram(addr, size) ? base_ + addr : nullptr; }
 
+  // Host pointer for [addr, addr+size) in MEM1, accepting cached (0x8...),
+  // uncached (0xC...) or physical addresses; nullptr if out of range.
+  static u8* host_pointer(u8* base, u32 addr, u32 mem1_size, u32 size) {
+    const u32 top = addr >> 28;
+    if (top != 0x8 && top != 0xC && top != 0x0) return nullptr;
+    const u32 phys = addr & 0x0FFFFFFF;
+    if (u64{phys} + size > mem1_size) return nullptr;
+    return base + (MEM1_CACHED | phys);
+  }
+
  private:
   u8* base_ = nullptr;
   u32 mem1_size_ = 0;

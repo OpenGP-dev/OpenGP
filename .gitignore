@@ -3,6 +3,7 @@
 /ISO/
 /private/
 /orig/
+/user/
 *.iso
 *.gcm
 *.dol

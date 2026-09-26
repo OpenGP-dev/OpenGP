@@ -9,6 +9,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(OPENGP_BUILD_TESTS "Build the test suite" ON)
 option(OPENGP_BUILD_GAMES "Build the games whose executables are present in orig/" ON)
 option(OPENGP_GENERATED_DEBUG_INFO "Emit debug info for recompiled game code (slow, large)" OFF)
+option(OPENGP_TRACE_CALLS "Track guest call stacks in recompiled code (for debugging)" OFF)
 
 if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   message(FATAL_ERROR "OpenGP needs GCC or Clang (use clang-cl on Windows): "
@@ -26,6 +27,11 @@ if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
 else()
   target_compile_options(opengp_guest_flags INTERFACE
     -ffp-contract=off -fwrapv -fno-strict-aliasing)
+endif()
+
+if(WIN32)
+  # Standard C functions (fopen etc.) are fine; don't nag about the _s variants.
+  add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 endif()
 
 add_library(opengp_warnings INTERFACE)

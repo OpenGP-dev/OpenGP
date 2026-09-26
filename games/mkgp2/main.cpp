@@ -2,231 +2,145 @@
 //
 // OpenGP launcher for Mario Kart Arcade GP 2.
 //
-// Milestone 2: loads main.dol into guest memory and installs the recompiled
-// code. With --run it also jumps to the entry point, printing hardware
-// accesses and OSReport output, and stops after a timeout. The hardware
-// itself is not emulated yet (milestone 3), so the game will stop or stall
-// early; the output shows how far it gets.
+// Boots the disc image the way the Triforce boot ROM would, installs the
+// recompiled game and runs it. The hardware is only partly emulated so far
+// (milestone 3); a status line shows how far the game gets.
 //
-//   opengp-mkgp2 [--dol PATH] [--run] [--timeout SECONDS] [--mmio-log N]
+//   opengp-mkgp2 [--iso PATH] [--timeout SECONDS] [--status SECONDS]
 
-#include <atomic>
-#include <bit>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
+#include <filesystem>
 #include <fstream>
-#include <iterator>
+#include <map>
 #include <string>
 #include <thread>
-#include <vector>
 
-#include "ppc/memory.h"
-#include "ppc/module.h"
+#include "disc/disc.h"
+#include "hw/vi.h"
+#include "machine.h"
+#include "ppc/hooks.h"
+#include "ppc/trace.h"
 #include "ppc_recomp_shared.h"
 
 namespace {
 
-using namespace ppc;
+namespace fs = std::filesystem;
+using namespace gekko;
 
-// Map the largest MEM1 Dolphin supports; how much the game is told it has is
-// decided when boot is emulated (milestone 3).
-constexpr u32 kMem1Size = 0x04000000;
+constexpr const char* kGameId = "GGPE02";
 
-u8* g_base = nullptr;
-std::atomic<u64> g_mmio_count{0};
-std::atomic<u32> g_last_mmio{0};
-std::atomic<u64> g_gather_bytes{0};
-u64 g_mmio_log_limit = 64;
-
-void log_mmio(const char* kind, u32 addr, u32 value, u32 size) {
-  const u64 n = g_mmio_count.fetch_add(1);
-  g_last_mmio = addr;
-  if (n < g_mmio_log_limit)
-    std::fprintf(stderr, "[mmio] %s%u %08X = %08X\n", kind, size * 8, addr, value);
-  else if (n == g_mmio_log_limit)
-    std::fprintf(stderr, "[mmio] (further accesses not shown)\n");
-}
-
-u32 mmio_read(u32 addr, u32 size) {
-  log_mmio("read", addr, 0, size);
-  return 0;
-}
-void mmio_write(u32 addr, u32 value, u32 size) { log_mmio("write", addr, value, size); }
-void gather_pipe_write(const u8*, u32 size) { g_gather_bytes += size; }
-
-void print_status(const char* why) {
-  std::fprintf(stderr, "[opengp] %s: %llu MMIO accesses (last %08X), %llu bytes to the GPU FIFO\n", why,
-               static_cast<unsigned long long>(g_mmio_count.load()), g_last_mmio.load(),
-               static_cast<unsigned long long>(g_gather_bytes.load()));
-}
-
-void fatal_hook(const char* message) {
-  std::fprintf(stderr, "[opengp] fatal: %s\n", message);
-  print_status("state at stop");
-  std::fflush(stderr);
-}
-
-std::string read_c_string(u32 addr, std::size_t max = 4096) {
-  std::string s;
-  while (s.size() < max) {
-    if (!(addr >= MEM1_CACHED && addr < MEM1_CACHED + kMem1Size) &&
-        !(addr >= MEM1_UNCACHED && addr < MEM1_UNCACHED + kMem1Size))
-      break;
-    const char ch = static_cast<char>(g_base[addr]);
-    if (!ch) break;
-    s += ch;
-    ++addr;
-  }
-  return s;
-}
-
-// Minimal printf for guest variadic calls (PowerPC EABI): integer arguments
-// come from r4..r10 then the caller's stack, floating-point ones from f1..f8.
-std::string format_guest(Context& ctx, u32 fmt_addr) {
-  const std::string fmt = read_c_string(fmt_addr);
-  u32 next_gpr = 4, next_fpr = 1;
-  u32 stack = ctx.gpr[1] + 8;
-  auto next_int = [&]() -> u32 {
-    if (next_gpr <= 10) return ctx.gpr[next_gpr++];
-    const u32 v = load_be<u32>(g_base + stack);
-    stack += 4;
-    return v;
-  };
-  auto next_double = [&]() -> double {
-    if (next_fpr <= 8) return ctx.fpr[next_fpr++].d0();
-    stack = (stack + 7) & ~7u;
-    const u64 v = load_be<u64>(g_base + stack);
-    stack += 8;
-    return std::bit_cast<double>(v);
-  };
-  std::string out;
-  for (std::size_t i = 0; i < fmt.size(); ++i) {
-    if (fmt[i] != '%') {
-      out += fmt[i];
-      continue;
+// Looks for the game's image in ISO/ and private/.
+std::string find_image() {
+  for (const char* folder : {"ISO", "private"}) {
+    const fs::path dir = fs::path(OPENGP_SOURCE_DIR) / folder;
+    std::error_code ec;
+    if (!fs::is_directory(dir, ec)) continue;
+    for (const auto& entry : fs::recursive_directory_iterator(dir, ec)) {
+      const std::string ext = entry.path().extension().string();
+      if (ext != ".iso" && ext != ".gcm" && ext != ".ISO" && ext != ".GCM") continue;
+      disc::Image img;
+      if (img.open(entry.path().string(), nullptr) && img.game_id() == kGameId) return entry.path().string();
     }
-    std::string spec = "%";
-    ++i;
-    while (i < fmt.size() && std::strchr("-+ #0123456789.", fmt[i])) spec += fmt[i++];
-    while (i < fmt.size() && std::strchr("hlLqjzt", fmt[i])) ++i;  // host sizes differ; drop modifiers
-    if (i >= fmt.size()) break;
-    const char conv = fmt[i];
-    char buf[512];
-    switch (conv) {
-      case 'd':
-      case 'i': std::snprintf(buf, sizeof(buf), (spec + "d").c_str(), static_cast<int>(next_int())); break;
-      case 'u':
-      case 'x':
-      case 'X':
-      case 'o': std::snprintf(buf, sizeof(buf), (spec + conv).c_str(), next_int()); break;
-      case 'c': std::snprintf(buf, sizeof(buf), (spec + "c").c_str(), static_cast<int>(next_int())); break;
-      case 'p': std::snprintf(buf, sizeof(buf), "0x%08X", next_int()); break;
-      case 's': std::snprintf(buf, sizeof(buf), (spec + "s").c_str(), read_c_string(next_int()).c_str()); break;
-      case 'f':
-      case 'F':
-      case 'e':
-      case 'E':
-      case 'g':
-      case 'G': std::snprintf(buf, sizeof(buf), (spec + conv).c_str(), next_double()); break;
-      case '%': std::snprintf(buf, sizeof(buf), "%%"); break;
-      default: std::snprintf(buf, sizeof(buf), "%s%c", spec.c_str(), conv); break;
-    }
-    out += buf;
   }
-  return out;
+  return {};
 }
 
-bool read_file(const std::string& path, std::vector<u8>* out) {
-  std::ifstream f(path, std::ios::binary);
-  if (!f) return false;
-  out->assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
-  return true;
+// Function names for backtraces, from the decomp-toolkit symbol file.
+std::map<u32, std::string> load_function_names() {
+  std::map<u32, std::string> names;
+  std::ifstream f(OPENGP_SYMBOLS);
+  std::string line;
+  while (std::getline(f, line)) {
+    if (line.find("type:function") == std::string::npos) continue;
+    const auto eq = line.find(" = ");
+    const auto colon = line.find(":0x", eq);
+    if (eq == std::string::npos || colon == std::string::npos) continue;
+    names[static_cast<u32>(std::strtoul(line.c_str() + colon + 3, nullptr, 16))] = line.substr(0, eq);
+  }
+  return names;
+}
+
+std::string describe(const std::map<u32, std::string>& names, u32 addr) {
+  char buf[16];
+  std::snprintf(buf, sizeof(buf), "%08X", addr);
+  auto it = names.find(addr);
+  return it == names.end() ? std::string(buf) : std::string(buf) + " " + it->second;
 }
 
 }  // namespace
 
-// Replaces the recompiled OSReport (weak symbol) with a host implementation.
-namespace guest {
-PPC_FUNC(OSReport) {
-  const std::string text = format_guest(ctx, ctx.gpr[3]);
-  std::fputs(("[OSReport] " + text).c_str(), stdout);
-  if (text.empty() || text.back() != '\n') std::fputc('\n', stdout);
-  std::fflush(stdout);
-}
-}  // namespace guest
-
 int main(int argc, char** argv) {
-  std::string dol_path = OPENGP_DEFAULT_DOL;
-  bool run = false;
-  int timeout_s = 10;
+  std::string image;
+  int timeout_s = 20, status_s = 5;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
-    if (a == "--dol" && i + 1 < argc) dol_path = argv[++i];
-    else if (a == "--run") run = true;
+    if (a == "--iso" && i + 1 < argc) image = argv[++i];
     else if (a == "--timeout" && i + 1 < argc) timeout_s = std::atoi(argv[++i]);
-    else if (a == "--mmio-log" && i + 1 < argc) g_mmio_log_limit = std::strtoull(argv[++i], nullptr, 10);
+    else if (a == "--status" && i + 1 < argc) status_s = std::atoi(argv[++i]);
     else {
-      std::fprintf(stderr, "usage: opengp-mkgp2 [--dol PATH] [--run] [--timeout SECONDS] [--mmio-log N]\n");
+      std::fprintf(stderr, "usage: opengp-mkgp2 [--iso PATH] [--timeout SECONDS] [--status SECONDS]\n");
       return 2;
     }
   }
-
-  std::vector<u8> dol;
-  if (!read_file(dol_path, &dol)) {
-    std::fprintf(stderr, "cannot read %s\n", dol_path.c_str());
+  if (image.empty()) image = find_image();
+  if (image.empty()) {
+    std::fprintf(stderr, "No %s image found in ISO/ or private/ (see docs/game-files.md), or pass --iso.\n",
+                 kGameId);
     return 1;
   }
-  GuestMemory mem;
+
+  static opengp::Machine machine;
+  machine.set_user_dir((fs::path(OPENGP_SOURCE_DIR) / "user").string());
   std::string error;
-  if (!mem.init(kMem1Size, &error)) {
-    std::fprintf(stderr, "guest memory: %s\n", error.c_str());
+  os::BootResult boot;
+  if (!machine.boot(image, &boot, &error)) {
+    std::fprintf(stderr, "boot failed: %s\n", error.c_str());
     return 1;
   }
-  g_base = mem.base();
-  u32 entry = 0;
-  if (!load_dol(dol.data(), dol.size(), g_base, &entry, &error)) {
-    std::fprintf(stderr, "%s: %s\n", dol_path.c_str(), error.c_str());
-    return 1;
-  }
-  install_module(guest::g_module, g_base);
+  machine.install(guest::g_module);
+  std::printf("OpenGP: Mario Kart Arcade GP 2 (%s)\n", machine.disc().game_id().c_str());
+  std::printf("  image:  %s\n", image.c_str());
+  std::printf("  memory: %u MiB, entry %08X, FST %08X, arena %08X-%08X\n", machine.mem1_size() >> 20,
+              boot.entry_point, boot.fst_address, boot.arena_lo, boot.arena_hi);
+  std::fflush(stdout);
 
-  const bool osreport_replaced = g_functions.find(0x8002CE3C) == &guest::OSReport &&
-                                 &guest::OSReport != &guest::__imp__OSReport;
-  std::printf("OpenGP: Mario Kart Arcade GP 2 (GGPE02)\n");
-  std::printf("  main.dol:          %s (%zu bytes)\n", dol_path.c_str(), dol.size());
-  std::printf("  entry point:       %08X\n", entry);
-  std::printf("  recompiled:        %zu functions, %zu patches\n", guest::g_module.function_count,
-              guest::g_module.patch_count);
-  std::printf("  OSReport replaced: %s\n", osreport_replaced ? "yes" : "NO (weak symbol override failed)");
-  if (!run) {
-    std::printf("Pass --run to jump to the entry point (hardware is not emulated yet).\n");
-    return osreport_replaced ? 0 : 1;
-  }
-
-  reset_hooks();
-  g_hooks.mmio_read = mmio_read;
-  g_hooks.mmio_write = mmio_write;
-  g_hooks.gather_pipe_write = gather_pipe_write;
-  g_hooks.fatal = fatal_hook;
-  // The Dolphin SDK only uses `sc` to synchronise the caches (DCFlushRange,
-  // PPCSync): its handler toggles HID0 and returns. Caches are not modelled.
-  g_hooks.syscall = [](Context&, u8*, u32) {};
-
-  std::thread([timeout_s] {
-    std::this_thread::sleep_for(std::chrono::seconds(timeout_s));
-    print_status("timeout");
-    std::fflush(stdout);
+  static const auto names = load_function_names();
+  auto print_status = [](const char* why) {
+    auto* vi = machine.hardware().device<hw::ViDevice>();
+    std::fprintf(stderr, "[opengp] %s: %llu retraces, %d guest threads, PI cause %05X mask %05X\n", why,
+                 static_cast<unsigned long long>(vi ? vi->retrace_count() : 0), machine.threads().thread_count(),
+                 machine.hardware().interrupt_cause(), machine.hardware().interrupt_mask());
+    for (ppc::TraceStack* s : ppc::trace_all_stacks()) {
+      const auto frames = ppc::trace_snapshot(*s);
+      if (frames.empty()) continue;
+      std::fprintf(stderr, "  stack:");
+      const std::size_t first = frames.size() > 12 ? frames.size() - 12 : 0;
+      for (std::size_t i = frames.size(); i-- > first;) std::fprintf(stderr, "\n    %s", describe(names, frames[i]).c_str());
+      std::fprintf(stderr, "\n");
+    }
     std::fflush(stderr);
-    std::_Exit(3);
+  };
+  ppc::g_hooks.fatal = [](const char* message) {
+    std::fprintf(stderr, "[opengp] fatal: %s\n", message);
+  };
+
+  std::thread([timeout_s, status_s, print_status] {
+    const auto start = std::chrono::steady_clock::now();
+    for (;;) {
+      std::this_thread::sleep_for(std::chrono::seconds(status_s));
+      const auto elapsed = std::chrono::steady_clock::now() - start;
+      if (elapsed >= std::chrono::seconds(timeout_s)) {
+        print_status("timeout");
+        std::fflush(stdout);
+        std::_Exit(0);
+      }
+      print_status("status");
+    }
   }).detach();
 
-  Context ctx;
-  reset_context(ctx);
-  std::printf("Jumping to %08X...\n", entry);
-  std::fflush(stdout);
-  call(ctx, g_base, entry);
+  machine.run();
   print_status("entry point returned");
   return 0;
 }

@@ -6,6 +6,7 @@
 #include "ppc/context.h"
 #include "ppc/dispatch.h"
 #include "ppc/ops.h"
+#include "ppc/trace.h"  // PPC_TRACE_ENTER (a no-op unless PPC_TRACE_CALLS is defined)
 
 // Every guest function is emitted twice: the recompiled body as
 // __imp__<name>, and a weak <name> that forwards to it. Defining a strong
@@ -22,4 +23,4 @@
 #define PPC_EXTERN_FUNC(name) extern PPC_FUNC(name)
 
 // Mid-function hook (see recomp.toml [[hook]]).
-#define PPC_HOOK(name) void name(::ppc::Context& ctx, ::ppc::u8* base)
+#define PPC_HOOK(name) void name([[maybe_unused]] ::ppc::Context& ctx, [[maybe_unused]] ::ppc::u8* base)

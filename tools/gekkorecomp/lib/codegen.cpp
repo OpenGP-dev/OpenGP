@@ -58,6 +58,7 @@ class FunctionEmitter {
     out += range;
     if (!fn_.symbol.empty() && fn_.symbol != fn_.cpp_name) out += " (" + fn_.symbol + ")";
     out += "\nPPC_FUNC_IMPL(__imp__" + fn_.cpp_name + ") {\n";
+    out += "  PPC_TRACE_ENTER(" + hex32(fn_.start) + ");\n";
     if (needs_entry_capture_)
       out += "  const ::ppc::u32 entry_lr = ctx.lr;\n  const ::ppc::u32 entry_sp = ctx.gpr[1];\n";
     out += body_.str();

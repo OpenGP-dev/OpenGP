@@ -28,6 +28,9 @@ endfunction()
 # MB of generated C++), and no warnings (the code is machine-generated and
 # already checked by the test suite).
 function(opengp_generated_code_options target)
+  if(OPENGP_TRACE_CALLS)
+    target_compile_definitions(${target} PUBLIC PPC_TRACE_CALLS)
+  endif()
   if(NOT OPENGP_GENERATED_DEBUG_INFO)
     set_property(TARGET ${target} PROPERTY MSVC_DEBUG_INFORMATION_FORMAT "")
     if(NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
