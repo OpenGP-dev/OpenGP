@@ -170,7 +170,8 @@ def main() -> int:
             if "scope:" not in rest:
                 rest += " scope:global"
             lines[idx] = f"{new_name} = {m['sec']}:0x{m['addr']};{rest}"
-        args.symbols.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        # newline="\n": keep LF line endings on Windows (decomp-toolkit writes LF).
+        args.symbols.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
         print(f"updated {args.symbols}")
     return 0
 
