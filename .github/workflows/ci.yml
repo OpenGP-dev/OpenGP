@@ -22,7 +22,7 @@ jobs:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Ninja
         run: sudo apt-get update && sudo apt-get install -y ninja-build
       - name: Configure
@@ -36,11 +36,15 @@ jobs:
     name: Windows (clang-cl)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: ilammy/msvc-dev-cmd@v1
-      - name: Configure
-        run: cmake --preset clang-cl
-      - name: Build
-        run: cmake --build --preset clang-cl
-      - name: Test
-        run: ctest --preset clang-cl
+      - uses: actions/checkout@v5
+      # tools/devshell.ps1 is the same environment setup used for local builds:
+      # the Visual Studio x64 environment plus LLVM's clang-cl (preinstalled on
+      # the runner). Each step is a new shell, so everything runs in one step.
+      - name: Configure, build and test
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true  # stop on the first failing command
+          . ./tools/devshell.ps1
+          cmake --preset clang-cl
+          cmake --build --preset clang-cl
+          ctest --preset clang-cl
