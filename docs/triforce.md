@@ -126,3 +126,52 @@ OpenGP skips all of this:
 - It fills in the low-memory boot globals that Segaboot would normally leave (at `0x80000000`:
   disc ID, memory size, console type, clocks, arena bounds).
 - It answers the media-board commands directly.
+
+## Mario Kart Arcade GP 2 (GGPE02): what milestone 2 found
+
+The images are standard GameCube disc images: magic `0xC2339F3D`, `main.dol` at `0x18000`,
+readable with decomp-toolkit's `vfs` commands.
+
+### Executable (`main.dol`, 5.03 MiB)
+
+| Section | Address | Size | Notes |
+|---------|---------|------|-------|
+| `.init` | `0x80003100` | `0x24E8` | SDK startup (`__start` at `0x80003154` is the entry point), TRK vector table |
+| `extab` / `extabindex` | `0x80005600` / `0x8001F340` | | C++ exception tables: the game engine uses C++ exceptions |
+| `.text` | `0x8002BC40` | `0x2BC678` | 7,598 functions; game code first, SDK libraries from about `0x8025519C` |
+| `.rodata` | `0x802E8380` | `0x10CC64` | |
+| `.data` | `0x803F5000` | `0x108CA8` | |
+| `.bss` | `0x804FDCC0` | `0x1D0CB8` | |
+| `.sdata` / `.sdata2` | `0x806CE980` / `0x806D1EC0` | | `_SDA_BASE_` (r13) = `0x806D6980`, `_SDA2_BASE_` (r2) = `0x806D9EC0` |
+
+decomp-toolkit finds 7,612 functions covering all of `.text`. About 900 are named:
+- about 280 by decomp-toolkit's own signatures;
+- 632 by `tools/sigmatch.py`, which uses Dolphin's signature database.
+
+The game's `main` is at `0x800AC27C`.
+
+### Libraries
+
+- **Nintendo Dolphin SDK**, release build of 17 April 2003 (`0x2301`), per its own banners.
+- **MusyX** (Factor 5) for audio: `synth*`, `snd*`, `sal*` and `mcmd*` functions. MusyX may upload
+  its own DSP microcode rather than Nintendo's AX, which decides between DSP HLE and LLE in
+  milestone 6.
+- **MetroTRK** debugger stub (`TRK*`); needs to be stubbed out.
+- Possibly **ODE** (Open Dynamics Engine) for physics: one signature matched `dBodyGetMass`.
+
+### How far it runs today
+
+`opengp-mkgp2 --run` executes the recompiled code from the entry point:
+1. It gets through the SDK startup and `OSInit`, which set up EXI and SI and print the SDK
+   banners through `OSReport`.
+2. It then stops in a tight loop polling `0xCC00500A` (the DSP control register), waiting for the
+   audio DSP to reset.
+
+Milestone 3 starts there. The `sc` instructions at the end of `DCFlushRange` and similar
+functions only synchronise the caches, so they are treated as no-ops.
+
+Still unnamed and needed for OS HLE:
+- `OSCreateThread`, `OSExitThread`, `OSYieldThread`, `OSGetCurrentThread`, which sit between
+  `OSInitThreadQueue` (`0x8025B5DC`) and `OSCancelThread` (`0x8025BE00`);
+- the mutex and message-queue functions;
+- `PADInit` / `PADRead`.

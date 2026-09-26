@@ -10,9 +10,10 @@ compiled together with a runtime that stands in for the Triforce hardware (GameC
 DSP, AM-Baseboard, AM-Mediaboard), so the game runs as a normal native program, with room for
 modern features such as higher resolutions, widescreen and remappable controls.
 
-> **Status: early development, not playable yet.** Milestone 1 is done: the recompiler, the CPU
-> runtime and the test suite. Next is milestone 2, running the recompiler on the real game. See the
-> [roadmap](#roadmap).
+> **Status: early development, not playable yet.** Milestones 1 and 2 are done. The whole of Mario
+> Kart Arcade GP 2 (7,612 functions) recompiles and builds, and runs through the Nintendo SDK's
+> startup until it waits on the audio DSP, which is not emulated yet. Next is milestone 3: emulating
+> enough hardware to boot. See the [roadmap](#roadmap).
 
 ## How it works
 
@@ -31,7 +32,8 @@ your GGPE02.iso ─extract─> main.dol ─decomp-toolkit─> symbols.txt
 | Gekko ISA | `common/gekko/` | Decoder, disassembler and encoder for every Gekko instruction, including paired singles |
 | Recompiler | `tools/gekkorecomp/` | Turns a DOL plus a symbol list into C++, one C++ function per guest function |
 | CPU runtime | `runtime/ppc/` | Register context, guest memory, instruction semantics, interpreter fallback, indirect-call dispatch |
-| Games | `games/` | Per-game symbol maps, recompiler config and patches (from milestone 2) |
+| Games | `games/` | Per-game symbol maps, recompiler config, patches and launcher |
+| Scripts | `tools/*.py`, `tools/devshell.ps1` | Game setup (extract and verify `main.dol`), SDK signature matching, Windows build shell |
 | Tests | `tests/` | Decoder tests, known-answer semantics tests, and differential tests (interpreter vs recompiled code) |
 
 Details are in [docs/architecture.md](docs/architecture.md). Notes on the arcade hardware are in
@@ -39,17 +41,19 @@ Details are in [docs/architecture.md](docs/architecture.md). Notes on the arcade
 
 ## Building
 
-You need CMake 3.25+, Ninja, and GCC 12+ or Clang 16+. On Windows, use clang-cl: the recompiled
-code relies on weak symbols, which MSVC does not support.
+You need CMake 3.25+, Ninja, Python 3, and GCC 12+ or Clang 16+. On Windows, use clang-cl: the
+recompiled code relies on weak symbols, which MSVC does not support. Full instructions, including
+Windows setup, are in [docs/building.md](docs/building.md).
 
 ```sh
-cmake --preset default
+python tools/setup.py            # extracts main.dol from your images in ISO/ (see below)
+cmake --preset default           # Windows: . .\tools\devshell.ps1, then --preset clang-cl
 cmake --build --preset default
 ctest --preset default
 ```
 
-Right now this builds the recompiler, the CPU runtime and the test suite. The tests need no game
-data: they generate their own PowerPC test programs.
+Without the game you still get the recompiler, the CPU runtime and the test suite. The tests need
+no game data: they generate their own PowerPC test programs.
 
 ## Legal
 
@@ -57,8 +61,9 @@ This repository contains **no game code, data or assets**, and none may ever be 
 includes the recompiler's output, because it is derived from the game.
 
 To play, you will need your own copy of the game:
-- Put your images in `private/`, for example `private/GGPE02.iso`. The folder is gitignored.
-- The build and the executable read the images from there.
+- Put your images in `ISO/` (or `private/`). Both folders are gitignored.
+- `python tools/setup.py` extracts each game's `main.dol` into `orig/` (also gitignored), and the
+  build reads it from there.
 - [docs/game-files.md](docs/game-files.md) explains how to prepare them.
 
 Mario Kart is a trademark of Nintendo. This project is not affiliated with Nintendo, Namco
@@ -73,11 +78,11 @@ marked as such in the source. Vendored third-party code in `thirdparty/` keeps i
 | # | Milestone | Needs the game |
 |---|-----------|----------------|
 | M1 | Scaffolding, recompiler, CPU runtime, test suite, CI (**done**) | no |
-| M2 | MKAGP2 (GGPE02) analysis: symbol map, SDK functions identified, whole game recompiles and builds | yes |
+| M2 | MKAGP2 (GGPE02) analysis: symbol map, SDK functions identified, whole game recompiles and builds (**done**) | yes |
 | M3 | Boot to the main loop: OS HLE, media board, JVS stubs, VI retrace, hardware-check patches | yes |
 | M4 | Graphics: GX FIFO decoder, TEV ubershader, first frames, attract mode | yes |
 | M5 | Input and gameplay: JVS mapping, free play, full race, wheel force feedback | yes |
-| M6 | Audio (DSP AX HLE) | yes |
+| M6 | Audio (the game uses MusyX; DSP microcode HLE or LLE) | yes |
 | M7 | Card saves, settings menu, resolution scaling, widescreen | yes |
 | M8 | Mario Kart Arcade GP (GGPE01) | yes |
 

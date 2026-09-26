@@ -1,0 +1,20 @@
+# gekkorecomp config for Mario Kart Arcade GP 2 (USA, GGPE02).
+# main.dol SHA-1: 2969c177219dda71ad36b41575bede7ad4637f96
+#
+# The DOL is extracted from your own disc image into orig/ (gitignored);
+# see docs/game-files.md. The symbol list comes from decomp-toolkit
+# (config/config.yml) and contains addresses and names only.
+
+[input]
+dol = "../../orig/GGPE02/sys/main.dol"
+symbols = "config/symbols.txt"
+
+[output]
+directory = "generated"  # the build passes --out
+file_count = 64
+
+[analysis]
+# Small-data bases set by __init_registers (80003328).
+sda_base = 0x806D6980   # r13, _SDA_BASE_
+sda2_base = 0x806D9EC0  # r2, _SDA2_BASE_
+interrupt_checks = true

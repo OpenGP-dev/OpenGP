@@ -7,6 +7,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(OPENGP_BUILD_TESTS "Build the test suite" ON)
+option(OPENGP_BUILD_GAMES "Build the games whose executables are present in orig/" ON)
+option(OPENGP_GENERATED_DEBUG_INFO "Emit debug info for recompiled game code (slow, large)" OFF)
 
 if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   message(FATAL_ERROR "OpenGP needs GCC or Clang (use clang-cl on Windows): "
@@ -42,6 +44,10 @@ target_include_directories(doctest SYSTEM INTERFACE thirdparty/doctest)
 add_subdirectory(common/gekko)
 add_subdirectory(runtime)
 add_subdirectory(tools/gekkorecomp)
+
+if(OPENGP_BUILD_GAMES)
+  add_subdirectory(games)
+endif()
 
 if(OPENGP_BUILD_TESTS)
   enable_testing()

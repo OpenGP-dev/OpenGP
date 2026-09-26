@@ -1,6 +1,8 @@
 # Game data: never commit anything that comes from the games.
-# Put your own images in private/ (see README.md, "Legal").
-private/
+# Put your own images in ISO/ or private/ (see docs/game-files.md).
+/ISO/
+/private/
+/orig/
 *.iso
 *.gcm
 *.dol
