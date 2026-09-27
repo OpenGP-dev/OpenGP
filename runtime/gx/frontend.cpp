@@ -6,6 +6,7 @@
 #include <bit>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 
@@ -111,6 +112,7 @@ struct Frontend::Viewport {
 };
 
 Frontend::Frontend(MemoryReader read, void* context) : read_(read), context_(context), tmem_(kTmemSize, 0) {
+  if (const char* env = std::getenv("OPENGP_GX_DUMP")) dump_frame_ = std::strtoull(env, nullptr, 10);
   bp_[BP_GENMODE] = 0;
   bp_[BP_ZMODE] = 0x17;  // test and update enabled, LEQUAL
   bp_[BP_BLENDMODE] = 0x18;  // colour and alpha update
@@ -125,26 +127,64 @@ Frame& Frontend::frame() {
     // re-checked against memory at least once per frame.
     state_dirty_ = true;
     textures_dirty_ = true;
+    dumping_ = frames_ == dump_frame_;
+    dumped_state_ = ~0u;
+    if (dumping_) std::fprintf(stderr, "[gx] ---- frame %llu ----\n", static_cast<unsigned long long>(frames_));
   }
   return *frame_;
 }
 
 void Frontend::end_frame(bool present) {
   Frame& f = frame();
-  f.number = frames_++;
-  if (!present) f.xfb = 0;
-
-  // Evict textures not used for a while.
-  for (auto it = textures_.begin(); it != textures_.end();) {
-    if (it->second.last_used + 120 < frames_) {
-      f.releases.push_back(it->second.handle);
-      it = textures_.erase(it);
-    } else {
-      ++it;
+  f.number = frames_;
+  if (present) {
+    ++frames_;
+    // Evict textures not used for a while.
+    for (auto it = textures_.begin(); it != textures_.end();) {
+      if (it->second.last_used + 120 < frames_) {
+        f.releases.push_back(it->second.handle);
+        it = textures_.erase(it);
+      } else {
+        ++it;
+      }
     }
+  } else {
+    f.xfb = 0;
   }
   if (output_) output_->submit(std::move(frame_));
   frame_.reset();
+}
+
+// ---- CPU access to the EFB -----------------------------------------------------------------------
+
+u32 Frontend::efb_read(u32 address, u32 alpha_mode) {
+  const u32 x = (address & 0xFFF) >> 2, y = (address >> 12) & 0x3FF;
+  if (!output_ || x >= kEfbWidth || y >= kEfbHeight) return 0;
+  const bool depth = address & 0x00400000;
+  std::shared_ptr<EfbReadback>& cache = depth ? efb_depth_ : efb_color_;
+  if (!cache) {
+    // Render everything so far, then read the whole EFB back.
+    auto request = std::make_shared<EfbReadback>(depth);
+    frame().readback = request;
+    end_frame(false);
+    request->wait();
+    cache = std::move(request);
+    if (cache->pixels.size() != std::size_t{kEfbWidth} * kEfbHeight) cache->pixels.assign(std::size_t{kEfbWidth} * kEfbHeight, 0);
+  }
+  const u32 v = cache->pixels[y * kEfbWidth + x];
+  if (depth) return v & 0xFFFFFF;
+  // RGBA8 (red lowest) to what the game reads: ARGB.
+  u32 color = (v & 0xFF00FF00) | ((v >> 16) & 0xFF) | ((v & 0xFF) << 16);
+  if (pixel_format() != PixelFormat::RGBA6_Z24) color |= 0xFF000000;
+  if (alpha_mode == 0) color &= 0x00FFFFFF;
+  else if (alpha_mode == 1) color |= 0xFF000000;
+  return color;
+}
+
+void Frontend::efb_write(u32 address, u32 value) {
+  static bool warned = false;
+  if (!warned) std::fprintf(stderr, "[gx] EFB writes are not supported (%08X = %08X)\n", address, value);
+  warned = true;
 }
 
 // ---- Register writes -------------------------------------------------------------------------
@@ -309,6 +349,11 @@ void Frontend::efb_copy(u32 trigger) {
     }
   }
 
+  if (dumping_)
+    std::fprintf(stderr, "[gx]  copy %s %u,%u %ux%u to %08X format %u (trigger %06X, EFB format %u)%s\n",
+                 copy_to_xfb(trigger) ? "XFB" : "texture", x, y, w, h, (bp_[BP_EFB_ADDR] << 5) & 0x01FFFFFF,
+                 static_cast<u32>(copy_format(trigger)), trigger, static_cast<u32>(pixel_format()),
+                 copy_clear(trigger) ? " + clear" : "");
   if (copy_clear(trigger)) clear(x, y, w, h);
   if (copy_to_xfb(trigger)) end_frame(true);
 }
@@ -327,6 +372,7 @@ void Frontend::clear(u32 x, u32 y, u32 width, u32 height) {
   if (fmt == PixelFormat::RGB565_Z16) z = (z >> 8) * 0x10101 >> 8;  // 16-bit depth (Dolphin Z24ToZ16ToZ24)
   c.z = static_cast<float>(z) / 16777216.0f;
   if (!c.color && !c.alpha && !c.depth) return;
+  efb_changed();
   Frame& f = frame();
   f.clears.push_back(c);
   f.commands.push_back({Command::Type::Clear, static_cast<u32>(f.clears.size() - 1)});
@@ -614,6 +660,9 @@ TextureBinding Frontend::bind_texture(u32 map, s32* size) {
   }
   f.uploads.push_back(up);
   textures_.emplace(key, CachedTexture{up.handle, frames_});
+  if (dumping_)
+    std::fprintf(stderr, "[gx]  texture %u: %08X format %u %ux%u, %u levels%s\n", up.handle, address,
+                 static_cast<u32>(format), width, height, levels, from_tmem ? " (TMEM)" : "");
   binding.texture = up.handle;
   return binding;
 }
@@ -661,7 +710,43 @@ void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertice
   const u32 first = static_cast<u32>(f.indices.size());
   assemble(primitive, base, count, vp);
   const u32 added = static_cast<u32>(f.indices.size()) - first;
+
+  if (dumping_) {
+    if (state != dumped_state_) {
+      dumped_state_ = state;
+      const DrawState& s = f.states[state];
+      const PixelUniforms& u = f.uniforms[s.uniforms];
+      const u32 genmode = bp_[BP_GENMODE];
+      std::fprintf(stderr,
+                   "[gx]  state %u: pipeline %06X scissor %d,%d %dx%d genmode %06X (%u stages, %u texgens, %u ind, "
+                   "cull %u) xf texgens %u colors %u alpha test %06X zmode %02X blend %04X pe %02X\n",
+                   state, s.pipeline.bits, s.scissor[0], s.scissor[1], s.scissor[2], s.scissor[3], genmode,
+                   genmode_num_tev_stages(genmode), genmode_num_texgens(genmode), genmode_num_ind_stages(genmode),
+                   genmode_cull_mode(genmode), xf_.num_texgens(), xf_.reg(XF_NUM_COLORS), bp_[BP_ALPHA_COMPARE],
+                   bp_[BP_ZMODE], bp_[BP_BLENDMODE], bp_[BP_ZCOMPARE]);
+      for (u32 i = 0; i < genmode_num_tev_stages(genmode); ++i)
+        std::fprintf(stderr, "[gx]    stage %u: color %06X alpha %06X order %06X ksel %06X ind %06X\n", i,
+                     u.stages[i][0], u.stages[i][1], (bp_[BP_TREF + i / 2] >> ((i & 1) ? 12 : 0)) & 0xFFF,
+                     bp_[BP_TEV_KSEL + i / 2], u.stages[i][2]);
+      std::fprintf(stderr, "[gx]    regs %d,%d,%d,%d / %d,%d,%d,%d / %d,%d,%d,%d / %d,%d,%d,%d\n", u.colors[0][0],
+                   u.colors[0][1], u.colors[0][2], u.colors[0][3], u.colors[1][0], u.colors[1][1], u.colors[1][2],
+                   u.colors[1][3], u.colors[2][0], u.colors[2][1], u.colors[2][2], u.colors[2][3], u.colors[3][0],
+                   u.colors[3][1], u.colors[3][2], u.colors[3][3]);
+      for (u32 m = 0; m < 8; ++m)
+        if (s.textures[m].texture || texsizes_[m][0] > 1)
+          std::fprintf(stderr, "[gx]    texmap %u: handle %u %dx%d mode %06X/%04X\n", m, s.textures[m].texture,
+                       texsizes_[m][0], texsizes_[m][1], s.textures[m].mode0, s.textures[m].mode1);
+    }
+    const Vertex& v = f.vertices[base];
+    const float w = v.pos[3] != 0.0f ? v.pos[3] : 1.0f;
+    std::fprintf(stderr,
+                 "[gx]  draw prim %u vat %u count %u -> %u indices; v0 ndc %.3f,%.3f z %.5f w %.3f color %08X/%08X "
+                 "tex0 %.3f,%.3f,%.3f\n",
+                 primitive, vat, count, added, v.pos[0] / w, v.pos[1] / w, v.pos[2] / w, v.pos[3], v.color[0],
+                 v.color[1], v.tex[0][0], v.tex[0][1], v.tex[0][2]);
+  }
   if (added == 0) return;
+  efb_changed();
 
   // Extend the previous draw if nothing else happened in between.
   if (!f.commands.empty() && f.commands.back().type == Command::Type::Draw) {
@@ -687,11 +772,13 @@ void Frontend::assemble(u8 primitive, u32 base, u16 count, const Viewport& vp) {
       const float* p0 = clip_[a].data();
       const float* p1 = clip_[b].data();
       const float* p2 = clip_[c].data();
-      // Homogeneous orientation test (Dolphin's Clipper::IsBackface).
+      // Homogeneous orientation test (Dolphin's Clipper::IsBackface). Note
+      // the sense: GX "cull back" removes the triangles this calls front
+      // facing (see Dolphin's Clipper::ProcessTriangle).
       const float nz = (p0[0] * p2[3] - p2[0] * p0[3]) * p1[1] + (p2[0] * p0[1] - p0[0] * p2[1]) * p1[3] +
                        (p2[1] * p0[3] - p0[1] * p2[3]) * p1[0];
       const bool back = (nz <= 0.0f) != flip;
-      if ((cull == 1 && back) || (cull == 2 && !back)) return;
+      if ((cull == 1 && !back) || (cull == 2 && back)) return;
     }
     f.indices.insert(f.indices.end(), {base + a, base + b, base + c});
   };

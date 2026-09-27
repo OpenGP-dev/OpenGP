@@ -96,6 +96,7 @@ class Renderer {
   void copy(SDL_GPUCommandBuffer* cmd, const gx::CopyCmd& c);
   void present(SDL_GPUCommandBuffer* cmd, const Texture& xfb);
   void capture(SDL_GPUCommandBuffer* cmd, const Texture& xfb, Image* image);
+  void read_efb(SDL_GPUCommandBuffer* cmd, gx::EfbReadback& request);
   void grow_buffer(SDL_GPUBuffer*& buffer, u32& capacity, u32 needed, u32 usage);
 
   SDL_Window* window_ = nullptr;
@@ -114,6 +115,12 @@ class Renderer {
   SDL_GPUShader* copy_fs_ = nullptr;
   SDL_GPUShader* color_fs_ = nullptr;
   SDL_GPUShader* blit_fs_ = nullptr;
+  SDL_GPUShader* sample_fs_ = nullptr;
+  SDL_GPUGraphicsPipeline* read_color_pipeline_ = nullptr;
+  SDL_GPUGraphicsPipeline* read_depth_pipeline_ = nullptr;
+  SDL_GPUTexture* read_color_ = nullptr;  // EFB read back at native resolution
+  SDL_GPUTexture* read_depth_ = nullptr;
+  SDL_GPUTransferBuffer* read_transfer_ = nullptr;
   SDL_GPUGraphicsPipeline* copy_pipeline_ = nullptr;
   SDL_GPUGraphicsPipeline* present_pipeline_ = nullptr;
   SDL_GPUGraphicsPipeline* capture_pipeline_ = nullptr;

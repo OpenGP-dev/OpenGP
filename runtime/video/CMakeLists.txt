@@ -66,6 +66,7 @@ opengp_shader(fullscreen.vert fullscreen_vert kFullscreenVert)
 opengp_shader(copy.frag copy_frag kCopyFrag)
 opengp_shader(color.frag color_frag kColorFrag)
 opengp_shader(blit.frag blit_frag kBlitFrag)
+opengp_shader(sample.frag sample_frag kSampleFrag)
 
 add_library(opengp_video STATIC renderer.cpp png.cpp ${shader_headers})
 target_include_directories(opengp_video PRIVATE ${shader_out})

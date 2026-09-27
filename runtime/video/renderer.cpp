@@ -16,6 +16,7 @@
 #include "color_frag.h"
 #include "copy_frag.h"
 #include "fullscreen_vert.h"
+#include "sample_frag.h"
 #include "tev_frag.h"
 #include "tev_frag_early.h"
 #include "tev_vert.h"
@@ -81,17 +82,18 @@ Renderer::~Renderer() {
   for (auto& [k, p] : tev_pipelines_) SDL_ReleaseGPUGraphicsPipeline(device_, p);
   for (auto& [k, p] : clear_pipelines_) SDL_ReleaseGPUGraphicsPipeline(device_, p);
   for (auto& [k, s] : samplers_) SDL_ReleaseGPUSampler(device_, s);
-  for (SDL_GPUGraphicsPipeline* p : {copy_pipeline_, present_pipeline_, capture_pipeline_})
+  for (SDL_GPUGraphicsPipeline* p : {copy_pipeline_, present_pipeline_, capture_pipeline_, read_color_pipeline_, read_depth_pipeline_})
     if (p) SDL_ReleaseGPUGraphicsPipeline(device_, p);
-  for (SDL_GPUShader* s : {tev_vs_, tev_fs_, tev_fs_early_, fullscreen_vs_, copy_fs_, color_fs_, blit_fs_})
+  for (SDL_GPUShader* s : {tev_vs_, tev_fs_, tev_fs_early_, fullscreen_vs_, copy_fs_, color_fs_, blit_fs_, sample_fs_})
     if (s) SDL_ReleaseGPUShader(device_, s);
   for (SDL_GPUSampler* s : {linear_, nearest_})
     if (s) SDL_ReleaseGPUSampler(device_, s);
-  for (SDL_GPUTexture* t : {efb_color_, efb_depth_, white_})
+  for (SDL_GPUTexture* t : {efb_color_, efb_depth_, white_, read_color_, read_depth_})
     if (t) SDL_ReleaseGPUTexture(device_, t);
   if (vertex_buffer_) SDL_ReleaseGPUBuffer(device_, vertex_buffer_);
   if (index_buffer_) SDL_ReleaseGPUBuffer(device_, index_buffer_);
   if (transfer_) SDL_ReleaseGPUTransferBuffer(device_, transfer_);
+  if (read_transfer_) SDL_ReleaseGPUTransferBuffer(device_, read_transfer_);
   if (window_) SDL_ReleaseWindowFromGPUDevice(device_, window_);
   SDL_DestroyGPUDevice(device_);
 }
@@ -158,7 +160,8 @@ bool Renderer::init(SDL_Window* window, u32 scale, std::string* error) {
   copy_fs_ = shader(kCopyFrag, sizeof(kCopyFrag), true, 1, 1);
   color_fs_ = shader(kColorFrag, sizeof(kColorFrag), true, 0, 1);
   blit_fs_ = shader(kBlitFrag, sizeof(kBlitFrag), true, 1, 0);
-  if (!tev_vs_ || !tev_fs_ || !tev_fs_early_ || !fullscreen_vs_ || !copy_fs_ || !color_fs_ || !blit_fs_) {
+  sample_fs_ = shader(kSampleFrag, sizeof(kSampleFrag), true, 1, 0);
+  if (!tev_vs_ || !tev_fs_ || !tev_fs_early_ || !fullscreen_vs_ || !copy_fs_ || !color_fs_ || !blit_fs_ || !sample_fs_) {
     *error = std::string("could not create shaders: ") + SDL_GetError();
     return false;
   }
@@ -188,7 +191,10 @@ bool Renderer::init(SDL_Window* window, u32 scale, std::string* error) {
   copy_pipeline_ = fullscreen_pipeline(copy_fs_, kColorFormat);
   capture_pipeline_ = fullscreen_pipeline(blit_fs_, kColorFormat);
   if (window_) present_pipeline_ = fullscreen_pipeline(blit_fs_, SDL_GetGPUSwapchainTextureFormat(device_, window_));
-  if (!copy_pipeline_ || !capture_pipeline_ || (window_ && !present_pipeline_)) {
+  read_color_pipeline_ = fullscreen_pipeline(sample_fs_, kColorFormat);
+  read_depth_pipeline_ = fullscreen_pipeline(sample_fs_, SDL_GPU_TEXTUREFORMAT_R32_FLOAT);
+  if (!copy_pipeline_ || !capture_pipeline_ || (window_ && !present_pipeline_) || !read_color_pipeline_ ||
+      !read_depth_pipeline_) {
     *error = std::string("could not create pipelines: ") + SDL_GetError();
     return false;
   }
@@ -333,6 +339,7 @@ bool Renderer::upload(SDL_GPUCommandBuffer* cmd, const gx::Frame& f) {
 
   if (total > transfer_capacity_) {
     if (transfer_) SDL_ReleaseGPUTransferBuffer(device_, transfer_);
+  if (read_transfer_) SDL_ReleaseGPUTransferBuffer(device_, read_transfer_);
     transfer_capacity_ = std::max(total, transfer_capacity_ * 2);
     SDL_GPUTransferBufferCreateInfo info{SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, transfer_capacity_, 0};
     transfer_ = SDL_CreateGPUTransferBuffer(device_, &info);
@@ -601,6 +608,73 @@ void Renderer::capture(SDL_GPUCommandBuffer* cmd, const Texture& xfb, Image* ima
   SDL_ReleaseGPUTexture(device_, opaque);
 }
 
+void Renderer::read_efb(SDL_GPUCommandBuffer* cmd, gx::EfbReadback& request) {
+  // Sample the EFB at native resolution into a colour target (depth goes to
+  // .r of an R32F target), then download it.
+  const u32 w = gx::kEfbWidth, h = gx::kEfbHeight;
+  SDL_GPUTexture*& target = request.depth ? read_depth_ : read_color_;
+  if (!target) {
+    SDL_GPUTextureCreateInfo t{};
+    t.type = SDL_GPU_TEXTURETYPE_2D;
+    t.format = request.depth ? SDL_GPU_TEXTUREFORMAT_R32_FLOAT : kColorFormat;
+    t.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+    t.width = w;
+    t.height = h;
+    t.layer_count_or_depth = 1;
+    t.num_levels = 1;
+    target = SDL_CreateGPUTexture(device_, &t);
+  }
+  if (!read_transfer_) {
+    SDL_GPUTransferBufferCreateInfo info{SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, w * h * 4, 0};
+    read_transfer_ = SDL_CreateGPUTransferBuffer(device_, &info);
+  }
+  request.pixels.assign(std::size_t{w} * h, 0);
+  if (!target || !read_transfer_) {
+    SDL_SubmitGPUCommandBuffer(cmd);
+    return;
+  }
+
+  SDL_GPUColorTargetInfo color{};
+  color.texture = target;
+  color.load_op = SDL_GPU_LOADOP_DONT_CARE;
+  color.store_op = SDL_GPU_STOREOP_STORE;
+  SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &color, 1, nullptr);
+  SDL_BindGPUGraphicsPipeline(pass, request.depth ? read_depth_pipeline_ : read_color_pipeline_);
+  SDL_GPUTextureSamplerBinding src{request.depth ? efb_depth_ : efb_color_, nearest_};
+  SDL_BindGPUFragmentSamplers(pass, 0, &src, 1);
+  const FullscreenUniforms vs{{0, 0, 1, 1}, {0, 0, 0, 0}};
+  SDL_PushGPUVertexUniformData(cmd, 0, &vs, sizeof(vs));
+  SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+  SDL_EndGPURenderPass(pass);
+
+  SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
+  SDL_GPUTextureRegion region{};
+  region.texture = target;
+  region.w = w;
+  region.h = h;
+  region.d = 1;
+  SDL_GPUTextureTransferInfo dst{read_transfer_, 0, w, h};
+  SDL_DownloadFromGPUTexture(copy, &region, &dst);
+  SDL_EndGPUCopyPass(copy);
+
+  SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+  if (!fence) return;
+  SDL_WaitForGPUFences(device_, true, &fence, 1);
+  SDL_ReleaseGPUFence(device_, fence);
+  const void* p = SDL_MapGPUTransferBuffer(device_, read_transfer_, false);
+  if (p) {
+    std::memcpy(request.pixels.data(), p, request.pixels.size() * 4);
+    if (request.depth) {
+      for (u32& v : request.pixels) {
+        float d;
+        std::memcpy(&d, &v, 4);
+        v = static_cast<u32>(std::clamp(d * 16777216.0f, 0.0f, 16777215.0f));
+      }
+    }
+  }
+  SDL_UnmapGPUTransferBuffer(device_, read_transfer_);
+}
+
 void Renderer::render(const gx::Frame& f, Image* capture_image) {
   SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device_);
   if (!cmd) return;
@@ -629,6 +703,12 @@ void Renderer::render(const gx::Frame& f, Image* capture_image) {
       capture(cmd, xfb->second, capture_image);  // submits
       cmd = nullptr;
     }
+  }
+  if (f.readback) {
+    if (!cmd) cmd = SDL_AcquireGPUCommandBuffer(device_);
+    if (cmd) read_efb(cmd, *f.readback);  // submits
+    cmd = nullptr;
+    f.readback->complete();
   }
   if (cmd) SDL_SubmitGPUCommandBuffer(cmd);
 

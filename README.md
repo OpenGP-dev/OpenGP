@@ -13,9 +13,8 @@ modern features such as higher resolutions, widescreen and remappable controls.
 > **Status: early development, not playable yet.** Milestones 1 to 3 are done. Mario Kart Arcade
 > GP 2 (7,612 functions) recompiles, boots from its disc image through the emulated Triforce
 > hardware (media board, baseboard, JVS I/O, card reader), and runs its main loop at 60 Hz.
-> Milestone 4 (graphics) is under way: the game's frames are rendered in a window (Vulkan), and it
-> currently stops at its start-up device check, waiting for the camera. See the
-> [roadmap](#roadmap).
+> Milestone 4 (graphics) is under way: the game renders in a window (Vulkan), from its start-up
+> device check to attract mode. See the [roadmap](#roadmap).
 
 ## How it works
 

@@ -127,6 +127,10 @@ class Hardware {
   // Called after each 32-byte burst lands in RAM (the GPU hooks this).
   std::function<void()> on_gather_burst;
 
+  // CPU access to the EFB window (0xC8000000-0xC8FFFFFF; the GPU hooks these).
+  std::function<u32(u32 addr)> on_efb_read;
+  std::function<void(u32 addr, u32 value)> on_efb_write;
+
  private:
   friend class PiDevice;
   u32 mmio_read(u32 addr, u32 size);

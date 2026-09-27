@@ -2,10 +2,16 @@
 
 #include "hw/exi.h"
 
+#include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <filesystem>
+
+// Replacement boot ROM fonts (generated from thirdparty/gc-fonts).
+extern const unsigned char kIplFont_western[], kIplFont_japanese[];
+extern const std::size_t kIplFont_western_size, kIplFont_japanese_size;
 
 namespace hw {
 
@@ -104,7 +110,22 @@ void ExiDevice::dma_read(u8* dst, u32 size) {
 
 // ---- IPL chip --------------------------------------------------------------------------------
 
-IplDevice::IplDevice() {
+IplDevice::IplDevice(const std::string& user_dir) : rom_(ROM_SIZE, 0) {
+  // Fonts: Shift JIS at 0x1AFF00, Windows-1252 at 0x1FCF00 (Yay0-compressed).
+  constexpr u32 kSjisOffset = 0x1AFF00, kSjisSize = 0x4A24D;
+  constexpr u32 kAnsiOffset = 0x1FCF00, kAnsiSize = 0x2575;
+  bool loaded = false;
+  if (std::FILE* f = std::fopen((user_dir + "/IPL.bin").c_str(), "rb")) {
+    loaded = std::fseek(f, kSjisOffset, SEEK_SET) == 0 && std::fread(&rom_[kSjisOffset], 1, kSjisSize, f) == kSjisSize &&
+             std::fseek(f, kAnsiOffset, SEEK_SET) == 0 && std::fread(&rom_[kAnsiOffset], 1, kAnsiSize, f) == kAnsiSize;
+    std::fclose(f);
+    if (!loaded) std::fprintf(stderr, "[exi] %s/IPL.bin is too short; using the replacement fonts\n", user_dir.c_str());
+  }
+  if (!loaded) {
+    std::memcpy(&rom_[kSjisOffset], kIplFont_japanese, std::min<std::size_t>(kIplFont_japanese_size, ROM_SIZE - kSjisOffset));
+    std::memcpy(&rom_[kAnsiOffset], kIplFont_western, std::min<std::size_t>(kIplFont_western_size, ROM_SIZE - kAnsiOffset));
+  }
+
   // Default SRAM settings (after the 4-byte RTC): checksum, ~checksum, ead0,
   // ead1, rtc_bias, horizontal offset, ntd, language, flags.
   u8* s = sram_.data() + 4;
@@ -145,8 +166,8 @@ void IplDevice::transfer_byte(u8& data) {
   const bool is_write = (command_ >> 31) & 1;
   const u32 address = (command_ >> 6) & 0x1FFFFFF;
   if (address < ROM_SIZE) {
-    // The boot ROM (fonts). Not available; reads as zero.
-    if (!is_write) data = 0;
+    // The boot ROM (only its fonts are provided).
+    if (!is_write) data = rom_[(address + cursor_) % ROM_SIZE];
     ++cursor_;
   } else if (address >= SRAM_BASE && address < SRAM_BASE + SRAM_SIZE) {
     const u32 i = (address - SRAM_BASE + cursor_++) % SRAM_SIZE;
@@ -291,7 +312,7 @@ ExiBus::ExiBus(Hardware& hw, const std::string& user_dir, const std::string& gam
   std::filesystem::create_directories(user_dir, ec);
   channels_[0].status = ST_EXTINT;
   channels_[1].status = ST_EXTINT | (1u << 7);
-  channels_[0].devices[1] = std::make_unique<IplDevice>();
+  channels_[0].devices[1] = std::make_unique<IplDevice>(user_dir);
   channels_[0].devices[2] = std::make_unique<BaseboardDevice>(user_dir + "/tribackup_" + game_id + ".bin");
 }
 

@@ -19,7 +19,8 @@
 //   * Interrupts and the decrementer are delivered at safe points (loop
 //     back-edges, mtmsr): the registers are saved into the current OSContext
 //     as the exception vector would, and the SDK's exception handler is called.
-//     Its closing OSLoadContext of the interrupted context returns here.
+//     Its OSLoadContext of the interrupted context unwinds back to the
+//     safe point (ExceptionReturn), which then resumes the interrupted code.
 //
 // Everything else (scheduling, mutexes, message queues, alarms) stays SDK code.
 #pragma once
@@ -42,6 +43,12 @@ struct HostThread;
 // Thrown to unwind a host thread whose guest thread has exited or been
 // replaced; caught at the host thread's top level.
 struct ThreadExit {};
+
+// Thrown when an exception handler loads the context it interrupted: the
+// real OSLoadContext never returns, so the rest of the handler must not run
+// (the SDK's decrementer handler, for one, calls OSLoadContext early when no
+// alarm is due and would otherwise carry on). Caught by ThreadManager::deliver.
+struct ExceptionReturn {};
 
 class ThreadManager {
  public:

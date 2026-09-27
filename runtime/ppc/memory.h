@@ -69,12 +69,13 @@ class GuestMemory {
 // instruction; the interpreter always uses Checked.
 enum class Mem {
   Ram,         // proven to be RAM: direct host access
-  Mmio,        // proven to be a hardware register (0xCC000000 page)
+  Mmio,        // proven to be a hardware register (0xCC000000 page) or the EFB (0xC8000000)
   GatherPipe,  // proven to be the write-gather pipe (0xCC008000)
-  Checked,     // unknown: test for the I/O page at runtime
+  Checked,     // unknown: test for the I/O page and the EFB at runtime
 };
 
-inline bool is_io(u32 addr) { return (addr >> 16) == (IO_BASE >> 16); }
+// Hardware registers, or the CPU's window onto the EFB (0xC8000000-0xC8FFFFFF).
+inline bool is_io(u32 addr) { return (addr >> 16) == (IO_BASE >> 16) || (addr >> 24) == 0xC8; }
 inline bool is_gather_pipe(u32 addr) { return (addr & 0xFFFFF000) == GATHER_PIPE_BASE; }
 
 template <typename T>

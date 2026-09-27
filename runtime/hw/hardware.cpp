@@ -294,6 +294,12 @@ void Hardware::stop() {
 
 u32 Hardware::mmio_read(u32 addr, u32 size) {
   std::lock_guard lock(mutex_);
+  if ((addr >> 24) == 0xC8) {
+    const u32 v = on_efb_read ? on_efb_read(addr & ~3u) : 0;
+    if (size == 4) return v;
+    if (size == 2) return (v >> ((addr & 2) ? 0 : 16)) & 0xFFFF;
+    return (v >> (8 * (3 - (addr & 3)))) & 0xFF;
+  }
   const u32 off = addr - kIoBase;
   for (const Mapping& m : mappings_)
     if (off >= m.base && off < m.base + m.size) return m.device->read(off - m.base, size);
@@ -303,6 +309,10 @@ u32 Hardware::mmio_read(u32 addr, u32 size) {
 
 void Hardware::mmio_write(u32 addr, u32 value, u32 size) {
   std::lock_guard lock(mutex_);
+  if ((addr >> 24) == 0xC8) {
+    if (on_efb_write) on_efb_write(addr & ~3u, value);
+    return;
+  }
   const u32 off = addr - kIoBase;
   for (const Mapping& m : mappings_) {
     if (off >= m.base && off < m.base + m.size) {

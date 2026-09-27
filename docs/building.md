@@ -90,6 +90,11 @@ Environment variables for debugging:
 | `OPENGP_LOG_EXI=<n>` / `OPENGP_LOG_SI=<n>` | the first *n* EXI / SI transfers |
 | `OPENGP_LOG_JVS=1` | the JVS I/O protocol |
 | `OPENGP_GPU_DEBUG=1` | enables the GPU API's validation (needs the Vulkan SDK's validation layers) |
+| `OPENGP_GX_DUMP=<n>` | every draw (with its pipeline state), texture, EFB copy and clear of frame *n* |
+
+After a crash, the launcher prints the faulting address (and the guest address, if the access
+was into guest memory) and a backtrace of `module+offset` entries. Resolve them with
+`llvm-symbolizer --obj=build/<preset>/games/mkgp2/opengp-mkgp2.exe --relative-address <offset>...`.
 
 ## Build options
 

@@ -175,8 +175,30 @@ The game's `main` is at `0x800AC27C`.
 7. The main loop runs at 60 Hz, drawing about 160 primitives a frame and copying each frame to
    the external framebuffer.
 
-What the game shows (attract mode, or a hardware-check error) can only be seen once frames are
-rendered (milestone 4).
+### What it shows (milestone 4)
+
+With frames rendered, the start-up sequence is:
+1. **Device Check**: HANDLE, BUTTON, CARD and CAMERA, each "CHECKING" then "OK".
+2. **LINK**: "PCB ID : 1 OK" while it looks for linked cabinets (IDs 2-4) for 60 seconds.
+3. **Attract mode**: race footage, character introductions, "Please insert 1 coin(s)".
+
+What it needed:
+- **Camera**: the NamCam2 is an IP camera on the media board's network ("CAMERA IP INITIALIZE
+  WAIT"). Sockets are not emulated, so the check ends in "CAMERA ERROR / Please call an
+  attendant". The game can run without a camera: byte `0x25` of its settings block
+  (`0x805986C0`) is "camera use", and when it is 0 the check is skipped. `recomp.toml` patches
+  the settings defaults (`0x80073BD8`) to 0. Settings live in the baseboard's backup memory
+  (`user/tribackup_GGPE02.bin`): a backup written with the camera on keeps it on, so delete that
+  file once to get the new default.
+- **Fonts**: the LINK screen's text uses the SDK's `OSInitFont`, which reads the system font
+  from the boot ROM over EXI. Without it the game crashes on a null font. The IPL device serves
+  free replacement fonts (`thirdparty/gc-fonts`), or the fonts from a boot ROM dump in
+  `user/IPL.bin`.
+- **EFB reads**: attract mode reads the EFB from the CPU (`0xC8000000`: depth peeks, likely
+  for lens flares). These go through the GPU: everything drawn so far is rendered and the EFB
+  read back, and cached until the next draw.
+- **Spurious decrementer**: the SDK's `DecrementerExceptionCallback` calls `OSLoadContext`
+  early when no alarm is due. `OSLoadContext` must not return there (see `os/threads.h`).
 
 Notes:
 - The `sc` instructions at the end of `DCFlushRange` and similar functions only synchronise the

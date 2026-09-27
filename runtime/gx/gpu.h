@@ -37,6 +37,10 @@ class Gpu : public Sink {
   u64 frames() const { return copies_.load(std::memory_order_relaxed); }  // EFB copies
   u64 draws() const { return draws_.load(std::memory_order_relaxed); }
 
+  // CPU access to the EFB (0xC8000000-0xC8FFFFFF).
+  u32 efb_read(u32 address) { return frontend_.efb_read(address, pe_regs_[0x08 / 2] & 3); }
+  void efb_write(u32 address, u32 value) { frontend_.efb_write(address, value); }
+
   // Where rendered frames go (nullptr: register state only, nothing drawn).
   void set_output(FrameOutput* output) { frontend_.set_output(output); }
   Frontend& frontend() { return frontend_; }

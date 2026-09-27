@@ -26,6 +26,7 @@ const char* access_kind_name(AccessKind k) {
 
 AccessKind classify_address(u32 ea) {
   if ((ea >> 16) == 0xCC00) return (ea & 0xFFFFF000) == 0xCC008000 ? AccessKind::GatherPipe : AccessKind::Mmio;
+  if ((ea >> 24) == 0xC8) return AccessKind::Mmio;  // the CPU's window onto the EFB
   // MEM1 (up to the 64 MiB Dolphin allows), both views, and the locked cache.
   if ((ea >= 0x80000000 && ea < 0x84000000) || (ea >= 0xC0000000 && ea < 0xC4000000) ||
       (ea >= 0xE0000000 && ea < 0xE0004000))

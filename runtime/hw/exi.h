@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "hw/hardware.h"
 
@@ -36,11 +37,14 @@ class ExiDevice {
 // The IPL chip: RTC, SRAM (64 bytes of settings) and the debug UART.
 class IplDevice : public ExiDevice {
  public:
-  IplDevice();
+  // The boot ROM holds the system fonts: from `user_dir`/IPL.bin (a dump) if
+  // present, else free replacements.
+  explicit IplDevice(const std::string& user_dir);
   void set_cs(bool selected) override;
   void transfer_byte(u8& byte) override;
 
  private:
+  std::vector<u8> rom_;
   std::array<u8, 0x44> sram_{};  // RTC (4 bytes) + 64 bytes of settings
   u32 command_ = 0;
   u32 command_bytes_ = 0;

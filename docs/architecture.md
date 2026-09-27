@@ -105,7 +105,7 @@ Loads and stores go to one of four places:
 | Kind | Addresses | Emitted as |
 |------|-----------|------------|
 | `Ram` | MEM1 (`0x80000000`, `0xC0000000`) | Direct big-endian access to host memory |
-| `Mmio` | Hardware registers (`0xCC000000`–`0xCC007FFF`) | Runtime MMIO handler |
+| `Mmio` | Hardware registers (`0xCC000000`–`0xCC007FFF`) and the CPU's window onto the EFB (`0xC8000000`–`0xC8FFFFFF`) | Runtime MMIO handler |
 | `GatherPipe` | Write-gather pipe (`0xCC008000`) | Appended to the GPU FIFO |
 | `Checked` | Anything not proven to be RAM | Cheap address check, then one of the above |
 

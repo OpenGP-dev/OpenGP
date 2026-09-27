@@ -11,6 +11,8 @@
 *.img
 *.nand
 *.bin
+# ...except the free replacement boot ROM fonts
+!/thirdparty/gc-fonts/*.bin
 *.gdi
 *.chd
 *.rvz

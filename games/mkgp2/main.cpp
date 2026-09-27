@@ -27,6 +27,7 @@
 #include "disc/disc.h"
 #include "hw/vi.h"
 #include "machine.h"
+#include "os/crash.h"
 #include "ppc/hooks.h"
 #include "ppc/trace.h"
 #include "ppc_recomp_shared.h"
@@ -160,6 +161,8 @@ int main(int argc, char** argv) {
   ppc::g_hooks.fatal = [](const char* message) {
     std::fprintf(stderr, "[opengp] fatal: %s\n", message);
   };
+  static const auto status_on_crash = print_status;
+  os::install_crash_handler(machine.base(), [] { status_on_crash("crash"); });
 
   std::thread([timeout_s, status_s, print_status] {
     using clock = std::chrono::steady_clock;

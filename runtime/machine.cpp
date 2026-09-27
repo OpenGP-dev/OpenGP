@@ -49,6 +49,8 @@ bool Machine::boot(const std::string& image_path, os::BootResult* boot, std::str
   h.map(0x0000, 0x1000, gpu_->make_cp_device());
   h.map(0x1000, 0x1000, gpu_->make_pe_device());
   h.on_gather_burst = [gpu = gpu_.get()] { gpu->on_gather_burst(); };
+  h.on_efb_read = [gpu = gpu_.get()](u32 addr) { return gpu->efb_read(addr); };
+  h.on_efb_write = [gpu = gpu_.get()](u32 addr, u32 value) { gpu->efb_write(addr, value); };
   h.map(0x2000, 0x1000, std::make_unique<hw::ViDevice>(h));
   h.map(0x4000, 0x1000, std::make_unique<hw::RegisterFile>(h, "MI", 0x80, 8));
   h.map(0x5000, 0x1000, std::make_unique<hw::DspDevice>(h));

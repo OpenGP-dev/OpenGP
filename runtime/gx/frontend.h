@@ -49,6 +49,12 @@ class Frontend {
   void indexed_load(u8 opcode, u32 value, const u32* cp);
   void draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertices, const u32* cp);
 
+  // CPU access to the EFB (0xC8000000-0xC8FFFFFF). Reads render everything
+  // so far and read the EFB back (cached until the next draw).
+  // `alpha_mode`: PE alpha read mode (0: alpha 00, 1: FF, 2: as stored).
+  u32 efb_read(u32 address, u32 alpha_mode);
+  void efb_write(u32 address, u32 value);
+
   u32 bp(u8 reg) const { return bp_[reg]; }
   const XfUnit& xf() const { return xf_; }
   u64 frames() const { return frames_; }
@@ -80,6 +86,10 @@ class Frontend {
   FrameOutput* output_ = nullptr;
   std::unique_ptr<Frame> frame_;
   u64 frames_ = 0;
+  // OPENGP_GX_DUMP=<frame>: log that frame's draws, copies and clears.
+  u64 dump_frame_ = ~0ull;
+  bool dumping_ = false;
+  u32 dumped_state_ = ~0u;
 
   // Registers
   std::array<u32, 256> bp_{};
@@ -119,6 +129,10 @@ class Frontend {
   std::unordered_map<u32, CopiedTexture> copies_;
   u32 next_handle_ = 1;
   std::vector<u32> scratch_;
+
+  // EFB contents read back for peeks; dropped when the EFB changes.
+  std::shared_ptr<EfbReadback> efb_color_, efb_depth_;
+  void efb_changed() { efb_color_.reset(), efb_depth_.reset(); }
 };
 
 }  // namespace gx

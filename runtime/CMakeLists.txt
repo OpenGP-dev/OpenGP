@@ -32,6 +32,7 @@ add_library(opengp_machine STATIC
   hw/vi.cpp
   machine.cpp
   os/boot.cpp
+  os/crash.cpp
   os/printf.cpp
   os/threads.cpp
   triforce/baseboard.cpp
@@ -42,6 +43,19 @@ add_library(opengp_machine STATIC
   triforce/mkgp.cpp
 )
 target_include_directories(opengp_machine PUBLIC .)
+
+# The boot ROM's fonts (free replacements; see thirdparty/gc-fonts), embedded.
+set(font_dir ${PROJECT_SOURCE_DIR}/thirdparty/gc-fonts)
+foreach(font western japanese)
+  set(out ${CMAKE_CURRENT_BINARY_DIR}/ipl_font_${font}.cpp)
+  add_custom_command(
+    OUTPUT ${out}
+    COMMAND ${CMAKE_COMMAND} -DINPUT=${font_dir}/font_${font}.bin -DOUTPUT=${out} -DNAME=kIplFont_${font}
+            -P ${PROJECT_SOURCE_DIR}/cmake/embed.cmake
+    DEPENDS ${font_dir}/font_${font}.bin ${PROJECT_SOURCE_DIR}/cmake/embed.cmake
+    VERBATIM)
+  target_sources(opengp_machine PRIVATE ${out})
+endforeach()
 find_package(Threads REQUIRED)
 target_link_libraries(opengp_machine
   PUBLIC ppc_runtime Threads::Threads

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // What the GX front end hands to the renderer: one Frame per displayed
-// frame (it ends with a copy to the external framebuffer). A frame holds
+// frame (it ends with a copy to the external framebuffer), or a partial one
+// when the CPU needs to read the EFB. A frame holds
 // fully transformed vertices, the pixel pipeline state of each draw as
 // uniforms for the TEV ubershader, texture uploads and an ordered list of
 // commands: draws, EFB clears and EFB copies.
@@ -10,7 +11,9 @@
 // and rendered on another thread without sharing any GX state.
 #pragma once
 
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 #include "gx/regs.h"
@@ -116,6 +119,32 @@ struct Command {
   u32 index;  // into draws, clears or copies
 };
 
+// A request to read the whole EFB back once a frame has been rendered (for
+// CPU reads of the EFB, "peeks"). The guest thread waits for it.
+class EfbReadback {
+ public:
+  explicit EfbReadback(bool depth) : depth(depth) {}
+  const bool depth;
+  // kEfbWidth * kEfbHeight values: RGBA8 colours (red in the lowest byte)
+  // or 24-bit depths. Filled by the renderer before complete().
+  std::vector<u32> pixels;
+
+  void complete() {
+    std::lock_guard lock(mutex_);
+    done_ = true;
+    cv_.notify_all();
+  }
+  void wait() {
+    std::unique_lock lock(mutex_);
+    cv_.wait(lock, [this] { return done_; });
+  }
+
+ private:
+  std::mutex mutex_;
+  std::condition_variable cv_;
+  bool done_ = false;
+};
+
 struct Frame {
   std::vector<Vertex> vertices;
   std::vector<u32> indices;
@@ -130,7 +159,8 @@ struct Frame {
   std::vector<u32> releases;  // texture handles no longer used (destroy after this frame)
   u32 xfb = 0;                // XFB copy to display (texture handle), 0 if none
   u32 xfb_width = 0, xfb_height = 0;
-  u64 number = 0;
+  u64 number = 0;             // displayed frames before this one (partial frames share the number)
+  std::shared_ptr<EfbReadback> readback;  // read the EFB back after this frame, if set
 };
 
 // Receives finished frames (called on the thread that runs guest code).
