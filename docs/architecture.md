@@ -261,17 +261,38 @@ Ported from Dolphin; see [triforce.md](triforce.md):
 - the baseboard on SI: JVS I/O board, steering wheel, magnetic card reader;
 - the I/O ports that map player controls onto cabinet inputs.
 
-### GPU front end (`runtime/gx/`)
+### GPU (`runtime/gx/`, `runtime/video/`)
 
 The command processor reads the GX FIFO as the CPU fills it, and a decoder walks the command
 stream: CP/XF/BP register loads, display list calls, primitives. The pixel engine raises the
-draw-done and token interrupts that games wait on. Nothing is rendered yet.
+draw-done and token interrupts that games wait on.
+
+Rendering is split in two, with plain data (`gx::Frame`, `runtime/gx/frame.h`) in between:
+
+- **Front end** (`gx::Frontend`, on the guest thread). It keeps the BP, XF and TMEM state and
+  does everything that needs guest memory at draw time:
+  - Vertices are loaded (`vertex_loader.cpp`) and transformed on the CPU (`transform.cpp`,
+    ported from Dolphin's software renderer): matrices, projection, lighting, texture coordinate
+    generation, culling. The host GPU gets clip-space positions, lit colours and texture
+    coordinates, so its vertex shader only passes them through.
+  - Textures are decoded to RGBA8 (`texture.cpp`) and cached by content hash.
+  - Each draw's pixel pipeline state becomes the uniforms of one TEV ubershader plus a small
+    pipeline key (blending, depth).
+  - EFB copies stay on the GPU. A copy's texture is registered at its destination address, and
+    a later texture read there uses it for as long as the memory there is unchanged (copies never
+    write guest memory). A copy to the XFB ends the frame.
+- **Renderer** (`video::Renderer`, on the main thread, which owns the window). It runs the
+  frames through SDL3's GPU API (Vulkan). The EFB is a colour and depth render target (640x528
+  times the internal resolution scale). `shaders/tev.frag` is the TEV ubershader, ported from
+  Dolphin's, with its integer arithmetic. The shaders are GLSL, compiled to SPIR-V at build time.
+
+A queue of at most two frames between the two paces the game if rendering falls behind.
 
 ## What comes next
 
 | Area | Plan |
 |------|------|
-| GPU | Vertex loader, texture decoders, one TEV ubershader, EFB and XFB copies; backend SDL3 GPU |
+| GPU | Remaining GX features as games need them (depth textures, z-freeze, destination alpha with blending, logic ops); Metal |
 | Input | Keyboard and controller mapping onto the cabinet controls (`Machine::set_controls`) |
 | Audio | The game's MusyX DSP microcode, run by HLE or LLE |
 | Network | The media board's socket API, for linking cabinets |

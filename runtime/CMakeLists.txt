@@ -18,7 +18,11 @@ target_link_libraries(ppc_runtime
 add_library(opengp_machine STATIC
   disc/disc.cpp
   gx/decoder.cpp
+  gx/frontend.cpp
   gx/gpu.cpp
+  gx/texture.cpp
+  gx/transform.cpp
+  gx/vertex_loader.cpp
   hw/ai.cpp
   hw/di.cpp
   hw/dsp.cpp
@@ -44,4 +48,8 @@ target_link_libraries(opengp_machine
   PRIVATE opengp_warnings)
 if(WIN32)
   target_link_libraries(opengp_machine PRIVATE winmm)
+endif()
+
+if(OPENGP_BUILD_VIDEO)
+  add_subdirectory(video)
 endif()

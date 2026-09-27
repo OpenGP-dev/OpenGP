@@ -12,9 +12,10 @@ modern features such as higher resolutions, widescreen and remappable controls.
 
 > **Status: early development, not playable yet.** Milestones 1 to 3 are done. Mario Kart Arcade
 > GP 2 (7,612 functions) recompiles, boots from its disc image through the emulated Triforce
-> hardware (media board, baseboard, JVS I/O, card reader), and runs its main loop at 60 Hz. It
-> renders about 55 frames a second, but nothing is drawn on screen yet: that is milestone 4. See
-> the [roadmap](#roadmap).
+> hardware (media board, baseboard, JVS I/O, card reader), and runs its main loop at 60 Hz.
+> Milestone 4 (graphics) is under way: the game's frames are rendered in a window (Vulkan), and it
+> currently stops at its start-up device check, waiting for the camera. See the
+> [roadmap](#roadmap).
 
 ## How it works
 
@@ -33,7 +34,8 @@ your GGPE02.iso ─extract─> main.dol ─decomp-toolkit─> symbols.txt
 | Gekko ISA | `common/gekko/` | Decoder, disassembler and encoder for every Gekko instruction, including paired singles |
 | Recompiler | `tools/gekkorecomp/` | Turns a DOL plus a symbol list into C++, one C++ function per guest function |
 | CPU runtime | `runtime/ppc/` | Register context, guest memory, instruction semantics, interpreter fallback, indirect-call dispatch |
-| Machine | `runtime/hw/`, `runtime/os/`, `runtime/triforce/`, `runtime/gx/` | Hardware models (interrupts, timers, VI, DSP, AI, SI, EXI, DI), boot and guest threads, the Triforce boards, and the GPU front end |
+| Machine | `runtime/hw/`, `runtime/os/`, `runtime/triforce/`, `runtime/gx/` | Hardware models (interrupts, timers, VI, DSP, AI, SI, EXI, DI), boot and guest threads, the Triforce boards, and the GPU (command processor, vertex loading and transform, textures, EFB copies) |
+| Renderer | `runtime/video/` | SDL3 GPU renderer: the TEV ubershader, EFB, presenting |
 | Games | `games/` | Per-game symbol maps, recompiler config, patches and launcher |
 | Scripts | `tools/*.py`, `tools/devshell.ps1` | Game setup (extract and verify `main.dol`), SDK signature matching, Windows build shell |
 | Tests | `tests/` | Decoder tests, known-answer semantics tests, and differential tests (interpreter vs recompiled code) |

@@ -19,6 +19,10 @@ opengp_generated_code_options(mkgp2_recomp)
 
 add_executable(opengp-mkgp2 main.cpp ${PROJECT_SOURCE_DIR}/games/common/sdk_hle.cpp)
 target_link_libraries(opengp-mkgp2 PRIVATE mkgp2_recomp opengp_machine opengp_warnings)
+if(TARGET opengp_video)
+  target_link_libraries(opengp-mkgp2 PRIVATE opengp_video)
+  target_compile_definitions(opengp-mkgp2 PRIVATE OPENGP_VIDEO)
+endif()
 target_compile_definitions(opengp-mkgp2 PRIVATE
   OPENGP_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
   OPENGP_SYMBOLS="${CMAKE_CURRENT_SOURCE_DIR}/config/symbols.txt")

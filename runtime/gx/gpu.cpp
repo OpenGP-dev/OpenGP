@@ -49,12 +49,6 @@ constexpr u16 PE_FINISH_ENABLE = 1u << 1;
 constexpr u16 PE_TOKEN_CLEAR = 1u << 2;
 constexpr u16 PE_FINISH_CLEAR = 1u << 3;
 
-// BP registers.
-constexpr u8 BP_SET_DRAW_DONE = 0x45;
-constexpr u8 BP_PE_TOKEN_INT = 0x47;
-constexpr u8 BP_PE_TOKEN = 0x48;
-constexpr u8 BP_EFB_COPY = 0x52;
-
 constexpr u32 kFifoPointerMask = 0x03FFFFE0;
 
 // Reads/writes the low or high half of a 32-bit register.
@@ -108,11 +102,16 @@ class PeDevice : public hw::Device {
   Gpu& gpu_;
 };
 
-Gpu::Gpu(hw::Hardware& hw) : hw_(hw), decoder_(*this, &Gpu::read_display_list, this) {}
+Gpu::Gpu(hw::Hardware& hw)
+    : hw_(hw), frontend_(&Gpu::read_memory, this), decoder_(*this, &Gpu::read_display_list, this) {}
 Gpu::~Gpu() = default;
 
 std::unique_ptr<hw::Device> Gpu::make_cp_device() { return std::make_unique<CpDevice>(hw_, *this); }
 std::unique_ptr<hw::Device> Gpu::make_pe_device() { return std::make_unique<PeDevice>(hw_, *this); }
+
+const u8* Gpu::read_memory(void* context, u32 address, u32 size) {
+  return static_cast<Gpu*>(context)->hw_.ram(address, size);
+}
 
 std::span<const u8> Gpu::read_display_list(void* context, u32 address, u32 size) {
   auto* gpu = static_cast<Gpu*>(context);
@@ -272,13 +271,17 @@ void Gpu::bp_write(u8 reg, u32 value) {
       break;
     case BP_PE_TOKEN_INT: signal(false, true, static_cast<u16>(value)); break;
     case BP_PE_TOKEN: signal(false, false, static_cast<u16>(value)); break;
-    case BP_EFB_COPY:
+    case BP_TRIGGER_EFB_COPY:
       if (value & (1u << 14)) copies_.fetch_add(1, std::memory_order_relaxed);  // copy to the XFB
       break;
     default: break;
   }
+  frontend_.bp_write(reg, value);
 }
 
-void Gpu::draw(u8, u8, u16, std::span<const u8>) { draws_.fetch_add(1, std::memory_order_relaxed); }
+void Gpu::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertices) {
+  draws_.fetch_add(1, std::memory_order_relaxed);
+  frontend_.draw(primitive, vat, count, vertices, decoder_.cp_regs());
+}
 
 }  // namespace gx

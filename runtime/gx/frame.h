@@ -1,0 +1,143 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// What the GX front end hands to the renderer: one Frame per displayed
+// frame (it ends with a copy to the external framebuffer). A frame holds
+// fully transformed vertices, the pixel pipeline state of each draw as
+// uniforms for the TEV ubershader, texture uploads and an ordered list of
+// commands: draws, EFB clears and EFB copies.
+//
+// Everything here is plain data, so frames can be built on the guest thread
+// and rendered on another thread without sharing any GX state.
+#pragma once
+
+#include <memory>
+#include <vector>
+
+#include "gx/regs.h"
+
+namespace gx {
+
+// A transformed vertex, in the layout the renderer's vertex shader reads.
+struct Vertex {
+  float pos[4];     // clip space: x and y in host NDC (+y up) times w; z = EFB depth (0..1) times w
+  u32 color[2];     // lit colours, RGBA8 (red in the lowest byte)
+  float tex[8][3];  // texture coordinates s, t, q (not yet scaled to texels)
+};
+static_assert(sizeof(Vertex) == 120);
+
+// Uniforms of the TEV ubershader (std140: every member is 16-byte aligned).
+// Field meanings follow Dolphin's pixel shader constants.
+struct PixelUniforms {
+  s32 colors[4][4];     // TEV registers PREV, C0, C1, C2 (s11 values)
+  s32 konst[32][4];     // konst colour table, indexed by the konst selection
+  s32 alpha_ref[4];     // x: alpha test reference 0, y: reference 1
+  s32 texsize[8][4];    // per texture map: x width, y height
+  s32 tcscale[8][4];    // per texture coordinate: x/y texel scale (SU_SSIZE/SU_TSIZE + 1)
+  s32 indscale[2][4];   // indirect texture coordinate scale shifts
+  s32 indmtx[6][4];     // indirect matrices: rows xyz, w shift
+  s32 fog_color[4];
+  s32 fog_i[4];         // y: B magnitude, w: B shift
+  float fog_f[4];       // x: A, y: C, z: range centre, w: viewport width
+  float fog_range[3][4];  // range adjustment table (10 values)
+  u32 stages[16][4];    // x: colour combiner, y: alpha combiner, z: indirect command, w: iref (per indirect stage)
+  u32 orders[8][4];     // x: TEV order (two stages), y: konst/swap select
+  u32 misc[4];          // x: genmode, y: alpha test, z: fog param 3, w: fog range base
+  u32 misc2[4];         // x: dst alpha, y: rgba6 EFB, z: dither, w: logic op (bit 4 enable, bits 0-3 mode)
+};
+static_assert(sizeof(PixelUniforms) % 16 == 0);
+
+// Host pipeline state for a draw, packed into one integer (see the
+// accessors). Everything not listed is handled in the shaders.
+struct PipelineKey {
+  u32 bits = 0;
+  // blend: bit 0 enable, 1-3 src, 4-6 dst, 7-9 src alpha, 10-12 dst alpha,
+  //        13 subtract, 14 subtract alpha, 15 colour write, 16 alpha write
+  // depth: bit 17 test, 18-20 function, 21 write
+  // bit 22: early depth test (depth is tested and written before the alpha test)
+  //
+  // Blend factors use the GX encoding: 0 zero, 1 one, 2 other colour, 3
+  // inverse other colour, 4 src alpha, 5 inverse src alpha, 6 dst alpha, 7
+  // inverse dst alpha ("other" is dst for the source factor, src for the dest).
+  bool operator==(const PipelineKey&) const = default;
+};
+
+struct TextureBinding {
+  u32 texture = 0;  // texture handle; 0 = nothing bound
+  u32 mode0 = 0;    // TX_SETMODE0: wrap, filter, LOD bias
+  u32 mode1 = 0;    // TX_SETMODE1: LOD range
+  bool operator==(const TextureBinding&) const = default;
+};
+
+struct DrawState {
+  PipelineKey pipeline;
+  u32 uniforms = 0;  // index into Frame::uniforms
+  TextureBinding textures[8];
+  s32 scissor[4] = {};  // x, y, width, height in EFB pixels
+  bool operator==(const DrawState&) const = default;
+};
+
+struct DrawCmd {
+  u32 state;  // index into Frame::states
+  u32 first_index, index_count;
+};
+
+// Clears a rectangle of the EFB (after a copy with the clear bit set).
+struct ClearCmd {
+  u32 x, y, width, height;
+  bool color, alpha, depth;
+  u32 rgba;     // red in the lowest byte
+  float z;      // 0..1
+};
+
+// Copies a rectangle of the EFB to a texture (or the external framebuffer),
+// converting it to what the game would read back from memory.
+struct CopyCmd {
+  u32 dest;                     // texture handle (the renderer creates it on first use)
+  u32 src_x, src_y, src_width, src_height;  // EFB rectangle
+  u32 width, height;            // destination size (half scale / y scale applied)
+  CopyFormat format;
+  bool depth;                   // copy the depth buffer (EFB format Z24)
+  bool intensity;               // convert RGB to YUV (intensity formats)
+  bool efb_has_alpha;           // EFB format RGBA6 (otherwise alpha reads as 255)
+  bool clamp_top, clamp_bottom;
+  float gamma;                  // XFB copies: 1.0, 1.7 or 2.2
+  u32 filter[3];                // vertical filter weights (rows above, current, below; sum 64 = unity)
+};
+
+// A texture decoded from guest memory: RGBA8, all mip levels back to back.
+struct TextureUpload {
+  u32 handle;
+  u32 width, height, levels;
+  std::size_t offset;  // into Frame::texels
+};
+
+struct Command {
+  enum class Type : u8 { Draw, Clear, Copy } type;
+  u32 index;  // into draws, clears or copies
+};
+
+struct Frame {
+  std::vector<Vertex> vertices;
+  std::vector<u32> indices;
+  std::vector<PixelUniforms> uniforms;
+  std::vector<DrawState> states;
+  std::vector<DrawCmd> draws;
+  std::vector<ClearCmd> clears;
+  std::vector<CopyCmd> copies;
+  std::vector<Command> commands;
+  std::vector<TextureUpload> uploads;  // created before the commands run
+  std::vector<u8> texels;
+  std::vector<u32> releases;  // texture handles no longer used (destroy after this frame)
+  u32 xfb = 0;                // XFB copy to display (texture handle), 0 if none
+  u32 xfb_width = 0, xfb_height = 0;
+  u64 number = 0;
+};
+
+// Receives finished frames (called on the thread that runs guest code).
+class FrameOutput {
+ public:
+  virtual ~FrameOutput() = default;
+  virtual void submit(std::unique_ptr<Frame> frame) = 0;
+};
+
+}  // namespace gx

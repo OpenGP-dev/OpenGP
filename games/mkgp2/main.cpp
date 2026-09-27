@@ -3,18 +3,24 @@
 // OpenGP launcher for Mario Kart Arcade GP 2.
 //
 // Boots the disc image the way the Triforce boot ROM would, installs the
-// recompiled game and runs it. The hardware is only partly emulated so far
-// (milestone 3); a status line shows how far the game gets.
+// recompiled game and runs it in a window. The game runs on its own thread;
+// the main thread owns the window and renders the frames it produces.
 //
-//   opengp-mkgp2 [--iso PATH] [--timeout SECONDS] [--status SECONDS]
+//   opengp-mkgp2 [--iso PATH] [--timeout SECONDS] [--status SECONDS] [--scale N]
+//                [--headless] [--no-video] [--screenshot FRAME]...
+//
+// --headless renders without a window (for screenshots); --no-video skips
+// rendering entirely. F12 saves a screenshot to user/screenshots/.
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <set>
 #include <string>
 #include <thread>
 
@@ -24,6 +30,14 @@
 #include "ppc/hooks.h"
 #include "ppc/trace.h"
 #include "ppc_recomp_shared.h"
+
+#ifdef OPENGP_VIDEO
+#define SDL_MAIN_HANDLED
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
+
+#include "video/renderer.h"
+#endif
 
 namespace {
 
@@ -63,6 +77,8 @@ std::map<u32, std::string> load_function_names() {
   return names;
 }
 
+std::atomic<unsigned long long> g_rendered{0};
+
 std::string describe(const std::map<u32, std::string>& names, u32 addr) {
   char buf[16];
   std::snprintf(buf, sizeof(buf), "%08X", addr);
@@ -74,17 +90,31 @@ std::string describe(const std::map<u32, std::string>& names, u32 addr) {
 
 int main(int argc, char** argv) {
   std::string image;
-  int timeout_s = 20, status_s = 5;
+  int timeout_s = -1, status_s = 5;
+  unsigned scale = 1;
+  bool headless = false, use_video = true;
+  std::set<u64> screenshots;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     if (a == "--iso" && i + 1 < argc) image = argv[++i];
     else if (a == "--timeout" && i + 1 < argc) timeout_s = std::atoi(argv[++i]);
     else if (a == "--status" && i + 1 < argc) status_s = std::atoi(argv[++i]);
+    else if (a == "--scale" && i + 1 < argc) scale = static_cast<unsigned>(std::max(1, std::atoi(argv[++i])));
+    else if (a == "--screenshot" && i + 1 < argc) screenshots.insert(std::strtoull(argv[++i], nullptr, 10));
+    else if (a == "--headless") headless = true;
+    else if (a == "--no-video") use_video = false;
     else {
-      std::fprintf(stderr, "usage: opengp-mkgp2 [--iso PATH] [--timeout SECONDS] [--status SECONDS]\n");
+      std::fprintf(stderr,
+                   "usage: opengp-mkgp2 [--iso PATH] [--timeout SECONDS] [--status SECONDS] [--scale N]\n"
+                   "                    [--headless] [--no-video] [--screenshot FRAME]...\n");
       return 2;
     }
   }
+#ifndef OPENGP_VIDEO
+  use_video = false;
+#endif
+  // With a window the game runs until it is closed; otherwise for 20 seconds.
+  if (timeout_s < 0) timeout_s = (use_video && !headless) ? 0 : 20;
   if (image.empty()) image = find_image();
   if (image.empty()) {
     std::fprintf(stderr, "No %s image found in ISO/ or private/ (see docs/game-files.md), or pass --iso.\n",
@@ -110,10 +140,12 @@ int main(int argc, char** argv) {
   static const auto names = load_function_names();
   auto print_status = [](const char* why) {
     auto* vi = machine.hardware().device<hw::ViDevice>();
-    std::fprintf(stderr, "[opengp] %s: %llu retraces, %llu frames, %llu draws, %d guest threads, PI cause %05X mask %05X\n",
+    std::fprintf(stderr,
+                 "[opengp] %s: %llu retraces, %llu frames (%llu rendered), %llu draws, %d guest threads, "
+                 "PI cause %05X mask %05X\n",
                  why, static_cast<unsigned long long>(vi ? vi->retrace_count() : 0),
-                 static_cast<unsigned long long>(machine.gpu().frames()),
-                 static_cast<unsigned long long>(machine.gpu().draws()), machine.threads().thread_count(),
+                 static_cast<unsigned long long>(machine.gpu().frames()), g_rendered.load(),
+                 static_cast<unsigned long long>(machine.gpu().draws()), machine.thread_count(),
                  machine.hardware().interrupt_cause(), machine.hardware().interrupt_mask());
     for (ppc::TraceStack* s : ppc::trace_all_stacks()) {
       const auto frames = ppc::trace_snapshot(*s);
@@ -131,7 +163,7 @@ int main(int argc, char** argv) {
 
   std::thread([timeout_s, status_s, print_status] {
     using clock = std::chrono::steady_clock;
-    const auto deadline = clock::now() + std::chrono::seconds(timeout_s);
+    const auto deadline = timeout_s > 0 ? clock::now() + std::chrono::seconds(timeout_s) : clock::time_point::max();
     for (;;) {
       auto wake = deadline;
       if (status_s > 0) wake = std::min(wake, clock::now() + std::chrono::seconds(status_s));
@@ -141,9 +173,68 @@ int main(int argc, char** argv) {
         std::fflush(stdout);
         std::_Exit(0);
       }
-      print_status("status");
+      if (status_s > 0) print_status("status");
     }
   }).detach();
+
+#ifdef OPENGP_VIDEO
+  if (use_video) {
+    SDL_SetMainReady();
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+      std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
+      return 1;
+    }
+    SDL_Window* window = nullptr;
+    if (!headless) {
+      window = SDL_CreateWindow("OpenGP - Mario Kart Arcade GP 2", 1280, 960, SDL_WINDOW_RESIZABLE);
+      if (!window) {
+        std::fprintf(stderr, "could not create a window: %s\n", SDL_GetError());
+        return 1;
+      }
+    }
+    static video::Renderer renderer;
+    if (!renderer.init(window, scale, &error)) {
+      std::fprintf(stderr, "renderer: %s\n", error.c_str());
+      return 1;
+    }
+    std::printf("  video:  %s, %ux internal resolution%s\n", renderer.driver(), scale, headless ? ", headless" : "");
+    std::fflush(stdout);
+
+    static video::FrameQueue queue;
+    machine.gpu().set_output(&queue);
+    std::thread([] {
+      machine.run();
+      std::fprintf(stderr, "[opengp] entry point returned\n");
+    }).detach();
+
+    const fs::path shot_dir = fs::path(OPENGP_SOURCE_DIR) / "user" / "screenshots";
+    bool shot_requested = false;
+    for (;;) {
+      SDL_Event e;
+      while (SDL_PollEvent(&e)) {
+        if (e.type == SDL_EVENT_QUIT) {
+          print_status("window closed");
+          std::fflush(stdout);
+          std::_Exit(0);
+        }
+        if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F12) shot_requested = true;
+      }
+      auto frame = queue.pop(8);
+      if (!frame) continue;
+      const bool shoot = frame->xfb && (shot_requested || screenshots.count(frame->number));
+      video::Image shot;
+      renderer.render(*frame, shoot ? &shot : nullptr);
+      g_rendered.fetch_add(1);
+      if (shoot && shot.width) {
+        std::error_code ec;
+        fs::create_directories(shot_dir, ec);
+        const fs::path path = shot_dir / ("frame_" + std::to_string(frame->number) + ".png");
+        if (video::write_png(path.string(), shot)) std::fprintf(stderr, "[opengp] screenshot: %s\n", path.string().c_str());
+        shot_requested = false;
+      }
+    }
+  }
+#endif
 
   machine.run();
   print_status("entry point returned");

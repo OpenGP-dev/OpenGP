@@ -1,0 +1,144 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// The renderer: draws gx::Frames with SDL3's GPU API (Vulkan, and later
+// D3D12/Metal) and shows their external framebuffer in a window.
+//
+//   * The EFB is a colour + depth render target (640x528, times the
+//     internal resolution scale).
+//   * Draws use one pipeline per blend/depth combination, all with the TEV
+//     ubershader (shaders/tev.frag).
+//   * EFB copies render into textures the frame's draws can then sample;
+//     copies to the XFB are what gets presented.
+//
+// Rendering happens on the thread that owns the window (the main thread).
+// Frames are produced on the guest thread and handed over by FrameQueue.
+#pragma once
+
+#include <condition_variable>
+#include <deque>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+#include "gx/frame.h"
+
+struct SDL_Window;
+struct SDL_GPUDevice;
+struct SDL_GPUTexture;
+struct SDL_GPUSampler;
+struct SDL_GPUShader;
+struct SDL_GPUBuffer;
+struct SDL_GPUTransferBuffer;
+struct SDL_GPUGraphicsPipeline;
+struct SDL_GPUCommandBuffer;
+struct SDL_GPURenderPass;
+
+namespace video {
+
+using namespace gekko;
+
+// An RGBA8 image (screenshots).
+struct Image {
+  u32 width = 0, height = 0;
+  std::vector<u8> rgba;
+};
+
+// Hands frames from the guest thread to the render thread. submit() blocks
+// while the renderer is `max_pending` frames behind, which paces the game.
+class FrameQueue final : public gx::FrameOutput {
+ public:
+  explicit FrameQueue(std::size_t max_pending = 2) : max_pending_(max_pending) {}
+  void submit(std::unique_ptr<gx::Frame> frame) override;
+  // Waits up to `timeout_ms` for a frame; returns nullptr if none came.
+  std::unique_ptr<gx::Frame> pop(int timeout_ms);
+
+ private:
+  std::mutex mutex_;
+  std::condition_variable cv_;
+  std::deque<std::unique_ptr<gx::Frame>> frames_;
+  std::size_t max_pending_;
+};
+
+class Renderer {
+ public:
+  Renderer();
+  ~Renderer();
+  Renderer(const Renderer&) = delete;
+  Renderer& operator=(const Renderer&) = delete;
+
+  // `window` may be null: frames are then rendered off screen (for
+  // screenshots). `scale` is the internal resolution (1 = native).
+  bool init(SDL_Window* window, u32 scale, std::string* error);
+
+  // Renders a frame and presents its XFB. If `capture` is given and the
+  // frame has an XFB, it receives the XFB image (at the internal resolution).
+  void render(const gx::Frame& frame, Image* capture = nullptr);
+
+  const char* driver() const;
+
+ private:
+  struct Texture {
+    SDL_GPUTexture* texture = nullptr;
+    u32 width = 0, height = 0;  // host size (EFB copies: scaled)
+  };
+
+  SDL_GPUGraphicsPipeline* tev_pipeline(gx::PipelineKey key);
+  SDL_GPUGraphicsPipeline* clear_pipeline(bool color, bool alpha, bool depth);
+  SDL_GPUSampler* sampler(u32 mode0, u32 mode1);
+  SDL_GPUShader* shader(const u32* code, std::size_t size, bool fragment, u32 samplers, u32 uniforms);
+  bool upload(SDL_GPUCommandBuffer* cmd, const gx::Frame& frame);
+  void begin_efb(SDL_GPUCommandBuffer* cmd);
+  void end_pass();
+  void draw(const gx::Frame& frame, const gx::DrawCmd& d);
+  void clear(const gx::ClearCmd& c);
+  void copy(SDL_GPUCommandBuffer* cmd, const gx::CopyCmd& c);
+  void present(SDL_GPUCommandBuffer* cmd, const Texture& xfb);
+  void capture(SDL_GPUCommandBuffer* cmd, const Texture& xfb, Image* image);
+  void grow_buffer(SDL_GPUBuffer*& buffer, u32& capacity, u32 needed, u32 usage);
+
+  SDL_Window* window_ = nullptr;
+  SDL_GPUDevice* device_ = nullptr;
+  u32 scale_ = 1;
+  u32 efb_width_ = 0, efb_height_ = 0;
+  SDL_GPUTexture* efb_color_ = nullptr;
+  SDL_GPUTexture* efb_depth_ = nullptr;
+  bool efb_initialised_ = false;
+  SDL_GPUTexture* white_ = nullptr;  // bound where no texture is
+
+  SDL_GPUShader* tev_vs_ = nullptr;
+  SDL_GPUShader* tev_fs_ = nullptr;
+  SDL_GPUShader* tev_fs_early_ = nullptr;
+  SDL_GPUShader* fullscreen_vs_ = nullptr;
+  SDL_GPUShader* copy_fs_ = nullptr;
+  SDL_GPUShader* color_fs_ = nullptr;
+  SDL_GPUShader* blit_fs_ = nullptr;
+  SDL_GPUGraphicsPipeline* copy_pipeline_ = nullptr;
+  SDL_GPUGraphicsPipeline* present_pipeline_ = nullptr;
+  SDL_GPUGraphicsPipeline* capture_pipeline_ = nullptr;
+  SDL_GPUSampler* linear_ = nullptr;
+  SDL_GPUSampler* nearest_ = nullptr;
+  std::unordered_map<u32, SDL_GPUGraphicsPipeline*> tev_pipelines_;
+  std::unordered_map<u32, SDL_GPUGraphicsPipeline*> clear_pipelines_;
+  std::unordered_map<u64, SDL_GPUSampler*> samplers_;
+  std::unordered_map<u32, Texture> textures_;
+
+  SDL_GPUBuffer* vertex_buffer_ = nullptr;
+  SDL_GPUBuffer* index_buffer_ = nullptr;
+  u32 vertex_capacity_ = 0, index_capacity_ = 0;
+  SDL_GPUTransferBuffer* transfer_ = nullptr;
+  u32 transfer_capacity_ = 0;
+
+  // Per-frame render state
+  SDL_GPUCommandBuffer* cmd_ = nullptr;
+  SDL_GPURenderPass* pass_ = nullptr;
+  bool pass_is_efb_ = false;
+  SDL_GPUGraphicsPipeline* bound_pipeline_ = nullptr;
+  u32 pushed_uniforms_ = ~0u;
+};
+
+// Writes an RGBA8 image as a PNG file.
+bool write_png(const std::string& path, const Image& image);
+
+}  // namespace video

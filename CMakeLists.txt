@@ -10,6 +10,7 @@ option(OPENGP_BUILD_TESTS "Build the test suite" ON)
 option(OPENGP_BUILD_GAMES "Build the games whose executables are present in orig/" ON)
 option(OPENGP_GENERATED_DEBUG_INFO "Emit debug info for recompiled game code (slow, large)" OFF)
 option(OPENGP_TRACE_CALLS "Track guest call stacks in recompiled code (for debugging)" OFF)
+option(OPENGP_BUILD_VIDEO "Build the renderer (fetches SDL3 and glslang if not installed)" ON)
 
 if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   message(FATAL_ERROR "OpenGP needs GCC or Clang (use clang-cl on Windows): "

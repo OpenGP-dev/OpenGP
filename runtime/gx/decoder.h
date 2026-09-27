@@ -75,6 +75,7 @@ class Decoder {
   std::size_t run(std::span<const u8> data) { return run(data, false); }
 
   u32 cp(u8 reg) const { return cp_[reg]; }
+  const u32* cp_regs() const { return cp_.data(); }
   u32 vertex_size(u8 vat) const;
   u64 commands() const { return commands_; }
   u64 unknown_opcodes() const { return unknown_; }

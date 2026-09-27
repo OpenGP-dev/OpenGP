@@ -5,8 +5,8 @@
 // with the draw-done ("finish") and token interrupts that games wait on.
 //
 // FIFO data is decoded as soon as the CPU writes it (the FIFO is normally
-// linked to the CPU's write-gather pipe). Nothing is rendered yet; register
-// writes and draws go to the decoder's sink.
+// linked to the CPU's write-gather pipe). Register loads and draws go to the
+// rendering front end (gx/frontend.h), which builds frames for the renderer.
 // Based on Dolphin's CommandProcessor.cpp and PixelEngine.cpp (Copyright
 // Dolphin Emulator Project, GPL-2.0-or-later).
 #pragma once
@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "gx/decoder.h"
+#include "gx/frontend.h"
 #include "hw/hardware.h"
 
 namespace gx {
@@ -36,8 +37,14 @@ class Gpu : public Sink {
   u64 frames() const { return copies_.load(std::memory_order_relaxed); }  // EFB copies
   u64 draws() const { return draws_.load(std::memory_order_relaxed); }
 
+  // Where rendered frames go (nullptr: register state only, nothing drawn).
+  void set_output(FrameOutput* output) { frontend_.set_output(output); }
+  Frontend& frontend() { return frontend_; }
+
   // Sink
   void bp_write(u8 reg, u32 value) override;
+  void xf_write(u16 address, std::span<const u8> words) override { frontend_.xf_write(address, words); }
+  void indexed_load(u8 opcode, u32 value) override { frontend_.indexed_load(opcode, value, decoder_.cp_regs()); }
   void draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertices) override;
 
  private:
@@ -58,8 +65,10 @@ class Gpu : public Sink {
   void signal(bool finish, bool token_interrupt, u16 token);
 
   static std::span<const u8> read_display_list(void* context, u32 address, u32 size);
+  static const u8* read_memory(void* context, u32 address, u32 size);
 
   hw::Hardware& hw_;
+  Frontend frontend_;
   Decoder decoder_;
   bool running_ = false;       // guards against re-entry while decoding
   std::vector<u8> pending_;    // FIFO bytes not yet forming a complete command

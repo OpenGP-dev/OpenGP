@@ -57,6 +57,7 @@ class Machine {
   hw::Hardware& hardware() { return *hw_; }
   gx::Gpu& gpu() { return *gpu_; }
   os::ThreadManager& threads() { return *threads_; }
+  int thread_count() const { return threads_ ? threads_->thread_count() : 0; }
   const disc::Image& disc() const { return disc_; }
   ppc::Context& main_context() { return ctx_; }
   u32 entry_point() const { return entry_; }

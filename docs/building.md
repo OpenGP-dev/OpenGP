@@ -38,6 +38,12 @@ then `C:\Program Files\LLVM`, then Visual Studio's bundled Clang.
 MinGW-w64 GCC also works (`$env:CC='gcc'; $env:CXX='g++'; cmake --preset default`), but clang-cl
 is the supported configuration and what CI uses.
 
+The first configure downloads SDL3 and glslang (see `OPENGP_BUILD_VIDEO` below). CMake builds
+that use GnuTLS without a certificate store (the WinLibs/MinGW CMake, for one) fail those
+downloads with "certificate signer not trusted": use Kitware's CMake
+(`winget install Kitware.CMake`), or point CMake at a CA bundle, e.g.
+`cmake --preset clang-cl "-DCMAKE_TLS_CAINFO=C:/Program Files/Git/mingw64/etc/ssl/certs/ca-bundle.crt"`.
+
 ## Linux and macOS
 
 ```sh
@@ -47,20 +53,33 @@ cmake --build --preset default
 ctest --preset default
 ```
 
+For a window on Linux, SDL3 needs the X11 and/or Wayland development packages when it is built
+(e.g. `libx11-dev libxext-dev libwayland-dev libxkbcommon-dev`), and a Vulkan driver at run time.
+
 ## Running
 
 ```sh
-build/<preset>/games/mkgp2/opengp-mkgp2 [--iso PATH] [--timeout SECONDS] [--status SECONDS]
+build/<preset>/games/mkgp2/opengp-mkgp2 [--iso PATH] [--timeout SECONDS] [--status SECONDS] [--scale N]
+                                        [--headless] [--no-video] [--screenshot FRAME]...
 ```
 
 The launcher finds the image in `ISO/` or `private/` (or takes `--iso`), boots it and runs the
-game. There is no window yet (milestone 4). It prints:
+game in a window (Vulkan, through SDL3's GPU API). It prints:
 - the game's `OSReport` output;
-- a status line every `--status` seconds (default 5): retraces, frames and draws so far, guest
-  threads, pending interrupts, and each guest thread's call stack when call tracing is on.
+- a status line every `--status` seconds (default 5; 0 for none): retraces, frames and draws so
+  far, guest threads, pending interrupts, and each guest thread's call stack when call tracing is
+  on.
 
-It stops after `--timeout` seconds (default 20). Files the machine writes (baseboard backup
-memory, media board settings, magnetic cards) go in `user/`, which is gitignored.
+| Option | Effect |
+|--------|--------|
+| `--scale N` | Internal resolution: N times the native 640x528 |
+| `--headless` | Render without a window (for screenshots) |
+| `--no-video` | Do not render at all (only the GPU's registers are emulated) |
+| `--screenshot FRAME` | Save frame number FRAME to `user/screenshots/` (repeatable); F12 does the same while playing |
+| `--timeout SECONDS` | Quit after this long; default: never with a window, 20 seconds otherwise |
+
+Files the machine writes (baseboard backup memory, media board settings, magnetic cards,
+screenshots) go in `user/`, which is gitignored.
 
 Environment variables for debugging:
 
@@ -70,6 +89,7 @@ Environment variables for debugging:
 | `OPENGP_LOG_MEDIABOARD=1` | media board commands |
 | `OPENGP_LOG_EXI=<n>` / `OPENGP_LOG_SI=<n>` | the first *n* EXI / SI transfers |
 | `OPENGP_LOG_JVS=1` | the JVS I/O protocol |
+| `OPENGP_GPU_DEBUG=1` | enables the GPU API's validation (needs the Vulkan SDK's validation layers) |
 
 ## Build options
 
@@ -78,4 +98,5 @@ Environment variables for debugging:
 | `OPENGP_BUILD_TESTS` | `ON` | Build the test suite |
 | `OPENGP_BUILD_GAMES` | `ON` | Build the games whose `main.dol` is present in `orig/` |
 | `OPENGP_GENERATED_DEBUG_INFO` | `OFF` | Emit debug info for recompiled game code (large and slow) |
+| `OPENGP_BUILD_VIDEO` | `ON` | Build the renderer. Needs SDL3 and glslang: installed copies are used if CMake finds them (`SDL3` package, `glslangValidator`), otherwise the pinned releases are downloaded and built |
 | `OPENGP_TRACE_CALLS` | `OFF` | Track each guest thread's call stack in recompiled code, for the launcher's status output (slower) |
