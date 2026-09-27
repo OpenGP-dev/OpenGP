@@ -374,6 +374,11 @@ void ExiBus::write(u32 offset, u32 v, u32 size) {
   }
 }
 
+void ExiBus::baseboard_interrupt(u32 flag) {
+  if (auto* bb = dynamic_cast<BaseboardDevice*>(channels_[0].devices[2].get())) bb->generate_interrupt(flag);
+  update_interrupts();
+}
+
 bool ExiBus::causing_interrupt(int index) {
   Channel& c = channels_[index];
   if (index == 2) {

@@ -58,6 +58,12 @@ class BaseboardDevice : public ExiDevice {
   bool interrupt() override;
   void dma_write(u8* src, u32 size) override;
   void dma_read(u8* dst, u32 size) override;
+  // Raised by the media board when a command completes (`flag`: which one).
+  void generate_interrupt(u32 flag) {
+    interrupt_set_ = true;
+    irq_timer_ = 0;
+    irq_status_ = flag;
+  }
 
  private:
   std::FILE* backup_ = nullptr;
@@ -75,6 +81,8 @@ class ExiBus : public Device {
   u32 read(u32 offset, u32 size) override;
   void write(u32 offset, u32 value, u32 size) override;
   const char* name() const override { return "EXI"; }
+  // Raises the baseboard's interrupt (media board command completion).
+  void baseboard_interrupt(u32 flag);
 
  private:
   struct Channel {

@@ -4,11 +4,14 @@
 
 #include <algorithm>
 
+#include "hw/ai.h"
+#include "hw/di.h"
 #include "hw/dsp.h"
 #include "hw/exi.h"
 #include "hw/si.h"
 #include "hw/vi.h"
 #include "triforce/baseboard.h"
+#include "triforce/mediaboard.h"
 
 namespace opengp {
 
@@ -42,20 +45,31 @@ bool Machine::boot(const std::string& image_path, os::BootResult* boot, std::str
   hw_ = std::make_unique<hw::Hardware>(memory_.base(), mem1);
   hw::Hardware& h = *hw_;
   // Devices not modelled yet keep their registers and log their first accesses.
-  h.map(0x0000, 0x1000, std::make_unique<hw::RegisterFile>(h, "CP", 0x80, 32));
-  h.map(0x1000, 0x1000, std::make_unique<hw::RegisterFile>(h, "PE", 0x80, 32));
+  gpu_ = std::make_unique<gx::Gpu>(h);
+  h.map(0x0000, 0x1000, gpu_->make_cp_device());
+  h.map(0x1000, 0x1000, gpu_->make_pe_device());
+  h.on_gather_burst = [gpu = gpu_.get()] { gpu->on_gather_burst(); };
   h.map(0x2000, 0x1000, std::make_unique<hw::ViDevice>(h));
   h.map(0x4000, 0x1000, std::make_unique<hw::RegisterFile>(h, "MI", 0x80, 8));
   h.map(0x5000, 0x1000, std::make_unique<hw::DspDevice>(h));
-  h.map(0x6000, 0x0400, std::make_unique<hw::RegisterFile>(h, "DI", 0x40, 64));
+  // Triforce: the media board answers the disc interface.
+  auto di = std::make_unique<hw::DiDevice>(h, disc_, true);
+  auto mediaboard = std::make_unique<triforce::MediaBoard>(h, disc_, user_dir_);
+  triforce::MediaBoard* mb = mediaboard.get();
+  di->set_backend(std::move(mediaboard));
+  h.map(0x6000, 0x0400, std::move(di));
   auto si = std::make_unique<hw::SiBus>(h);
   si->attach(0, std::make_unique<triforce::BaseboardSi>(disc_.game_id(), user_dir_, [this] { return controls(); }));
   h.map(0x6400, 0x0400, std::move(si));
   h.map(0x6800, 0x0400, std::make_unique<hw::ExiBus>(h, user_dir_, disc_.game_id()));
-  h.map(0x6C00, 0x0400, std::make_unique<hw::RegisterFile>(h, "AI", 0x20, 32));
+  h.map(0x6C00, 0x0400, std::make_unique<hw::AiDevice>(h));
 
   os::BootResult result;
   if (!os::boot_disc(disc_, memory_.base(), mem1, ctx_, &result, error)) return false;
+  if (const u8* low = h.ram(0x80000000, 12)) {
+    auto be32 = [](const u8* p) { return (u32{p[0]} << 24) | (u32{p[1]} << 16) | (u32{p[2]} << 8) | p[3]; };
+    mb->init_keys(be32(low), be32(low + 4), be32(low + 8));
+  }
   entry_ = result.entry_point;
   if (boot) *boot = result;
   return true;

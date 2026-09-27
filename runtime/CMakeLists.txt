@@ -17,6 +17,10 @@ target_link_libraries(ppc_runtime
 # The emulated machine around the CPU: hardware, OS support, boot, disc.
 add_library(opengp_machine STATIC
   disc/disc.cpp
+  gx/decoder.cpp
+  gx/gpu.cpp
+  hw/ai.cpp
+  hw/di.cpp
   hw/dsp.cpp
   hw/exi.cpp
   hw/hardware.cpp
@@ -29,6 +33,7 @@ add_library(opengp_machine STATIC
   triforce/baseboard.cpp
   triforce/io_ports.cpp
   triforce/jvsio.cpp
+  triforce/mediaboard.cpp
   triforce/magcard.cpp
   triforce/mkgp.cpp
 )

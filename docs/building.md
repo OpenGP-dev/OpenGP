@@ -50,12 +50,26 @@ ctest --preset default
 ## Running
 
 ```sh
-build/<preset>/games/mkgp2/opengp-mkgp2           # loads the game and reports
-build/<preset>/games/mkgp2/opengp-mkgp2 --run     # experimental: jumps to the entry point
+build/<preset>/games/mkgp2/opengp-mkgp2 [--iso PATH] [--timeout SECONDS] [--status SECONDS]
 ```
 
-The hardware is not emulated yet (milestone 3), so `--run` stops early. It prints the game's
-`OSReport` output and the hardware registers it touched.
+The launcher finds the image in `ISO/` or `private/` (or takes `--iso`), boots it and runs the
+game. There is no window yet (milestone 4). It prints:
+- the game's `OSReport` output;
+- a status line every `--status` seconds (default 5): retraces, frames and draws so far, guest
+  threads, pending interrupts, and each guest thread's call stack when call tracing is on.
+
+It stops after `--timeout` seconds (default 20). Files the machine writes (baseboard backup
+memory, media board settings, magnetic cards) go in `user/`, which is gitignored.
+
+Environment variables for debugging:
+
+| Variable | Logs |
+|----------|------|
+| `OPENGP_LOG_DI=<n>` | the first *n* disc interface commands |
+| `OPENGP_LOG_MEDIABOARD=1` | media board commands |
+| `OPENGP_LOG_EXI=<n>` / `OPENGP_LOG_SI=<n>` | the first *n* EXI / SI transfers |
+| `OPENGP_LOG_JVS=1` | the JVS I/O protocol |
 
 ## Build options
 
@@ -64,3 +78,4 @@ The hardware is not emulated yet (milestone 3), so `--run` stops early. It print
 | `OPENGP_BUILD_TESTS` | `ON` | Build the test suite |
 | `OPENGP_BUILD_GAMES` | `ON` | Build the games whose `main.dol` is present in `orig/` |
 | `OPENGP_GENERATED_DEBUG_INFO` | `OFF` | Emit debug info for recompiled game code (large and slow) |
+| `OPENGP_TRACE_CALLS` | `OFF` | Track each guest thread's call stack in recompiled code, for the launcher's status output (slower) |

@@ -11,6 +11,7 @@
 #include <string>
 
 #include "disc/disc.h"
+#include "gx/gpu.h"
 #include "hw/hardware.h"
 #include "os/boot.h"
 #include "os/threads.h"
@@ -54,6 +55,7 @@ class Machine {
   u8* base() const { return memory_.base(); }
   u32 mem1_size() const { return memory_.mem1_size(); }
   hw::Hardware& hardware() { return *hw_; }
+  gx::Gpu& gpu() { return *gpu_; }
   os::ThreadManager& threads() { return *threads_; }
   const disc::Image& disc() const { return disc_; }
   ppc::Context& main_context() { return ctx_; }
@@ -63,6 +65,7 @@ class Machine {
   ppc::GuestMemory memory_;
   disc::Image disc_;
   std::unique_ptr<hw::Hardware> hw_;
+  std::unique_ptr<gx::Gpu> gpu_;
   std::unique_ptr<os::ThreadManager> threads_;
   ppc::Context ctx_{};
   u32 entry_ = 0;

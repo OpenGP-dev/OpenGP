@@ -175,8 +175,8 @@ A 4 GiB host range is reserved, so a guest address is simply `base + addr`:
 - Everything else is left unmapped, so a stray access crashes immediately instead of silently
   corrupting state.
 
-MEM1 is 24 MiB on the GameCube. The Triforce's size is still to be confirmed against Dolphin, so
-it is a runtime parameter.
+MEM1 is 24 MiB on the GameCube. Its size is a runtime parameter: the machine takes it from the
+disc's `bi2.bin`, which says 48 MiB for the Triforce games (clamped to 24-64 MiB, as Dolphin does).
 
 ### Floating point
 
@@ -211,12 +211,67 @@ restored.
 The differential test exercises the whole pipeline end to end: DOL parsing, symbol import,
 analysis, codegen, dispatch, and the interpreter.
 
-## What comes next (milestones 2 onward)
+## The machine (`runtime/machine.h`)
+
+`opengp::Machine` puts an emulated Triforce around the recompiled game. The launcher creates one,
+boots the disc image, installs the recompiled module and runs it.
+
+### Boot (`runtime/os/boot.cpp`, `runtime/disc/`)
+
+The boot ROM is emulated the way Dolphin does it:
+1. Low memory gets the globals the IPL leaves: disc header, memory size, console type, clocks.
+2. The disc's apploader runs in the interpreter and loads the game from the image.
+3. The game starts at its DOL entry point.
+
+### Hardware (`runtime/hw/`)
+
+Each register block at `0xCC000000` is a `hw::Device`. `hw::Hardware` routes MMIO accesses from
+guest code to the devices, and owns:
+- the PI interrupt controller;
+- the time base and decrementer, which run in real time (40.5 MHz);
+- the write-gather pipe;
+- a timer thread for timed events (retraces, DMA completion).
+
+| Block | Model |
+|-------|-------|
+| VI | Beam position and display interrupts at 60 Hz |
+| DSP | Mailboxes, the boot ROM's microcode handshake, ARAM and audio DMA. Microcode is identified by hash; its commands are logged but not run yet (milestone 6). |
+| AI | Streaming sample counter and its interrupt |
+| SI | Transfers through the communication buffer to the baseboard on port 0 |
+| EXI | IPL chip (RTC, SRAM, debug UART) and the baseboard's backup memory |
+| DI | Command registers and DMA; the media board answers the commands |
+
+Device state is guarded by one recursive mutex, shared by the guest thread and the timer thread.
+
+### Guest threads (`runtime/os/threads.cpp`)
+
+Every guest thread runs on its own host thread, but only the one holding the CPU token runs
+guest code (N64Recomp's "ultramodern" pattern):
+- `OSLoadContext` is replaced. Switching threads hands the token over; a context never seen
+  before gets a new host thread.
+- Interrupts are delivered at safe points: loop back-edges, and when MSR[EE] is turned on. The
+  current registers are saved into the current `OSContext`, and the handler runs from the OS
+  exception table.
+- The scheduler's idle loop waits for an interrupt instead of spinning.
+
+### Triforce boards (`runtime/triforce/`)
+
+Ported from Dolphin; see [triforce.md](triforce.md):
+- the media board, which serves the game image and answers board commands;
+- the baseboard on SI: JVS I/O board, steering wheel, magnetic card reader;
+- the I/O ports that map player controls onto cabinet inputs.
+
+### GPU front end (`runtime/gx/`)
+
+The command processor reads the GX FIFO as the CPU fills it, and a decoder walks the command
+stream: CP/XF/BP register loads, display list calls, primitives. The pixel engine raises the
+draw-done and token interrupts that games wait on. Nothing is rendered yet.
+
+## What comes next
 
 | Area | Plan |
 |------|------|
-| OS HLE | Dolphin SDK threads become host threads, with only one guest thread running at a time (N64Recomp's "ultramodern" pattern). Alarms, interrupts and callbacks are delivered at safe points. |
-| Hardware | Register-level models of VI, PI, MI, DSP, AI, SI, EXI, DI and CP/PE |
-| GPU | Emulated at the FIFO level: CP/XF/BP state, vertex loader, texture decoders, one TEV ubershader, EFB copies. Backend: SDL3 GPU. |
-| Audio | DSP microcode identified by hash; AX HLE ported from Dolphin |
-| Triforce | Media board (DIMM reads served from the image), JVS I/O, wheel force feedback, magnetic card reader, backup memory; see [triforce.md](triforce.md) |
+| GPU | Vertex loader, texture decoders, one TEV ubershader, EFB and XFB copies; backend SDL3 GPU |
+| Input | Keyboard and controller mapping onto the cabinet controls (`Machine::set_controls`) |
+| Audio | The game's MusyX DSP microcode, run by HLE or LLE |
+| Network | The media board's socket API, for linking cabinets |

@@ -10,10 +10,11 @@ compiled together with a runtime that stands in for the Triforce hardware (GameC
 DSP, AM-Baseboard, AM-Mediaboard), so the game runs as a normal native program, with room for
 modern features such as higher resolutions, widescreen and remappable controls.
 
-> **Status: early development, not playable yet.** Milestones 1 and 2 are done. The whole of Mario
-> Kart Arcade GP 2 (7,612 functions) recompiles and builds, and runs through the Nintendo SDK's
-> startup until it waits on the audio DSP, which is not emulated yet. Next is milestone 3: emulating
-> enough hardware to boot. See the [roadmap](#roadmap).
+> **Status: early development, not playable yet.** Milestones 1 to 3 are done. Mario Kart Arcade
+> GP 2 (7,612 functions) recompiles, boots from its disc image through the emulated Triforce
+> hardware (media board, baseboard, JVS I/O, card reader), and runs its main loop at 60 Hz. It
+> renders about 55 frames a second, but nothing is drawn on screen yet: that is milestone 4. See
+> the [roadmap](#roadmap).
 
 ## How it works
 
@@ -32,6 +33,7 @@ your GGPE02.iso ─extract─> main.dol ─decomp-toolkit─> symbols.txt
 | Gekko ISA | `common/gekko/` | Decoder, disassembler and encoder for every Gekko instruction, including paired singles |
 | Recompiler | `tools/gekkorecomp/` | Turns a DOL plus a symbol list into C++, one C++ function per guest function |
 | CPU runtime | `runtime/ppc/` | Register context, guest memory, instruction semantics, interpreter fallback, indirect-call dispatch |
+| Machine | `runtime/hw/`, `runtime/os/`, `runtime/triforce/`, `runtime/gx/` | Hardware models (interrupts, timers, VI, DSP, AI, SI, EXI, DI), boot and guest threads, the Triforce boards, and the GPU front end |
 | Games | `games/` | Per-game symbol maps, recompiler config, patches and launcher |
 | Scripts | `tools/*.py`, `tools/devshell.ps1` | Game setup (extract and verify `main.dol`), SDK signature matching, Windows build shell |
 | Tests | `tests/` | Decoder tests, known-answer semantics tests, and differential tests (interpreter vs recompiled code) |
@@ -79,8 +81,8 @@ marked as such in the source. Vendored third-party code in `thirdparty/` keeps i
 |---|-----------|----------------|
 | M1 | Scaffolding, recompiler, CPU runtime, test suite, CI (**done**) | no |
 | M2 | MKAGP2 (GGPE02) analysis: symbol map, SDK functions identified, whole game recompiles and builds (**done**) | yes |
-| M3 | Boot to the main loop: OS HLE, media board, JVS stubs, VI retrace, hardware-check patches | yes |
-| M4 | Graphics: GX FIFO decoder, TEV ubershader, first frames, attract mode | yes |
+| M3 | Boot to the main loop: guest threads, hardware models, media board, baseboard and JVS, card reader, GPU FIFO (**done**) | yes |
+| M4 | Graphics: vertex loader, textures, TEV ubershader, first frames, attract mode; hardware-check patches as needed | yes |
 | M5 | Input and gameplay: JVS mapping, free play, full race, wheel force feedback | yes |
 | M6 | Audio (the game uses MusyX; DSP microcode HLE or LLE) | yes |
 | M7 | Card saves, settings menu, resolution scaling, widescreen | yes |

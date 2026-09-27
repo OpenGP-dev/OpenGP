@@ -147,7 +147,7 @@ void DspDevice::raise(u16 interrupt_bit) {
 
 void DspDevice::update_interrupts() {
   const bool active = ((control_ >> 1) & control_ & CR_INT_BITS) != 0;
-  hw_.set_interrupt(INT_DSP, active);
+  hw_.set_interrupt(hw::INT_DSP, active);  // the PI cause, not DspDevice::INT_DSP
 }
 
 u16 DspDevice::read_control() {

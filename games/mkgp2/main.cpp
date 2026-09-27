@@ -110,8 +110,10 @@ int main(int argc, char** argv) {
   static const auto names = load_function_names();
   auto print_status = [](const char* why) {
     auto* vi = machine.hardware().device<hw::ViDevice>();
-    std::fprintf(stderr, "[opengp] %s: %llu retraces, %d guest threads, PI cause %05X mask %05X\n", why,
-                 static_cast<unsigned long long>(vi ? vi->retrace_count() : 0), machine.threads().thread_count(),
+    std::fprintf(stderr, "[opengp] %s: %llu retraces, %llu frames, %llu draws, %d guest threads, PI cause %05X mask %05X\n",
+                 why, static_cast<unsigned long long>(vi ? vi->retrace_count() : 0),
+                 static_cast<unsigned long long>(machine.gpu().frames()),
+                 static_cast<unsigned long long>(machine.gpu().draws()), machine.threads().thread_count(),
                  machine.hardware().interrupt_cause(), machine.hardware().interrupt_mask());
     for (ppc::TraceStack* s : ppc::trace_all_stacks()) {
       const auto frames = ppc::trace_snapshot(*s);

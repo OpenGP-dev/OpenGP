@@ -121,11 +121,14 @@ On real hardware:
 2. It loads the game from DIMM into RAM.
 3. It jumps to the DOL entry point.
 
-OpenGP skips all of this:
-- It loads `main.dol` itself.
+OpenGP skips Segaboot, as Dolphin does:
 - It fills in the low-memory boot globals that Segaboot would normally leave (at `0x80000000`:
-  disc ID, memory size, console type, clocks, arena bounds).
-- It answers the media-board commands directly.
+  disc header, memory size, console type, clocks).
+- It runs the disc's apploader, which loads the game from the image.
+- It seeds the media board's command keys from the first 12 bytes of low memory (the disc
+  header). The game's DVD driver obfuscates every DI command with keys that change after each
+  command.
+- The media board then serves the game's reads from the image and answers its board commands.
 
 ## Mario Kart Arcade GP 2 (GGPE02): what milestone 2 found
 
@@ -159,19 +162,26 @@ The game's `main` is at `0x800AC27C`.
 - **MetroTRK** debugger stub (`TRK*`); needs to be stubbed out.
 - Possibly **ODE** (Open Dynamics Engine) for physics: one signature matched `dBodyGetMass`.
 
-### How far it runs today
+### How far it runs (milestone 3)
 
-`opengp-mkgp2 --run` executes the recompiled code from the entry point:
-1. It gets through the SDK startup and `OSInit`, which set up EXI and SI and print the SDK
-   banners through `OSReport`.
-2. It then stops in a tight loop polling `0xCC00500A` (the DSP control register), waiting for the
-   audio DSP to reset.
+`opengp-mkgp2` boots the image and runs the game into its main loop. On the way:
+1. `OSInit` prints the kernel banners: "Development HW3", 48 MB, arena `0x806ECBE0`-`0x82FB7B80`.
+2. It reads the baseboard's backup memory over EXI, one byte at a time.
+3. It talks to the baseboard over SI: status switches, then JVS I/O board set-up.
+4. HSD (HAL's library) and GX start ("hsd lib init for triforce").
+5. It sends media board commands: DIMM size, SegaBoot version, serial number, network address.
+6. AR, ARQ, AI and DSP start, and MusyX uploads its DSP microcode (CRC `0x3AD3B7AC`, 7,872
+   bytes).
+7. The main loop runs at 60 Hz, drawing about 160 primitives a frame and copying each frame to
+   the external framebuffer.
 
-Milestone 3 starts there. The `sc` instructions at the end of `DCFlushRange` and similar
-functions only synchronise the caches, so they are treated as no-ops.
+What the game shows (attract mode, or a hardware-check error) can only be seen once frames are
+rendered (milestone 4).
 
-Still unnamed and needed for OS HLE:
-- `OSCreateThread`, `OSExitThread`, `OSYieldThread`, `OSGetCurrentThread`, which sit between
-  `OSInitThreadQueue` (`0x8025B5DC`) and `OSCancelThread` (`0x8025BE00`);
-- the mutex and message-queue functions;
-- `PADInit` / `PADRead`.
+Notes:
+- The `sc` instructions at the end of `DCFlushRange` and similar functions only synchronise the
+  caches, so they are treated as no-ops.
+- `RealMode` (used by `Config48MB` to reprogram the BATs) is a no-op: the memory map is fixed.
+- The game's first DI command is a disc ID read into `0x80000000`, before which it clears that
+  memory. That is why the media board keys must be seeded at boot rather than on the first
+  command.
