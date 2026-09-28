@@ -16,6 +16,7 @@
 #include <windows.h>
 #else
 #include <csignal>
+#include <initializer_list>
 #include <cstring>
 #include <execinfo.h>
 #include <unistd.h>

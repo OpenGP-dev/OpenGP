@@ -10,11 +10,12 @@ compiled together with a runtime that stands in for the Triforce hardware (GameC
 DSP, AM-Baseboard, AM-Mediaboard), so the game runs as a normal native program, with room for
 modern features such as higher resolutions, widescreen and remappable controls.
 
-> **Status: early development, not playable yet.** Milestones 1 to 3 are done. Mario Kart Arcade
+> **Status: early development, not playable yet.** Milestones 1 to 4 are done. Mario Kart Arcade
 > GP 2 (7,612 functions) recompiles, boots from its disc image through the emulated Triforce
-> hardware (media board, baseboard, JVS I/O, card reader), and runs its main loop at 60 Hz.
-> Milestone 4 (graphics) is under way: the game renders in a window (Vulkan), from its start-up
-> device check to attract mode. See the [roadmap](#roadmap).
+> hardware (media board, baseboard, JVS I/O, card reader), and renders in a window (Vulkan) from
+> its start-up device check through attract mode: the title screen, demo races and character
+> introductions. It cannot be played yet: controls come in milestone 5. See the
+> [roadmap](#roadmap).
 
 ## How it works
 
@@ -83,7 +84,7 @@ marked as such in the source. Vendored third-party code in `thirdparty/` keeps i
 | M1 | Scaffolding, recompiler, CPU runtime, test suite, CI (**done**) | no |
 | M2 | MKAGP2 (GGPE02) analysis: symbol map, SDK functions identified, whole game recompiles and builds (**done**) | yes |
 | M3 | Boot to the main loop: guest threads, hardware models, media board, baseboard and JVS, card reader, GPU FIFO (**done**) | yes |
-| M4 | Graphics: vertex loader, textures, TEV ubershader, first frames, attract mode; hardware-check patches as needed | yes |
+| M4 | Graphics: vertex loader, textures, TEV ubershader, first frames, attract mode; hardware-check patches as needed (**done**) | yes |
 | M5 | Input and gameplay: JVS mapping, free play, full race, wheel force feedback | yes |
 | M6 | Audio (the game uses MusyX; DSP microcode HLE or LLE) | yes |
 | M7 | Card saves, settings menu, resolution scaling, widescreen | yes |

@@ -395,7 +395,21 @@ void Frontend::efb_copy(u32 trigger) {
                  static_cast<u32>(copy_format(trigger)), trigger, static_cast<u32>(pixel_format()),
                  copy_clear(trigger) ? " + clear" : "");
   if (copy_clear(trigger)) clear(x, y, w, h);
-  if (copy_to_xfb(trigger)) end_frame(true);
+  if (copy_to_xfb(trigger)) {
+    static const bool log = std::getenv("OPENGP_FRAME_LOG") != nullptr;
+    if (log) {
+      static auto last = std::chrono::steady_clock::now();
+      static u64 last_draw = 0, last_vertices = 0;
+      const auto now = std::chrono::steady_clock::now();
+      const u64 draw = stats_.draw_ns.load(), vertices = stats_.vertices.load();
+      std::fprintf(stderr, "[frame] %llu: %.2f ms, draws %.2f ms, %llu vertices\n",
+                   static_cast<unsigned long long>(frames_),
+                   std::chrono::duration<double, std::milli>(now - last).count(), (draw - last_draw) * 1e-6,
+                   static_cast<unsigned long long>(vertices - last_vertices));
+      last = now, last_draw = draw, last_vertices = vertices;
+    }
+    end_frame(true);
+  }
 }
 
 void Frontend::clear(u32 x, u32 y, u32 width, u32 height) {

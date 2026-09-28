@@ -95,6 +95,7 @@ Environment variables for debugging:
 | `OPENGP_GPU_DEBUG=1` | enables the GPU API's validation (needs the Vulkan SDK's validation layers) |
 | `OPENGP_GX_DUMP=<n>` | every draw (with its pipeline state), texture, EFB copy and clear of frame *n* |
 | `OPENGP_EFB_SYNC=1` | (not a log) CPU reads of the EFB wait for the GPU instead of returning the previous frame's contents |
+| `OPENGP_FRAME_LOG=1` | each frame's duration, time in draws and vertex count |
 
 The status line also shows where time goes: the guest thread's time in draws (pipeline state,
 textures, vertex transform) and EFB readbacks, and the render thread's time rendering and idle.
