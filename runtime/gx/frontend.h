@@ -21,6 +21,9 @@
 #pragma once
 
 #include <array>
+#include <atomic>
+#include <chrono>
+#include <deque>
 #include <memory>
 #include <span>
 #include <unordered_map>
@@ -38,6 +41,9 @@ class Frontend {
 
   Frontend(MemoryReader read, void* context);
   ~Frontend();
+
+  // Guest RAM (MEM1), for reading vertex arrays directly.
+  void set_ram(const u8* ram, u32 size) { ram_ = ram, ram_size_ = size; }
 
   // Where finished frames go. Without an output, only register state is
   // tracked (no vertex or texture work is done).
@@ -58,6 +64,13 @@ class Frontend {
   u32 bp(u8 reg) const { return bp_[reg]; }
   const XfUnit& xf() const { return xf_; }
   u64 frames() const { return frames_; }
+  // Profiling counters (times in ns). The draw time includes the state,
+  // texture and transform times.
+  struct Stats {
+    std::atomic<u64> draw_ns{0}, state_ns{0}, texture_ns{0}, transform_ns{0}, vertices{0};
+    std::atomic<u64> readback_ns{0}, readbacks{0};  // EFB reads that waited for the renderer
+  };
+  const Stats& stats() const { return stats_; }
 
  private:
   struct Viewport;  // viewport and scissor offset mapping for the current draw
@@ -83,10 +96,13 @@ class Frontend {
 
   MemoryReader read_;
   void* context_;
+  const u8* ram_ = nullptr;
+  u32 ram_size_ = 0;
   FrameOutput* output_ = nullptr;
   std::unique_ptr<Frame> frame_;
   u64 frames_ = 0;
   // OPENGP_GX_DUMP=<frame>: log that frame's draws, copies and clears.
+  Stats stats_;
   u64 dump_frame_ = ~0ull;
   bool dumping_ = false;
   u32 dumped_state_ = ~0u;
@@ -130,9 +146,20 @@ class Frontend {
   u32 next_handle_ = 1;
   std::vector<u32> scratch_;
 
-  // EFB contents read back for peeks; dropped when the EFB changes.
-  std::shared_ptr<EfbReadback> efb_color_, efb_depth_;
-  void efb_changed() { efb_color_.reset(), efb_depth_.reset(); }
+  // EFB contents read back for peeks (colour, depth). With OPENGP_EFB_SYNC,
+  // peeks wait for a readback of the EFB as it is, cached until the EFB
+  // changes; otherwise they read the newest readback that has completed,
+  // requested once a frame (usually one frame old).
+  struct EfbPeeks {
+    std::shared_ptr<EfbReadback> current;
+    std::deque<std::shared_ptr<EfbReadback>> pending;
+    bool requested = false;  // this frame
+  };
+  EfbPeeks peeks_[2];
+  bool efb_sync_ = false;
+  void efb_changed() {
+    if (efb_sync_) peeks_[0].current.reset(), peeks_[1].current.reset();
+  }
 };
 
 }  // namespace gx

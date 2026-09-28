@@ -58,7 +58,9 @@ std::array<u8, 4> read_color(const u8* p, u32 format) {
 
 }  // namespace
 
-void VertexLoader::setup(const u32* cp, u8 vat) {
+void VertexLoader::setup(const u32* cp, u8 vat, const u8* ram, u32 ram_size) {
+  ram_ = ram;
+  ram_size_ = ram_size;
   const u32 lo = cp[0x50], hi = cp[0x60];
   const u32 a = cp[0x70 + vat], b = cp[0x80 + vat], c = cp[0x90 + vat];
 
@@ -110,8 +112,7 @@ void VertexLoader::setup(const u32* cp, u8 vat) {
 
 // Returns the attribute's data: in the stream (direct) or in the array
 // (indexed). Advances `src` past what the stream holds.
-const u8* VertexLoader::fetch(const Attr& a, u32 array, const u8*& src, u32 bytes, MemoryReader read,
-                              void* context) const {
+const u8* VertexLoader::fetch(const Attr& a, u32 array, const u8*& src, u32 bytes) const {
   if (a.type == DIRECT) {
     const u8* p = src;
     src += bytes;
@@ -119,11 +120,11 @@ const u8* VertexLoader::fetch(const Attr& a, u32 array, const u8*& src, u32 byte
   }
   const u32 index = a.type == INDEX8 ? *src : be16(src);
   src += index_size(a.type);
-  return read(context, array_base_[array] + index * array_stride_[array], bytes);
+  const u32 addr = (array_base_[array] + index * array_stride_[array]) & 0x1FFFFFFF;
+  return u64{addr} + bytes <= ram_size_ ? ram_ + addr : nullptr;
 }
 
-void VertexLoader::load(const u8* src, InputVertex& v, MemoryReader read, void* context, u32 matrix_index_a,
-                        u32 matrix_index_b) const {
+void VertexLoader::load(const u8* src, InputVertex& v, u32 matrix_index_a, u32 matrix_index_b) const {
   // Matrix indices: from the vertex if present, else the XF registers.
   const u32 default_tex[8] = {bits(matrix_index_a, 6, 6),  bits(matrix_index_a, 12, 6), bits(matrix_index_a, 18, 6),
                               bits(matrix_index_a, 24, 6), bits(matrix_index_b, 0, 6),  bits(matrix_index_b, 6, 6),
@@ -137,7 +138,7 @@ void VertexLoader::load(const u8* src, InputVertex& v, MemoryReader read, void* 
   const u32 pos_bytes = pos_.count * kComponentSize[pos_.format];
   if (pos_.type == INDEX8 && *src == 0xFF) v.skip = true;
   if (pos_.type == INDEX16 && be16(src) == 0xFFFF) v.skip = true;
-  if (const u8* p = fetch(pos_, ARRAY_POSITION, src, pos_bytes, read, context)) {
+  if (const u8* p = fetch(pos_, ARRAY_POSITION, src, pos_bytes)) {
     const u32 step = kComponentSize[pos_.format];
     v.pos[0] = component(p, pos_.format, pos_.scale);
     v.pos[1] = component(p + step, pos_.format, pos_.scale);
@@ -155,9 +156,9 @@ void VertexLoader::load(const u8* src, InputVertex& v, MemoryReader read, void* 
     if (normal_index3_ && normal_.type != DIRECT) {
       for (u32 k = 0; k < 3; ++k) {
         // Each index selects a whole NBT entry; take its k-th vector.
-        if (const u8* p = fetch(normal_, ARRAY_NORMAL, src, 9 * step, read, context)) read_vec(p + 3 * k * step, v.normal[k]);
+        if (const u8* p = fetch(normal_, ARRAY_NORMAL, src, 9 * step)) read_vec(p + 3 * k * step, v.normal[k]);
       }
-    } else if (const u8* p = fetch(normal_, ARRAY_NORMAL, src, normal_.count * step, read, context)) {
+    } else if (const u8* p = fetch(normal_, ARRAY_NORMAL, src, normal_.count * step)) {
       read_vec(p, v.normal[0]);
       if (normal_.count == 9) {
         read_vec(p + 3 * step, v.normal[1]);
@@ -172,7 +173,7 @@ void VertexLoader::load(const u8* src, InputVertex& v, MemoryReader read, void* 
   bool present[2] = {false, false};
   for (u32 i = 0; i < 2; ++i) {
     if (color_[i].type == NOT_PRESENT) continue;
-    if (const u8* p = fetch(color_[i], ARRAY_COLOR0 + i, src, kColorSize[color_[i].format], read, context)) {
+    if (const u8* p = fetch(color_[i], ARRAY_COLOR0 + i, src, kColorSize[color_[i].format])) {
       colors[i] = read_color(p, color_[i].format);
       present[i] = true;
     }
@@ -191,7 +192,7 @@ void VertexLoader::load(const u8* src, InputVertex& v, MemoryReader read, void* 
     v.tex[i][0] = v.tex[i][1] = 0.0f;
     if (t.type == NOT_PRESENT) continue;
     const u32 step = kComponentSize[t.format];
-    if (const u8* p = fetch(t, ARRAY_TEX0 + i, src, t.count * step, read, context)) {
+    if (const u8* p = fetch(t, ARRAY_TEX0 + i, src, t.count * step)) {
       v.tex[i][0] = component(p, t.format, t.scale);
       if (t.count == 2) v.tex[i][1] = component(p + step, t.format, t.scale);
     }

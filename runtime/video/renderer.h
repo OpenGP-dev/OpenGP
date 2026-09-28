@@ -34,6 +34,7 @@ struct SDL_GPUTransferBuffer;
 struct SDL_GPUGraphicsPipeline;
 struct SDL_GPUCommandBuffer;
 struct SDL_GPURenderPass;
+struct SDL_GPUFence;
 
 namespace video {
 
@@ -51,13 +52,17 @@ class FrameQueue final : public gx::FrameOutput {
  public:
   explicit FrameQueue(std::size_t max_pending = 2) : max_pending_(max_pending) {}
   void submit(std::unique_ptr<gx::Frame> frame) override;
+  std::unique_ptr<gx::Frame> recycle() override;
   // Waits up to `timeout_ms` for a frame; returns nullptr if none came.
   std::unique_ptr<gx::Frame> pop(int timeout_ms);
+  // Hands a rendered frame back for reuse.
+  void give_back(std::unique_ptr<gx::Frame> frame);
 
  private:
   std::mutex mutex_;
   std::condition_variable cv_;
   std::deque<std::unique_ptr<gx::Frame>> frames_;
+  std::vector<std::unique_ptr<gx::Frame>> free_;
   std::size_t max_pending_;
 };
 
@@ -95,8 +100,10 @@ class Renderer {
   void clear(const gx::ClearCmd& c);
   void copy(SDL_GPUCommandBuffer* cmd, const gx::CopyCmd& c);
   void present(SDL_GPUCommandBuffer* cmd, const Texture& xfb);
-  void capture(SDL_GPUCommandBuffer* cmd, const Texture& xfb, Image* image);
-  void read_efb(SDL_GPUCommandBuffer* cmd, gx::EfbReadback& request);
+  void capture(SDL_GPUCommandBuffer* cmd, const Texture& xfb);
+  void finish_capture(Image* image);
+  void read_efb(SDL_GPUCommandBuffer* cmd, std::shared_ptr<gx::EfbReadback> request);
+  void poll_reads(bool wait_all);
   void grow_buffer(SDL_GPUBuffer*& buffer, u32& capacity, u32 needed, u32 usage);
 
   SDL_Window* window_ = nullptr;
@@ -120,7 +127,18 @@ class Renderer {
   SDL_GPUGraphicsPipeline* read_depth_pipeline_ = nullptr;
   SDL_GPUTexture* read_color_ = nullptr;  // EFB read back at native resolution
   SDL_GPUTexture* read_depth_ = nullptr;
-  SDL_GPUTransferBuffer* read_transfer_ = nullptr;
+
+  // EFB readbacks recorded in this frame, and ones submitted but not yet read.
+  struct PendingRead {
+    std::shared_ptr<gx::EfbReadback> request;
+    SDL_GPUTransferBuffer* transfer;
+    std::shared_ptr<SDL_GPUFence> fence;
+  };
+  std::vector<PendingRead> unfenced_reads_, pending_reads_;
+  struct Capture {
+    SDL_GPUTransferBuffer* transfer = nullptr;
+    u32 width = 0, height = 0;
+  } capture_;
   SDL_GPUGraphicsPipeline* copy_pipeline_ = nullptr;
   SDL_GPUGraphicsPipeline* present_pipeline_ = nullptr;
   SDL_GPUGraphicsPipeline* capture_pipeline_ = nullptr;

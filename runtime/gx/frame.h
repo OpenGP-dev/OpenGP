@@ -14,6 +14,7 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <utility>
 #include <vector>
 
 #include "gx/regs.h"
@@ -115,16 +116,18 @@ struct TextureUpload {
 };
 
 struct Command {
-  enum class Type : u8 { Draw, Clear, Copy } type;
-  u32 index;  // into draws, clears or copies
+  enum class Type : u8 { Draw, Clear, Copy, Readback } type;
+  u32 index;  // into draws, clears, copies or readbacks
 };
 
-// A request to read the whole EFB back once a frame has been rendered (for
-// CPU reads of the EFB, "peeks"). The guest thread waits for it.
+// A request to read the whole EFB back at a point in a frame (for CPU reads
+// of the EFB, "peeks"). The renderer fills it once the GPU has got there;
+// `urgent` requests are completed before the renderer moves on (the guest
+// thread is waiting for them).
 class EfbReadback {
  public:
-  explicit EfbReadback(bool depth) : depth(depth) {}
-  const bool depth;
+  EfbReadback(bool depth, bool urgent) : depth(depth), urgent(urgent) {}
+  const bool depth, urgent;
   // kEfbWidth * kEfbHeight values: RGBA8 colours (red in the lowest byte)
   // or 24-bit depths. Filled by the renderer before complete().
   std::vector<u32> pixels;
@@ -133,6 +136,10 @@ class EfbReadback {
     std::lock_guard lock(mutex_);
     done_ = true;
     cv_.notify_all();
+  }
+  bool ready() {
+    std::lock_guard lock(mutex_);
+    return done_;
   }
   void wait() {
     std::unique_lock lock(mutex_);
@@ -145,8 +152,29 @@ class EfbReadback {
   bool done_ = false;
 };
 
+// An allocator that leaves trivially constructible elements uninitialised
+// when a vector grows (vertices are written right after).
+template <typename T>
+struct UninitAllocator : std::allocator<T> {
+  template <typename U>
+  struct rebind {
+    using other = UninitAllocator<U>;
+  };
+  UninitAllocator() = default;
+  template <typename U>
+  UninitAllocator(const UninitAllocator<U>&) {}
+  template <typename U>
+  void construct(U* p) noexcept {
+    ::new (static_cast<void*>(p)) U;
+  }
+  template <typename U, typename... Args>
+  void construct(U* p, Args&&... args) {
+    ::new (static_cast<void*>(p)) U(std::forward<Args>(args)...);
+  }
+};
+
 struct Frame {
-  std::vector<Vertex> vertices;
+  std::vector<Vertex, UninitAllocator<Vertex>> vertices;
   std::vector<u32> indices;
   std::vector<PixelUniforms> uniforms;
   std::vector<DrawState> states;
@@ -160,7 +188,25 @@ struct Frame {
   u32 xfb = 0;                // XFB copy to display (texture handle), 0 if none
   u32 xfb_width = 0, xfb_height = 0;
   u64 number = 0;             // displayed frames before this one (partial frames share the number)
-  std::shared_ptr<EfbReadback> readback;  // read the EFB back after this frame, if set
+  std::vector<std::shared_ptr<EfbReadback>> readbacks;
+
+  // Empties the frame for reuse, keeping the buffers' capacity.
+  void clear() {
+    vertices.clear();
+    indices.clear();
+    uniforms.clear();
+    states.clear();
+    draws.clear();
+    clears.clear();
+    copies.clear();
+    commands.clear();
+    uploads.clear();
+    texels.clear();
+    releases.clear();
+    xfb = xfb_width = xfb_height = 0;
+    number = 0;
+    readbacks.clear();
+  }
 };
 
 // Receives finished frames (called on the thread that runs guest code).
@@ -168,6 +214,8 @@ class FrameOutput {
  public:
   virtual ~FrameOutput() = default;
   virtual void submit(std::unique_ptr<Frame> frame) = 0;
+  // A rendered frame to reuse (its buffers keep their capacity), or nullptr.
+  virtual std::unique_ptr<Frame> recycle() { return nullptr; }
 };
 
 }  // namespace gx

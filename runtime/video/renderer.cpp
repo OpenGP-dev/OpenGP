@@ -62,6 +62,19 @@ void FrameQueue::submit(std::unique_ptr<gx::Frame> frame) {
   cv_.notify_all();
 }
 
+std::unique_ptr<gx::Frame> FrameQueue::recycle() {
+  std::lock_guard lock(mutex_);
+  if (free_.empty()) return nullptr;
+  auto frame = std::move(free_.back());
+  free_.pop_back();
+  return frame;
+}
+
+void FrameQueue::give_back(std::unique_ptr<gx::Frame> frame) {
+  std::lock_guard lock(mutex_);
+  if (free_.size() < 4) free_.push_back(std::move(frame));
+}
+
 std::unique_ptr<gx::Frame> FrameQueue::pop(int timeout_ms) {
   std::unique_lock lock(mutex_);
   if (!cv_.wait_for(lock, std::chrono::milliseconds(timeout_ms), [this] { return !frames_.empty(); })) return nullptr;
@@ -93,7 +106,7 @@ Renderer::~Renderer() {
   if (vertex_buffer_) SDL_ReleaseGPUBuffer(device_, vertex_buffer_);
   if (index_buffer_) SDL_ReleaseGPUBuffer(device_, index_buffer_);
   if (transfer_) SDL_ReleaseGPUTransferBuffer(device_, transfer_);
-  if (read_transfer_) SDL_ReleaseGPUTransferBuffer(device_, read_transfer_);
+  poll_reads(true);
   if (window_) SDL_ReleaseWindowFromGPUDevice(device_, window_);
   SDL_DestroyGPUDevice(device_);
 }
@@ -339,7 +352,7 @@ bool Renderer::upload(SDL_GPUCommandBuffer* cmd, const gx::Frame& f) {
 
   if (total > transfer_capacity_) {
     if (transfer_) SDL_ReleaseGPUTransferBuffer(device_, transfer_);
-  if (read_transfer_) SDL_ReleaseGPUTransferBuffer(device_, read_transfer_);
+  poll_reads(true);
     transfer_capacity_ = std::max(total, transfer_capacity_ * 2);
     SDL_GPUTransferBufferCreateInfo info{SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, transfer_capacity_, 0};
     transfer_ = SDL_CreateGPUTransferBuffer(device_, &info);
@@ -554,8 +567,9 @@ void Renderer::present(SDL_GPUCommandBuffer* cmd, const Texture& xfb) {
   SDL_EndGPURenderPass(pass);
 }
 
-void Renderer::capture(SDL_GPUCommandBuffer* cmd, const Texture& xfb, Image* image) {
-  // Copy the XFB (alpha forced to 1) into a download buffer.
+void Renderer::capture(SDL_GPUCommandBuffer* cmd, const Texture& xfb) {
+  // Copy the XFB (alpha forced to 1) into a download buffer; finish_capture()
+  // reads it once the command buffer has run.
   SDL_GPUTextureCreateInfo t{};
   t.type = SDL_GPU_TEXTURETYPE_2D;
   t.format = kColorFormat;
@@ -567,7 +581,11 @@ void Renderer::capture(SDL_GPUCommandBuffer* cmd, const Texture& xfb, Image* ima
   SDL_GPUTexture* opaque = SDL_CreateGPUTexture(device_, &t);
   SDL_GPUTransferBufferCreateInfo info{SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, xfb.width * xfb.height * 4, 0};
   SDL_GPUTransferBuffer* download = SDL_CreateGPUTransferBuffer(device_, &info);
-  if (!opaque || !download) return;
+  if (!opaque || !download) {
+    if (opaque) SDL_ReleaseGPUTexture(device_, opaque);
+    if (download) SDL_ReleaseGPUTransferBuffer(device_, download);
+    return;
+  }
 
   SDL_GPUColorTargetInfo target{};
   target.texture = opaque;
@@ -591,32 +609,33 @@ void Renderer::capture(SDL_GPUCommandBuffer* cmd, const Texture& xfb, Image* ima
   SDL_GPUTextureTransferInfo dst{download, 0, xfb.width, xfb.height};
   SDL_DownloadFromGPUTexture(copy, &region, &dst);
   SDL_EndGPUCopyPass(copy);
-
-  // Submit the frame's command buffer and wait for the download.
-  SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
-  if (fence) {
-    SDL_WaitForGPUFences(device_, true, &fence, 1);
-    SDL_ReleaseGPUFence(device_, fence);
-    image->width = xfb.width;
-    image->height = xfb.height;
-    image->rgba.resize(std::size_t{xfb.width} * xfb.height * 4);
-    const void* p = SDL_MapGPUTransferBuffer(device_, download, false);
-    if (p) std::memcpy(image->rgba.data(), p, image->rgba.size());
-    SDL_UnmapGPUTransferBuffer(device_, download);
-  }
-  SDL_ReleaseGPUTransferBuffer(device_, download);
-  SDL_ReleaseGPUTexture(device_, opaque);
+  SDL_ReleaseGPUTexture(device_, opaque);  // freed once the command buffer is done with it
+  capture_ = {download, xfb.width, xfb.height};
 }
 
-void Renderer::read_efb(SDL_GPUCommandBuffer* cmd, gx::EfbReadback& request) {
+void Renderer::finish_capture(Image* image) {
+  if (!capture_.transfer) return;
+  image->width = capture_.width;
+  image->height = capture_.height;
+  image->rgba.resize(std::size_t{capture_.width} * capture_.height * 4);
+  if (const void* p = SDL_MapGPUTransferBuffer(device_, capture_.transfer, false)) {
+    std::memcpy(image->rgba.data(), p, image->rgba.size());
+    SDL_UnmapGPUTransferBuffer(device_, capture_.transfer);
+  }
+  SDL_ReleaseGPUTransferBuffer(device_, capture_.transfer);
+  capture_ = {};
+}
+
+void Renderer::read_efb(SDL_GPUCommandBuffer* cmd, std::shared_ptr<gx::EfbReadback> request) {
   // Sample the EFB at native resolution into a colour target (depth goes to
-  // .r of an R32F target), then download it.
+  // .r of an R32F target), then download it. The request completes once the
+  // command buffer has run (poll_reads()).
   const u32 w = gx::kEfbWidth, h = gx::kEfbHeight;
-  SDL_GPUTexture*& target = request.depth ? read_depth_ : read_color_;
+  SDL_GPUTexture*& target = request->depth ? read_depth_ : read_color_;
   if (!target) {
     SDL_GPUTextureCreateInfo t{};
     t.type = SDL_GPU_TEXTURETYPE_2D;
-    t.format = request.depth ? SDL_GPU_TEXTUREFORMAT_R32_FLOAT : kColorFormat;
+    t.format = request->depth ? SDL_GPU_TEXTUREFORMAT_R32_FLOAT : kColorFormat;
     t.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
     t.width = w;
     t.height = h;
@@ -624,23 +643,22 @@ void Renderer::read_efb(SDL_GPUCommandBuffer* cmd, gx::EfbReadback& request) {
     t.num_levels = 1;
     target = SDL_CreateGPUTexture(device_, &t);
   }
-  if (!read_transfer_) {
-    SDL_GPUTransferBufferCreateInfo info{SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, w * h * 4, 0};
-    read_transfer_ = SDL_CreateGPUTransferBuffer(device_, &info);
-  }
-  request.pixels.assign(std::size_t{w} * h, 0);
-  if (!target || !read_transfer_) {
-    SDL_SubmitGPUCommandBuffer(cmd);
+  SDL_GPUTransferBufferCreateInfo info{SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, w * h * 4, 0};
+  SDL_GPUTransferBuffer* transfer = SDL_CreateGPUTransferBuffer(device_, &info);
+  if (!target || !transfer) {
+    if (transfer) SDL_ReleaseGPUTransferBuffer(device_, transfer);
+    request->complete();  // with no pixels: peeks read zero
     return;
   }
 
+  end_pass();
   SDL_GPUColorTargetInfo color{};
   color.texture = target;
   color.load_op = SDL_GPU_LOADOP_DONT_CARE;
   color.store_op = SDL_GPU_STOREOP_STORE;
   SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &color, 1, nullptr);
-  SDL_BindGPUGraphicsPipeline(pass, request.depth ? read_depth_pipeline_ : read_color_pipeline_);
-  SDL_GPUTextureSamplerBinding src{request.depth ? efb_depth_ : efb_color_, nearest_};
+  SDL_BindGPUGraphicsPipeline(pass, request->depth ? read_depth_pipeline_ : read_color_pipeline_);
+  SDL_GPUTextureSamplerBinding src{request->depth ? efb_depth_ : efb_color_, nearest_};
   SDL_BindGPUFragmentSamplers(pass, 0, &src, 1);
   const FullscreenUniforms vs{{0, 0, 1, 1}, {0, 0, 0, 0}};
   SDL_PushGPUVertexUniformData(cmd, 0, &vs, sizeof(vs));
@@ -653,26 +671,37 @@ void Renderer::read_efb(SDL_GPUCommandBuffer* cmd, gx::EfbReadback& request) {
   region.w = w;
   region.h = h;
   region.d = 1;
-  SDL_GPUTextureTransferInfo dst{read_transfer_, 0, w, h};
+  SDL_GPUTextureTransferInfo dst{transfer, 0, w, h};
   SDL_DownloadFromGPUTexture(copy, &region, &dst);
   SDL_EndGPUCopyPass(copy);
+  unfenced_reads_.push_back({std::move(request), transfer, nullptr});
+}
 
-  SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
-  if (!fence) return;
-  SDL_WaitForGPUFences(device_, true, &fence, 1);
-  SDL_ReleaseGPUFence(device_, fence);
-  const void* p = SDL_MapGPUTransferBuffer(device_, read_transfer_, false);
-  if (p) {
-    std::memcpy(request.pixels.data(), p, request.pixels.size() * 4);
-    if (request.depth) {
-      for (u32& v : request.pixels) {
-        float d;
-        std::memcpy(&d, &v, 4);
-        v = static_cast<u32>(std::clamp(d * 16777216.0f, 0.0f, 16777215.0f));
+void Renderer::poll_reads(bool wait_all) {
+  for (auto it = pending_reads_.begin(); it != pending_reads_.end();) {
+    SDL_GPUFence* fence = it->fence.get();
+    if (!wait_all && !SDL_QueryGPUFence(device_, fence)) {
+      ++it;
+      continue;
+    }
+    if (wait_all) SDL_WaitForGPUFences(device_, true, &fence, 1);
+    gx::EfbReadback& r = *it->request;
+    r.pixels.assign(std::size_t{gx::kEfbWidth} * gx::kEfbHeight, 0);
+    if (const void* p = SDL_MapGPUTransferBuffer(device_, it->transfer, false)) {
+      std::memcpy(r.pixels.data(), p, r.pixels.size() * 4);
+      SDL_UnmapGPUTransferBuffer(device_, it->transfer);
+      if (r.depth) {
+        for (u32& v : r.pixels) {
+          float d;
+          std::memcpy(&d, &v, 4);
+          v = static_cast<u32>(std::clamp(d * 16777216.0f, 0.0f, 16777215.0f));
+        }
       }
     }
+    SDL_ReleaseGPUTransferBuffer(device_, it->transfer);
+    r.complete();
+    it = pending_reads_.erase(it);
   }
-  SDL_UnmapGPUTransferBuffer(device_, read_transfer_);
 }
 
 void Renderer::render(const gx::Frame& f, Image* capture_image) {
@@ -692,6 +721,7 @@ void Renderer::render(const gx::Frame& f, Image* capture_image) {
         clear(f.clears[c.index]);
         break;
       case gx::Command::Type::Copy: copy(cmd, f.copies[c.index]); break;
+      case gx::Command::Type::Readback: read_efb(cmd, f.readbacks[c.index]); break;
     }
   }
   end_pass();
@@ -699,18 +729,26 @@ void Renderer::render(const gx::Frame& f, Image* capture_image) {
   const auto xfb = f.xfb ? textures_.find(f.xfb) : textures_.end();
   if (xfb != textures_.end() && xfb->second.texture) {
     if (window_) present(cmd, xfb->second);
-    if (capture_image) {
-      capture(cmd, xfb->second, capture_image);  // submits
-      cmd = nullptr;
+    if (capture_image) capture(cmd, xfb->second);
+  }
+
+  // Submit, with a fence if downloads were recorded. Wait for it if the
+  // guest thread is waiting for a readback, or for a screenshot.
+  if (unfenced_reads_.empty() && !capture_.transfer) {
+    SDL_SubmitGPUCommandBuffer(cmd);
+  } else if (SDL_GPUFence* raw = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd)) {
+    std::shared_ptr<SDL_GPUFence> fence(raw, [device = device_](SDL_GPUFence* p) { SDL_ReleaseGPUFence(device, p); });
+    bool urgent = capture_.transfer != nullptr;
+    for (PendingRead& r : unfenced_reads_) {
+      urgent = urgent || r.request->urgent;
+      r.fence = fence;
+      pending_reads_.push_back(std::move(r));
     }
+    unfenced_reads_.clear();
+    if (urgent) SDL_WaitForGPUFences(device_, true, &raw, 1);
+    if (capture_image) finish_capture(capture_image);
   }
-  if (f.readback) {
-    if (!cmd) cmd = SDL_AcquireGPUCommandBuffer(device_);
-    if (cmd) read_efb(cmd, *f.readback);  // submits
-    cmd = nullptr;
-    f.readback->complete();
-  }
-  if (cmd) SDL_SubmitGPUCommandBuffer(cmd);
+  poll_reads(false);
 
   for (u32 h : f.releases) {
     if (auto it = textures_.find(h); it != textures_.end()) {

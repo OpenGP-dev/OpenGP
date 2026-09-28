@@ -30,6 +30,13 @@ else()
     -ffp-contract=off -fwrapv -fno-strict-aliasing)
 endif()
 
+if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+  # CMake's RelWithDebInfo for MSVC-style compilers uses /Ob1, which only
+  # inlines functions declared inline; release builds should inline freely.
+  string(REPLACE "/Ob1" "/Ob2" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
+  string(REPLACE "/Ob1" "/Ob2" CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO}")
+endif()
+
 if(WIN32)
   # Standard C functions (fopen etc.) are fine; don't nag about the _s variants.
   add_compile_definitions(_CRT_SECURE_NO_WARNINGS)

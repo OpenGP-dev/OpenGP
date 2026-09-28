@@ -84,6 +84,12 @@ struct Context {
   u32 reserve_addr;
   bool reserve;
 
+  // Set by the runtime when an exception handler has resumed the context it
+  // interrupted (OSLoadContext): the handler's remaining code must not run,
+  // so recompiled code returns after such calls (`exception_return` in
+  // recomp.toml).
+  bool exception_return;
+
   u32 sr[16];     // segment registers
   u32 spr[1024];  // every SPR not held in a dedicated field above
 };

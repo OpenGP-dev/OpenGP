@@ -103,7 +103,9 @@ class PeDevice : public hw::Device {
 };
 
 Gpu::Gpu(hw::Hardware& hw)
-    : hw_(hw), frontend_(&Gpu::read_memory, this), decoder_(*this, &Gpu::read_display_list, this) {}
+    : hw_(hw), frontend_(&Gpu::read_memory, this), decoder_(*this, &Gpu::read_display_list, this) {
+  frontend_.set_ram(hw.ram(0, 0), hw.mem1_size());
+}
 Gpu::~Gpu() = default;
 
 std::unique_ptr<hw::Device> Gpu::make_cp_device() { return std::make_unique<CpDevice>(hw_, *this); }

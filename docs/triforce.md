@@ -195,8 +195,10 @@ What it needed:
   free replacement fonts (`thirdparty/gc-fonts`), or the fonts from a boot ROM dump in
   `user/IPL.bin`.
 - **EFB reads**: attract mode reads the EFB from the CPU (`0xC8000000`: depth peeks, likely
-  for lens flares). These go through the GPU: everything drawn so far is rendered and the EFB
-  read back, and cached until the next draw.
+  for lens flares), about once a frame. Waiting for the GPU at each one halved the frame rate,
+  so the first peek in a frame requests a readback of the EFB at that point, and peeks return
+  the newest completed one, usually from the previous frame. `OPENGP_EFB_SYNC=1` makes them
+  exact (and slow).
 - **Spurious decrementer**: the SDK's `DecrementerExceptionCallback` calls `OSLoadContext`
   early when no alarm is due. `OSLoadContext` must not return there (see `os/threads.h`).
 

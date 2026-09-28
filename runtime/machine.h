@@ -58,6 +58,8 @@ class Machine {
   gx::Gpu& gpu() { return *gpu_; }
   os::ThreadManager& threads() { return *threads_; }
   int thread_count() const { return threads_ ? threads_->thread_count() : 0; }
+  u64 exceptions_delivered() const { return threads_ ? threads_->exceptions_delivered() : 0; }
+  u64 exception_returns() const { return threads_ ? threads_->exception_returns() : 0; }
   const disc::Image& disc() const { return disc_; }
   ppc::Context& main_context() { return ctx_; }
   u32 entry_point() const { return entry_; }

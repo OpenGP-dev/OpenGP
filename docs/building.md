@@ -53,8 +53,11 @@ cmake --build --preset default
 ctest --preset default
 ```
 
-For a window on Linux, SDL3 needs the X11 and/or Wayland development packages when it is built
-(e.g. `libx11-dev libxext-dev libwayland-dev libxkbcommon-dev`), and a Vulkan driver at run time.
+On Linux, SDL3 is built with X11 support and needs its development packages (Debian/Ubuntu:
+`libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev
+libxtst-dev libxkbcommon-dev libasound2-dev libpulse-dev`; see SDL's
+[Linux build notes](https://wiki.libsdl.org/SDL3/README-linux#build-dependencies)), and a
+Vulkan driver at run time.
 
 ## Running
 
@@ -91,6 +94,10 @@ Environment variables for debugging:
 | `OPENGP_LOG_JVS=1` | the JVS I/O protocol |
 | `OPENGP_GPU_DEBUG=1` | enables the GPU API's validation (needs the Vulkan SDK's validation layers) |
 | `OPENGP_GX_DUMP=<n>` | every draw (with its pipeline state), texture, EFB copy and clear of frame *n* |
+| `OPENGP_EFB_SYNC=1` | (not a log) CPU reads of the EFB wait for the GPU instead of returning the previous frame's contents |
+
+The status line also shows where time goes: the guest thread's time in draws (pipeline state,
+textures, vertex transform) and EFB readbacks, and the render thread's time rendering and idle.
 
 After a crash, the launcher prints the faulting address (and the guest address, if the access
 was into guest memory) and a backtrace of `module+offset` entries. Resolve them with

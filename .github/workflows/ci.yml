@@ -23,9 +23,12 @@ jobs:
       CXX: ${{ matrix.cxx }}
     steps:
       - uses: actions/checkout@v5
-      # SDL3 (fetched and built by the renderer) needs X11 headers to support windows.
-      - name: Install Ninja and X11 headers
-        run: sudo apt-get update && sudo apt-get install -y ninja-build libx11-dev libxext-dev
+      # SDL3 (fetched and built by the renderer) needs X11 and audio headers.
+      - name: Install Ninja and SDL3's dependencies
+        run: >
+          sudo apt-get update && sudo apt-get install -y ninja-build
+          libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev
+          libxkbcommon-dev libasound2-dev libpulse-dev
       - name: Configure
         run: cmake --preset default
       - name: Build

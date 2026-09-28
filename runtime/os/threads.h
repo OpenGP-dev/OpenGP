@@ -19,12 +19,17 @@
 //   * Interrupts and the decrementer are delivered at safe points (loop
 //     back-edges, mtmsr): the registers are saved into the current OSContext
 //     as the exception vector would, and the SDK's exception handler is called.
-//     Its OSLoadContext of the interrupted context unwinds back to the
-//     safe point (ExceptionReturn), which then resumes the interrupted code.
+//     Its OSLoadContext of the interrupted context returns straight back to
+//     the safe point, which then resumes the interrupted code: it sets
+//     Context::exception_return, and recompiled code returns right after a
+//     call to OSLoadContext when that is set (`exception_return` in
+//     recomp.toml). On hardware OSLoadContext never returns, and the SDK's
+//     handlers have code after their early-exit calls to it.
 //
 // Everything else (scheduling, mutexes, message queues, alarms) stays SDK code.
 #pragma once
 
+#include <atomic>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -44,10 +49,9 @@ struct HostThread;
 // replaced; caught at the host thread's top level.
 struct ThreadExit {};
 
-// Thrown when an exception handler loads the context it interrupted: the
-// real OSLoadContext never returns, so the rest of the handler must not run
-// (the SDK's decrementer handler, for one, calls OSLoadContext early when no
-// alarm is due and would otherwise carry on). Caught by ThreadManager::deliver.
+// Thrown when a thread switched away from inside an exception handler is
+// resumed: that resumes the interrupted code, so the rest of the handler
+// (possibly several calls deep) must not run. Caught by ThreadManager::deliver.
 struct ExceptionReturn {};
 
 class ThreadManager {
@@ -70,6 +74,10 @@ class ThreadManager {
 
   // Number of guest threads that have been started (for diagnostics).
   int thread_count() const { return static_cast<int>(threads_.size()); }
+  // Exceptions delivered, and how many of their handlers had to be unwound
+  // with ExceptionReturn (for profiling).
+  u64 exceptions_delivered() const { return exceptions_delivered_.load(std::memory_order_relaxed); }
+  u64 exception_returns() const { return exception_returns_.load(std::memory_order_relaxed); }
 
  private:
   struct Owner {
@@ -92,6 +100,7 @@ class ThreadManager {
   HostThread* running_ = nullptr;
   std::vector<std::unique_ptr<HostThread>> threads_;
   std::unordered_map<u32, Owner> owners_;  // only touched by the thread holding the CPU
+  std::atomic<u64> exceptions_delivered_{0}, exception_returns_{0};
 };
 
 extern ThreadManager* g_threads;

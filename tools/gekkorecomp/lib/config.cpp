@@ -64,6 +64,13 @@ bool Config::load(const std::string& path, std::string* error) {
     sda2_base = v;
   }
   interrupt_checks = t["analysis"]["interrupt_checks"].value_or(interrupt_checks);
+  if (auto* arr = t["analysis"]["exception_return"].as_array()) {
+    for (const auto& el : *arr) {
+      const auto name = el.value<std::string>();
+      if (!name) return fail("analysis.exception_return must be a list of function names");
+      exception_return.insert(*name);
+    }
+  }
 
   if (auto* arr = t["function"].as_array()) {
     for (const auto& el : *arr) {

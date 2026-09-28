@@ -32,18 +32,18 @@ class VertexLoader {
   using MemoryReader = const u8* (*)(void* context, u32 addr, u32 size);
 
   // Configures the loader for vertex attribute table `vat` from the CP
-  // registers (indexed by CP register address).
-  void setup(const u32* cp, u8 vat);
+  // registers (indexed by CP register address). Indexed attributes are read
+  // from `ram` (guest MEM1, `ram_size` bytes).
+  void setup(const u32* cp, u8 vat, const u8* ram, u32 ram_size);
 
   // Bytes per vertex in the command stream.
   u32 size() const { return size_; }
 
-  // Decodes one vertex from `src`. `default_posmtx` and `default_texmtx` are
-  // the XF matrix index registers, used when the vertex has no matrix index.
+  // Decodes one vertex from `src`. `matrix_index_a/b` are the XF matrix
+  // index registers, used when the vertex has no matrix indices.
   // Attributes the vertex lacks keep their previous values in `v` (normals),
   // or get defaults (colours: white).
-  void load(const u8* src, InputVertex& v, MemoryReader read, void* context, u32 matrix_index_a,
-            u32 matrix_index_b) const;
+  void load(const u8* src, InputVertex& v, u32 matrix_index_a, u32 matrix_index_b) const;
 
   bool has_normal() const { return normal_.type != 0; }
 
@@ -55,13 +55,15 @@ class VertexLoader {
     float scale = 1;  // dequantisation for integer formats
   };
 
-  const u8* fetch(const Attr& a, u32 array, const u8*& src, u32 bytes, MemoryReader read, void* context) const;
+  const u8* fetch(const Attr& a, u32 array, const u8*& src, u32 bytes) const;
 
   u32 size_ = 0;
   u32 matrix_flags_ = 0;  // VCD bits 0-8: position and texture matrix indices present
   bool normal_index3_ = false;
   Attr pos_, normal_, color_[2], tex_[8];
   u32 array_base_[16] = {}, array_stride_[16] = {};
+  const u8* ram_ = nullptr;
+  u32 ram_size_ = 0;
 };
 
 }  // namespace gx

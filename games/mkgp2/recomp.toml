@@ -18,6 +18,9 @@ file_count = 64
 sda_base = 0x806D6980   # r13, _SDA_BASE_
 sda2_base = 0x806D9EC0  # r2, _SDA2_BASE_
 interrupt_checks = true
+# The SDK's exception handlers have code after their (early-exit) calls to
+# OSLoadContext, which never returns on hardware: see os/threads.h.
+exception_return = ["OSLoadContext"]
 
 # SelectThread's idle loop ("while (RunQueueBits == 0) {}" with interrupts
 # enabled): wait for an interrupt instead of spinning a host core.

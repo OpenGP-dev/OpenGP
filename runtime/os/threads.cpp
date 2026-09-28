@@ -113,7 +113,12 @@ void ThreadManager::load_context(ppc::Context& ctx, u32 target) {
 
   // Returning from an exception to the interrupted context, or resuming
   // ourselves: just return to the caller.
-  if (self->in_interrupt && target == self->interrupt_ctx) throw ExceptionReturn{};
+  if (self->in_interrupt && target == self->interrupt_ctx) {
+    // The recompiled caller returns straight back to deliver() (see
+    // Context::exception_return); the interpreter would carry on.
+    ctx.exception_return = true;
+    return;
+  }
   const u32 me = self->in_interrupt ? self->interrupt_ctx : self->saved_ctx;
   if (target == me) return;
 
@@ -215,8 +220,8 @@ void ThreadManager::service_interrupts(ppc::Context& ctx) {
 // Emulates the exception vector: save the registers into the current
 // OSContext, disable interrupts, and call the SDK's handler for the exception
 // with (exception, context). The handler ends in OSLoadContext(context),
-// which unwinds back here (ExceptionReturn); then the interrupted registers
-// are restored.
+// which comes back here (see Context::exception_return and ExceptionReturn);
+// then the interrupted registers are restored.
 void ThreadManager::deliver(ppc::Context& ctx, hw::Exception e) {
   HostThread* self = t_self;
   const u32 cur = read32(OS_CURRENT_CONTEXT);
@@ -246,9 +251,11 @@ void ThreadManager::deliver(ppc::Context& ctx, hw::Exception e) {
   ctx.gpr[3] = static_cast<u32>(e);
   ctx.gpr[4] = cur;
   ctx.lr = 0;
+  ++exceptions_delivered_;
   try {
     ppc::call(ctx, base_, handler);
   } catch (ExceptionReturn&) {
+    ++exception_returns_;  // resumed after a thread switch inside the handler
   }
 
   // Restore the interrupted state, keeping processor-wide SPR changes.

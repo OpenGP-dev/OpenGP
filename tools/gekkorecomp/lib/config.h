@@ -14,6 +14,7 @@
 //   sda_base = 0x80400000        # r13 (_SDA_BASE_), optional
 //   sda2_base = 0x80410000       # r2 (_SDA2_BASE_), optional
 //   interrupt_checks = true      # poll for interrupts on loop back-edges
+//   exception_return = ["OSLoadContext"]  # return after these if ctx.exception_return is set
 //
 //   [[function]]                 # add or override a function
 //   address = 0x80003100
@@ -38,6 +39,7 @@
 
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -75,6 +77,9 @@ struct Config {
   std::optional<u32> sda_base;
   std::optional<u32> sda2_base;
   bool interrupt_checks = true;
+  // Functions that can end an exception handler (OSLoadContext): after a call
+  // to one, the caller returns if the runtime set ctx.exception_return.
+  std::set<std::string> exception_return;
 
   std::vector<FunctionOverride> functions;
   std::vector<JumpTableOverride> jump_tables;

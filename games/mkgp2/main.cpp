@@ -79,6 +79,12 @@ std::map<u32, std::string> load_function_names() {
 }
 
 std::atomic<unsigned long long> g_rendered{0};
+std::atomic<unsigned long long> g_render_ns{0}, g_wait_ns{0};  // render thread: rendering, idle
+
+unsigned long long elapsed_ns(std::chrono::steady_clock::time_point since) {
+  return static_cast<unsigned long long>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - since).count());
+}
 
 std::string describe(const std::map<u32, std::string>& names, u32 addr) {
   char buf[16];
@@ -148,6 +154,16 @@ int main(int argc, char** argv) {
                  static_cast<unsigned long long>(machine.gpu().frames()), g_rendered.load(),
                  static_cast<unsigned long long>(machine.gpu().draws()), machine.thread_count(),
                  machine.hardware().interrupt_cause(), machine.hardware().interrupt_mask());
+    const gx::Frontend::Stats& st = machine.gpu().frontend().stats();
+    auto sec = [](const std::atomic<u64>& ns) { return static_cast<double>(ns.load()) * 1e-9; };
+    std::fprintf(stderr,
+                 "  guest: draws %.1f s (state %.1f s, textures %.1f s, %llu vertices %.1f s), %llu EFB readbacks "
+                 "%.1f s; renderer: %.1f s, idle %.1f s; exceptions %llu (%llu unwound)\n",
+                 sec(st.draw_ns), sec(st.state_ns), sec(st.texture_ns), static_cast<unsigned long long>(st.vertices.load()),
+                 sec(st.transform_ns), static_cast<unsigned long long>(st.readbacks.load()), sec(st.readback_ns),
+                 static_cast<double>(g_render_ns.load()) * 1e-9, static_cast<double>(g_wait_ns.load()) * 1e-9,
+                 static_cast<unsigned long long>(machine.exceptions_delivered()),
+                 static_cast<unsigned long long>(machine.exception_returns()));
     for (ppc::TraceStack* s : ppc::trace_all_stacks()) {
       const auto frames = ppc::trace_snapshot(*s);
       if (frames.empty()) continue;
@@ -222,16 +238,22 @@ int main(int argc, char** argv) {
         }
         if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F12) shot_requested = true;
       }
+      const auto wait_start = std::chrono::steady_clock::now();
       auto frame = queue.pop(8);
+      g_wait_ns.fetch_add(elapsed_ns(wait_start));
       if (!frame) continue;
       const bool shoot = frame->xfb && (shot_requested || screenshots.count(frame->number));
       video::Image shot;
+      const auto render_start = std::chrono::steady_clock::now();
       renderer.render(*frame, shoot ? &shot : nullptr);
-      g_rendered.fetch_add(1);
+      g_render_ns.fetch_add(elapsed_ns(render_start));
+      if (frame->xfb) g_rendered.fetch_add(1);
+      const u64 number = frame->number;
+      queue.give_back(std::move(frame));
       if (shoot && shot.width) {
         std::error_code ec;
         fs::create_directories(shot_dir, ec);
-        const fs::path path = shot_dir / ("frame_" + std::to_string(frame->number) + ".png");
+        const fs::path path = shot_dir / ("frame_" + std::to_string(number) + ".png");
         if (video::write_png(path.string(), shot)) std::fprintf(stderr, "[opengp] screenshot: %s\n", path.string().c_str());
         shot_requested = false;
       }

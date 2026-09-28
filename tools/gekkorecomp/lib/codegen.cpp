@@ -89,7 +89,11 @@ class FunctionEmitter {
 
   // Code for a call to `target` (bl / bcl), after LR has been set.
   std::string call(u32 target) {
-    if (const Function* callee = p_.function_at(target)) return callee->cpp_name + "(ctx, base);";
+    if (const Function* callee = p_.function_at(target)) {
+      if (p_.config().exception_return.count(callee->symbol))
+        return callee->cpp_name + "(ctx, base); if (ctx.exception_return) return;";
+      return callee->cpp_name + "(ctx, base);";
+    }
     return "::ppc::call(ctx, base, " + hex32(target) + ");";
   }
 

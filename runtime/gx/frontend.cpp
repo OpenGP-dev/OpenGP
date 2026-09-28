@@ -61,9 +61,21 @@ u64 hash_bytes(const u8* p, std::size_t n, u64 seed = 0) {
   return h;
 }
 
-u64 mix(u64 h, u64 v) { return (h ^ (v + 0x9E3779B97F4A7C15ull + (h << 6) + (h >> 2))) * 0xBF58476D1CE4E5B9ull; }
+// Adds the time from construction to destruction to a counter (ns).
+class ScopeTimer {
+ public:
+  explicit ScopeTimer(std::atomic<u64>& total) : total_(total), start_(std::chrono::steady_clock::now()) {}
+  ~ScopeTimer() {
+    const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start_);
+    total_.fetch_add(static_cast<u64>(ns.count()), std::memory_order_relaxed);
+  }
 
-u32 pack_rgba(const std::array<u8, 4>& c) { return c[0] | (u32{c[1]} << 8) | (u32{c[2]} << 16) | (u32{c[3]} << 24); }
+ private:
+  std::atomic<u64>& total_;
+  std::chrono::steady_clock::time_point start_;
+};
+
+u64 mix(u64 h, u64 v) { return (h ^ (v + 0x9E3779B97F4A7C15ull + (h << 6) + (h >> 2))) * 0xBF58476D1CE4E5B9ull; }
 
 // Alpha test: can it fail, pass, or depends on the pixel? (Dolphin AlphaTest::TestResult)
 enum class AlphaTestResult { Undetermined, Fail, Pass };
@@ -113,6 +125,7 @@ struct Frontend::Viewport {
 
 Frontend::Frontend(MemoryReader read, void* context) : read_(read), context_(context), tmem_(kTmemSize, 0) {
   if (const char* env = std::getenv("OPENGP_GX_DUMP")) dump_frame_ = std::strtoull(env, nullptr, 10);
+  if (const char* env = std::getenv("OPENGP_EFB_SYNC")) efb_sync_ = *env && *env != '0';
   bp_[BP_GENMODE] = 0;
   bp_[BP_ZMODE] = 0x17;  // test and update enabled, LEQUAL
   bp_[BP_BLENDMODE] = 0x18;  // colour and alpha update
@@ -122,7 +135,9 @@ Frontend::~Frontend() = default;
 
 Frame& Frontend::frame() {
   if (!frame_) {
-    frame_ = std::make_unique<Frame>();
+    frame_ = output_ ? output_->recycle() : nullptr;
+    if (frame_) frame_->clear();
+    else frame_ = std::make_unique<Frame>();
     // New frame: state and texture indices are per frame, and textures are
     // re-checked against memory at least once per frame.
     state_dirty_ = true;
@@ -139,6 +154,7 @@ void Frontend::end_frame(bool present) {
   f.number = frames_;
   if (present) {
     ++frames_;
+    peeks_[0].requested = peeks_[1].requested = false;
     // Evict textures not used for a while.
     for (auto it = textures_.begin(); it != textures_.end();) {
       if (it->second.last_used + 120 < frames_) {
@@ -161,17 +177,41 @@ u32 Frontend::efb_read(u32 address, u32 alpha_mode) {
   const u32 x = (address & 0xFFF) >> 2, y = (address >> 12) & 0x3FF;
   if (!output_ || x >= kEfbWidth || y >= kEfbHeight) return 0;
   const bool depth = address & 0x00400000;
-  std::shared_ptr<EfbReadback>& cache = depth ? efb_depth_ : efb_color_;
-  if (!cache) {
-    // Render everything so far, then read the whole EFB back.
-    auto request = std::make_shared<EfbReadback>(depth);
-    frame().readback = request;
-    end_frame(false);
-    request->wait();
-    cache = std::move(request);
-    if (cache->pixels.size() != std::size_t{kEfbWidth} * kEfbHeight) cache->pixels.assign(std::size_t{kEfbWidth} * kEfbHeight, 0);
+  EfbPeeks& peeks = peeks_[depth ? 1 : 0];
+  auto request = [&](bool urgent) {
+    auto r = std::make_shared<EfbReadback>(depth, urgent);
+    Frame& f = frame();
+    f.readbacks.push_back(r);
+    f.commands.push_back({Command::Type::Readback, static_cast<u32>(f.readbacks.size() - 1)});
+    stats_.readbacks.fetch_add(1, std::memory_order_relaxed);
+    return r;
+  };
+  if (efb_sync_) {
+    // Render everything so far, then read the whole EFB back (cached until
+    // the EFB changes).
+    if (!peeks.current) {
+      auto r = request(true);
+      end_frame(false);
+      const ScopeTimer readback_timer(stats_.readback_ns);
+      r->wait();
+      peeks.current = std::move(r);
+    }
+  } else {
+    // Read back once per frame, at the first peek, without waiting; peeks
+    // see the newest readback that has completed (usually last frame's).
+    if (!peeks.requested) {
+      peeks.requested = true;
+      peeks.pending.push_back(request(false));
+    }
+    while (!peeks.pending.empty() && peeks.pending.front()->ready()) {
+      peeks.current = std::move(peeks.pending.front());
+      peeks.pending.pop_front();
+    }
+    if (!peeks.current) return 0;
   }
-  const u32 v = cache->pixels[y * kEfbWidth + x];
+  const std::vector<u32>& pixels = peeks.current->pixels;
+  if (pixels.size() != std::size_t{kEfbWidth} * kEfbHeight) return 0;
+  const u32 v = pixels[y * kEfbWidth + x];
   if (depth) return v & 0xFFFFFF;
   // RGBA8 (red lowest) to what the game reads: ARGB.
   u32 color = (v & 0xFF00FF00) | ((v >> 16) & 0xFF) | ((v & 0xFF) << 16);
@@ -543,6 +583,7 @@ void Frontend::build_uniforms(PixelUniforms& u) const {
 u32 Frontend::draw_state() {
   Frame& f = frame();
   if (!state_dirty_ && !textures_dirty_ && state_index_ < f.states.size()) return state_index_;
+  const ScopeTimer timer(stats_.state_ns);
 
   if (textures_dirty_) {
     // Texture maps the TEV (and indirect stages) read.
@@ -578,6 +619,7 @@ u32 Frontend::draw_state() {
 // ---- Textures ------------------------------------------------------------------------------------
 
 TextureBinding Frontend::bind_texture(u32 map, s32* size) {
+  const ScopeTimer timer(stats_.texture_ns);
   const u32 mode0 = bp_[tex_reg(BP_TX_SETMODE0, map)], mode1 = bp_[tex_reg(BP_TX_SETMODE1, map)];
   const u32 image0 = bp_[tex_reg(BP_TX_SETIMAGE0, map)], image1 = bp_[tex_reg(BP_TX_SETIMAGE1, map)];
   const u32 image3 = bp_[tex_reg(BP_TX_SETIMAGE3, map)], tlut = bp_[tex_reg(BP_TX_SETTLUT, map)];
@@ -671,13 +713,14 @@ TextureBinding Frontend::bind_texture(u32 map, s32* size) {
 
 void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertices, const u32* cp) {
   if (!output_ || count == 0) return;
+  const ScopeTimer timer(stats_.draw_ns);
   Frame& f = frame();
 
   const u32 state = draw_state();
   const s32* sc = f.states[state].scissor;
   if (sc[2] == 0 || sc[3] == 0) return;
 
-  loader_.setup(cp, vat);
+  loader_.setup(cp, vat, ram_, ram_size_);
   const u32 stride = loader_.size();
   if (std::size_t{stride} * count > vertices.size()) return;
 
@@ -695,13 +738,16 @@ void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertice
   skip_.resize(count);
   const u32 mia = xf_.reg(XF_MATRIX_INDEX_A), mib = xf_.reg(XF_MATRIX_INDEX_B);
   TransformedVertex t;
+  const ScopeTimer transform_timer(stats_.transform_ns);
+  stats_.vertices.fetch_add(count, std::memory_order_relaxed);
+  xf_.prepare();
   for (u32 i = 0; i < count; ++i) {
-    loader_.load(vertices.data() + std::size_t{i} * stride, input_, read_, context_, mia, mib);
+    loader_.load(vertices.data() + std::size_t{i} * stride, input_, mia, mib);
     xf_.transform(input_, t);
     Vertex& v = f.vertices[base + i];
     vp.apply(t.clip, v.pos);
-    v.color[0] = pack_rgba(t.color[0]);
-    v.color[1] = pack_rgba(t.color[1]);
+    v.color[0] = t.color[0];
+    v.color[1] = t.color[1];
     std::memcpy(v.tex, t.tex, sizeof(v.tex));
     std::memcpy(clip_[i].data(), t.clip, sizeof(t.clip));
     skip_[i] = input_.skip;
