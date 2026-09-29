@@ -2,6 +2,7 @@
 
 #include "triforce/mkgp.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 
@@ -67,10 +68,17 @@ void MkgpIOAdapter::update(IOPorts& ports) {
   if (c.start) sw[0] |= 0x80;
   if (c.item) sw[1] |= 0x20;
   if (c.cancel) sw[1] |= 0x02;  // VS cancel
+  // The game calibrates the wheel and pedals from its settings (defaults:
+  // steering centred at 0x7FFF, pedals at rest at 0): steering reaches full
+  // lock 0x5000 either side of the centre, and a pedal reads from 0x800 above
+  // its rest position to 0x4000 further. Scale the controls to exactly that,
+  // with a little to spare, so that all of their travel is used.
   const auto analog = ports.analog_inputs();
-  analog[0] = expand_analog(c.steering);
-  analog[1] = expand_analog(c.gas);
-  analog[2] = expand_analog(c.brake);
+  const int steer = (c.steering - 0x80) * 0x5200 / 0x7F;
+  analog[0] = static_cast<u16>(std::clamp(0x8000 + steer, 0, 0xFFFF));
+  auto pedal = [](u8 v) { return static_cast<u16>(v ? 0x800 + v * 0x4100 / 0xFF : 0); };
+  analog[1] = pedal(c.gas);
+  analog[2] = pedal(c.brake);
 }
 
 void MkgpIOAdapter::generic_outputs_changed(std::span<const u8> bits_set, std::span<const u8> bits_cleared) {

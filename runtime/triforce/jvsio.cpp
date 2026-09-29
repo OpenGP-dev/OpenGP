@@ -304,6 +304,7 @@ JvsIoBoard::Result JvsIoBoard::handle_command(u8 command, JvsRequest& request, J
       const int msb = request.read();
       const int lsb = request.read();
       const int adjust = ((msb << 8) | lsb) * (command == CMD_COIN_COUNTER_DEC ? -1 : 1);
+      log_jvs("coin counter %u: %+d", slot, adjust);
       if (slot < coin_counts_.size()) coin_counts_[slot] = static_cast<u16>(std::clamp(coin_counts_[slot] + adjust, 0, 0x3FFF));
       return Report::Okay;
     }

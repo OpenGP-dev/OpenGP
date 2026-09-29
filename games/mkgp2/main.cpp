@@ -8,11 +8,12 @@
 //
 //   opengp-mkgp2 [--iso PATH] [--timeout SECONDS] [--status SECONDS] [--scale N]
 //                [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]
-//                [--input SCRIPT] [--input-file PATH]
+//                [--input SCRIPT] [--input-file PATH] [--free-play]
 //
 // --headless renders without a window (for screenshots); --no-video skips
 // rendering entirely. F12 saves a screenshot to user/screenshots/.
 // --input and --input-file play scripted input (see runtime/input/script.h).
+// --free-play needs no coins. Controls are set in user/controls.toml.
 
 #include <algorithm>
 #include <atomic>
@@ -31,6 +32,7 @@
 #include "machine.h"
 #include "os/crash.h"
 #include "ppc/hooks.h"
+#include "patches.h"
 #include "ppc/trace.h"
 #include "ppc_recomp_shared.h"
 
@@ -117,6 +119,7 @@ int main(int argc, char** argv) {
     else if (a == "--screenshot-every" && i + 1 < argc) screenshot_every = std::strtoull(argv[++i], nullptr, 10);
     else if (a == "--headless") headless = true;
     else if (a == "--no-video") use_video = false;
+    else if (a == "--free-play") mkgp2::g_free_play = true;
     else if ((a == "--input" || a == "--input-file") && i + 1 < argc) {
       std::string text = argv[++i];
       if (a == "--input-file") {
@@ -135,7 +138,7 @@ int main(int argc, char** argv) {
       std::fprintf(stderr,
                    "usage: opengp-mkgp2 [--iso PATH] [--timeout SECONDS] [--status SECONDS] [--scale N]\n"
                    "                    [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]\n"
-                   "                    [--input SCRIPT] [--input-file PATH]\n");
+                   "                    [--input SCRIPT] [--input-file PATH] [--free-play]\n");
       return 2;
     }
   }
