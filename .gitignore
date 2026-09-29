@@ -20,6 +20,9 @@
 *.ciso
 *.gcz
 
+# Local reference checkout of naari3/mkgp2-decomp (not part of this repo)
+/gp2decomp/
+
 # Build output (recompiled code is derived from the game, so it lives here too)
 build/
 out/
