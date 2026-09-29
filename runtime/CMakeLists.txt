@@ -30,6 +30,7 @@ add_library(opengp_machine STATIC
   hw/hardware.cpp
   hw/si.cpp
   hw/vi.cpp
+  input/script.cpp
   machine.cpp
   os/boot.cpp
   os/crash.cpp
@@ -66,4 +67,10 @@ endif()
 
 if(OPENGP_BUILD_VIDEO)
   add_subdirectory(video)
+
+  # The player's input devices (SDL3, fetched by video/).
+  add_library(opengp_input STATIC input/host.cpp)
+  target_link_libraries(opengp_input
+    PUBLIC opengp_machine SDL3::SDL3
+    PRIVATE tomlplusplus opengp_warnings)
 endif()

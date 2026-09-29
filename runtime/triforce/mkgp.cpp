@@ -2,7 +2,22 @@
 
 #include "triforce/mkgp.h"
 
+#include <cstdio>
+#include <cstdlib>
+
 namespace triforce {
+
+namespace {
+
+// OPENGP_LOG_FFB=1 logs the forces the game sends to the wheel.
+bool ffb_logging() {
+  static const bool enabled = std::getenv("OPENGP_LOG_FFB") != nullptr;
+  return enabled;
+}
+
+u16 be16(const u8* p) { return static_cast<u16>((p[0] << 8) | p[1]); }
+
+}  // namespace
 
 void MkgpSteeringWheel::update() {
   // Requests are 10 bytes: FF FF FF 01, then centering force, friction force
@@ -17,6 +32,13 @@ void MkgpSteeringWheel::update() {
     const auto request = rx().subspan(pos, kRequestSize);
     pos += kRequestSize;
     if (request[0] != 0xFF || request[1] != 0xFF || request[2] != 0xFF || request[3] != 0x01) continue;
+    const u16 centering = be16(&request[4]), friction = be16(&request[6]), roll = be16(&request[8]);
+    if (ffb_logging() && (centering != outputs_->centering || friction != outputs_->friction || roll != outputs_->roll)) {
+      std::fprintf(stderr, "[ffb] centering %04X friction %04X roll %04X\n", centering, friction, roll);
+    }
+    outputs_->centering = centering;
+    outputs_->friction = friction;
+    outputs_->roll = roll;
     if (init_state_ == 0) {
       // Expected at power-up.
       write_tx(kAckNoError);
@@ -34,6 +56,11 @@ void MkgpSteeringWheel::update() {
   consume_rx(pos);
 }
 
+void MkgpSteeringWheel::reset() {
+  init_state_ = 0;
+  outputs_->centering = outputs_->friction = outputs_->roll = 0;
+}
+
 void MkgpIOAdapter::update(IOPorts& ports) {
   const Controls c = controls_ ? controls_() : Controls{};
   const auto sw = ports.switch_inputs(0);
@@ -47,9 +74,12 @@ void MkgpIOAdapter::update(IOPorts& ports) {
 }
 
 void MkgpIOAdapter::generic_outputs_changed(std::span<const u8> bits_set, std::span<const u8> bits_cleared) {
-  (void)bits_cleared;
   // Bit 0x80 resets the wheel; 0x04 and 0x08 are the item and cancel button lamps.
   if (bits_set[0] & 0x80) wheel_->reset();
+  if (bits_set[0] & 0x04) outputs_->item_lamp = true;
+  if (bits_cleared[0] & 0x04) outputs_->item_lamp = false;
+  if (bits_set[0] & 0x08) outputs_->cancel_lamp = true;
+  if (bits_cleared[0] & 0x08) outputs_->cancel_lamp = false;
 }
 
 }  // namespace triforce

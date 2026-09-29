@@ -61,7 +61,12 @@ bool Machine::boot(const std::string& image_path, os::BootResult* boot, std::str
   di->set_backend(std::move(mediaboard));
   h.map(0x6000, 0x0400, std::move(di));
   auto si = std::make_unique<hw::SiBus>(h);
-  si->attach(0, std::make_unique<triforce::BaseboardSi>(disc_.game_id(), user_dir_, [this] { return controls(); }));
+  si->attach(0, std::make_unique<triforce::BaseboardSi>(
+                   disc_.game_id(), user_dir_, [this] { return controls(); },
+                   [this](const triforce::Outputs& outputs) {
+                     std::lock_guard lock(controls_mutex_);
+                     outputs_ = outputs;
+                   }));
   h.map(0x6400, 0x0400, std::move(si));
   h.map(0x6800, 0x0400, std::make_unique<hw::ExiBus>(h, user_dir_, disc_.game_id()));
   h.map(0x6C00, 0x0400, std::make_unique<hw::AiDevice>(h));
@@ -75,6 +80,16 @@ bool Machine::boot(const std::string& image_path, os::BootResult* boot, std::str
   entry_ = result.entry_point;
   if (boot) *boot = result;
   return true;
+}
+
+triforce::Controls Machine::controls() const {
+  triforce::Controls c;
+  {
+    std::lock_guard lock(controls_mutex_);
+    c = controls_;
+  }
+  if (!script_.empty() && gpu_) script_.apply(gpu_->frames(), c);
+  return c;
 }
 
 void Machine::install(const ppc::RecompiledModule& module) { ppc::install_module(module, memory_.base()); }

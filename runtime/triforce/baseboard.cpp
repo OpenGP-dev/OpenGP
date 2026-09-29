@@ -54,12 +54,14 @@ bool is_mario_kart(const std::string& game_id) {
 
 }  // namespace
 
-BaseboardSi::BaseboardSi(const std::string& game_id, const std::string& user_dir, ControlsSource controls) {
+BaseboardSi::BaseboardSi(const std::string& game_id, const std::string& user_dir, ControlsSource controls,
+                         OutputsSink outputs)
+    : outputs_sink_(std::move(outputs)) {
   io_ports_.add_adapter(std::make_unique<CommonIOAdapter>(controls));
   if (is_mario_kart(game_id)) {
     jvs_ = std::make_unique<NamcoFcaBoard>(&io_ports_);
-    auto wheel = std::make_unique<MkgpSteeringWheel>();
-    io_ports_.add_adapter(std::make_unique<MkgpIOAdapter>(wheel.get(), controls));
+    auto wheel = std::make_unique<MkgpSteeringWheel>(&outputs_);
+    io_ports_.add_adapter(std::make_unique<MkgpIOAdapter>(wheel.get(), controls, &outputs_));
     serial_a_ = std::move(wheel);
     serial_b_ = std::make_unique<MagCardReader>(user_dir + "/tricard_" + game_id + ".bin");
   } else {
@@ -215,6 +217,11 @@ int BaseboardSi::run_baseboard_command(u8* buffer, int request_length) {
   drain(serial_a_.get(), GCAM_SERIAL_A, kSerialMaxRead);
   if (serial_b_) serial_b_->update();
   drain(serial_b_.get(), GCAM_SERIAL_B, kSerialMaxRead);
+
+  if (outputs_sink_ && outputs_ != reported_outputs_) {
+    reported_outputs_ = outputs_;
+    outputs_sink_(outputs_);
+  }
 
   out[0] = 0x01;  // status
   out[1] = static_cast<u8>(offset - 2);

@@ -37,3 +37,7 @@ add_test(NAME diff COMMAND test_diff)
 add_executable(test_recomp_inputs test_recomp_inputs.cpp)
 target_link_libraries(test_recomp_inputs PRIVATE gekkorecomp_lib doctest opengp_warnings)
 add_test(NAME recomp_inputs COMMAND test_recomp_inputs)
+
+add_executable(test_input test_input.cpp)
+target_link_libraries(test_input PRIVATE opengp_machine doctest opengp_warnings)
+add_test(NAME input COMMAND test_input)

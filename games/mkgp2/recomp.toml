@@ -36,3 +36,10 @@ function = "OSIdleWait"
 [[patch]]
 address = 0x80073BD8
 value = 0x98650025  # stb r3, 0x25(r5); was stb r6 (r6 = 1, r3 = 0)
+
+# At start-up the LINK screen looks for linked cabinets for 60 seconds (a
+# 3600-frame timer set when the link starts). Linking is not emulated, so
+# don't wait. (From the community skip-checks patch.)
+[[patch]]
+address = 0x80084850
+value = 0x38000001  # li r0, 1; was li r0, 3600

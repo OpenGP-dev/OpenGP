@@ -13,6 +13,7 @@
 #include "disc/disc.h"
 #include "gx/gpu.h"
 #include "hw/hardware.h"
+#include "input/script.h"
 #include "os/boot.h"
 #include "os/threads.h"
 #include "ppc/memory.h"
@@ -36,10 +37,17 @@ class Machine {
     std::lock_guard lock(controls_mutex_);
     controls_ = controls;
   }
-  triforce::Controls controls() const {
+  // What the I/O board reads: the player's controls plus the input script.
+  triforce::Controls controls() const;
+
+  // What the cabinet is doing to the player: wheel forces, lamps (thread-safe).
+  triforce::Outputs outputs() const {
     std::lock_guard lock(controls_mutex_);
-    return controls_;
+    return outputs_;
   }
+
+  // Scripted input, applied on top of the player's controls (set before run()).
+  void set_script(input::Script script) { script_ = std::move(script); }
 
   // Opens the disc image, sizes RAM from its bi2.bin, maps the hardware and
   // runs the boot ROM emulation (apploader). Fills `boot` on success.
@@ -75,6 +83,8 @@ class Machine {
   std::string user_dir_ = "user";
   mutable std::mutex controls_mutex_;
   triforce::Controls controls_{};
+  triforce::Outputs outputs_{};
+  input::Script script_;
 };
 
 }  // namespace opengp

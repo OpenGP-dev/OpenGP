@@ -7,10 +7,12 @@
 // the main thread owns the window and renders the frames it produces.
 //
 //   opengp-mkgp2 [--iso PATH] [--timeout SECONDS] [--status SECONDS] [--scale N]
-//                [--headless] [--no-video] [--screenshot FRAME]...
+//                [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]
+//                [--input SCRIPT] [--input-file PATH]
 //
 // --headless renders without a window (for screenshots); --no-video skips
 // rendering entirely. F12 saves a screenshot to user/screenshots/.
+// --input and --input-file play scripted input (see runtime/input/script.h).
 
 #include <algorithm>
 #include <atomic>
@@ -37,6 +39,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include "input/host.h"
 #include "video/renderer.h"
 #endif
 
@@ -101,6 +104,9 @@ int main(int argc, char** argv) {
   unsigned scale = 1;
   bool headless = false, use_video = true;
   std::set<u64> screenshots;
+  u64 screenshot_every = 0;
+  input::Script script;
+  std::string error;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     if (a == "--iso" && i + 1 < argc) image = argv[++i];
@@ -108,12 +114,28 @@ int main(int argc, char** argv) {
     else if (a == "--status" && i + 1 < argc) status_s = std::atoi(argv[++i]);
     else if (a == "--scale" && i + 1 < argc) scale = static_cast<unsigned>(std::max(1, std::atoi(argv[++i])));
     else if (a == "--screenshot" && i + 1 < argc) screenshots.insert(std::strtoull(argv[++i], nullptr, 10));
+    else if (a == "--screenshot-every" && i + 1 < argc) screenshot_every = std::strtoull(argv[++i], nullptr, 10);
     else if (a == "--headless") headless = true;
     else if (a == "--no-video") use_video = false;
-    else {
+    else if ((a == "--input" || a == "--input-file") && i + 1 < argc) {
+      std::string text = argv[++i];
+      if (a == "--input-file") {
+        std::ifstream f(text, std::ios::binary);
+        if (!f) {
+          std::fprintf(stderr, "cannot read %s\n", text.c_str());
+          return 1;
+        }
+        text.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+      }
+      if (!script.parse(text, &error)) {
+        std::fprintf(stderr, "%s\n", error.c_str());
+        return 2;
+      }
+    } else {
       std::fprintf(stderr,
                    "usage: opengp-mkgp2 [--iso PATH] [--timeout SECONDS] [--status SECONDS] [--scale N]\n"
-                   "                    [--headless] [--no-video] [--screenshot FRAME]...\n");
+                   "                    [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]\n"
+                   "                    [--input SCRIPT] [--input-file PATH]\n");
       return 2;
     }
   }
@@ -131,7 +153,7 @@ int main(int argc, char** argv) {
 
   static opengp::Machine machine;
   machine.set_user_dir((fs::path(OPENGP_SOURCE_DIR) / "user").string());
-  std::string error;
+  machine.set_script(std::move(script));
   os::BootResult boot;
   if (!machine.boot(image, &boot, &error)) {
     std::fprintf(stderr, "boot failed: %s\n", error.c_str());
@@ -219,6 +241,17 @@ int main(int argc, char** argv) {
     std::printf("  video:  %s, %ux internal resolution%s\n", renderer.driver(), scale, headless ? ", headless" : "");
     std::fflush(stdout);
 
+    // The player's controls (not when headless: scripted input only).
+    static input::HostInput host_input;
+    bool use_input = false;
+    if (!headless) {
+      const std::string controls_path = (fs::path(OPENGP_SOURCE_DIR) / "user" / "controls.toml").string();
+      if (!host_input.load(controls_path, &error)) std::fprintf(stderr, "[input] %s\n", error.c_str());
+      use_input = host_input.init(&error);
+      if (!use_input) std::fprintf(stderr, "[input] controllers unavailable: %s\n", error.c_str());
+      std::printf("  input:  %s\n", controls_path.c_str());
+    }
+
     static video::FrameQueue queue;
     machine.gpu().set_output(&queue);
     std::thread([] {
@@ -237,12 +270,18 @@ int main(int argc, char** argv) {
           std::_Exit(0);
         }
         if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F12) shot_requested = true;
+        if (use_input) host_input.handle_event(e);
+      }
+      if (use_input) {
+        machine.set_controls(host_input.poll());
+        host_input.set_outputs(machine.outputs());
       }
       const auto wait_start = std::chrono::steady_clock::now();
       auto frame = queue.pop(8);
       g_wait_ns.fetch_add(elapsed_ns(wait_start));
       if (!frame) continue;
-      const bool shoot = frame->xfb && (shot_requested || screenshots.count(frame->number));
+      const bool shoot = frame->xfb && (shot_requested || screenshots.count(frame->number) ||
+                                        (screenshot_every && frame->number % screenshot_every == 0));
       video::Image shot;
       const auto render_start = std::chrono::steady_clock::now();
       renderer.render(*frame, shoot ? &shot : nullptr);

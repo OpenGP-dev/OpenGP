@@ -13,22 +13,27 @@ namespace triforce {
 
 class MkgpSteeringWheel final : public SerialDevice {
  public:
+  // The forces the game asks for go to `outputs`.
+  explicit MkgpSteeringWheel(Outputs* outputs) : outputs_(outputs) {}
   void update() override;
-  void reset() { init_state_ = 0; }
+  void reset();
 
  private:
   u8 init_state_ = 0;
+  Outputs* outputs_;
 };
 
 class MkgpIOAdapter final : public IOAdapter {
  public:
-  MkgpIOAdapter(MkgpSteeringWheel* wheel, ControlsSource controls) : wheel_(wheel), controls_(std::move(controls)) {}
+  MkgpIOAdapter(MkgpSteeringWheel* wheel, ControlsSource controls, Outputs* outputs)
+      : wheel_(wheel), controls_(std::move(controls)), outputs_(outputs) {}
   void update(IOPorts& ports) override;
   void generic_outputs_changed(std::span<const u8> bits_set, std::span<const u8> bits_cleared) override;
 
  private:
   MkgpSteeringWheel* wheel_;
   ControlsSource controls_;
+  Outputs* outputs_;
 };
 
 }  // namespace triforce

@@ -20,8 +20,9 @@ namespace triforce {
 class BaseboardSi final : public hw::SiDevice {
  public:
   // `game_id` picks the cabinet (I/O board and serial devices); cards are
-  // stored in `user_dir`.
-  BaseboardSi(const std::string& game_id, const std::string& user_dir, ControlsSource controls);
+  // stored in `user_dir`. `outputs` is told when the cabinet's outputs change.
+  BaseboardSi(const std::string& game_id, const std::string& user_dir, ControlsSource controls,
+              OutputsSink outputs = {});
   ~BaseboardSi() override;
 
   int run_buffer(u8* buffer, int request_length) override;
@@ -35,6 +36,8 @@ class BaseboardSi final : public hw::SiDevice {
   std::size_t current_response_ = 0;
 
   IOPorts io_ports_;
+  Outputs outputs_, reported_outputs_;
+  OutputsSink outputs_sink_;
   std::unique_ptr<JvsIoBoard> jvs_;
   std::unique_ptr<SerialDevice> serial_a_, serial_b_;
 };

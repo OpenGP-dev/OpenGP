@@ -28,6 +28,17 @@ struct Controls {
 };
 using ControlsSource = std::function<Controls()>;
 
+// What the cabinet does to the player: steering wheel force feedback and the
+// button lamps. Forces are the game's raw values.
+struct Outputs {
+  u16 centering = 0;  // pull towards the centre, 0..0x7FFF
+  u16 friction = 0;   // resistance to turning, 0..0x7FFF
+  u16 roll = 0;       // push to one side, 0x8000 +/- 0x7FFF (the road, bumps, hits); 0 when off
+  bool item_lamp = false, cancel_lamp = false;
+  bool operator==(const Outputs&) const = default;
+};
+using OutputsSink = std::function<void(const Outputs&)>;
+
 class IOAdapter;
 
 class IOPorts {
