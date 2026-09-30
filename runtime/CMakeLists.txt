@@ -35,6 +35,7 @@ add_library(opengp_machine STATIC
   os/boot.cpp
   os/crash.cpp
   os/printf.cpp
+  os/profiler.cpp
   os/threads.cpp
   triforce/baseboard.cpp
   triforce/io_ports.cpp
@@ -62,7 +63,7 @@ target_link_libraries(opengp_machine
   PUBLIC ppc_runtime Threads::Threads
   PRIVATE opengp_warnings)
 if(WIN32)
-  target_link_libraries(opengp_machine PRIVATE winmm)
+  target_link_libraries(opengp_machine PRIVATE winmm dbghelp)
 endif()
 
 if(OPENGP_BUILD_VIDEO)

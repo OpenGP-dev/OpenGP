@@ -668,14 +668,14 @@ TextureBinding Frontend::bind_texture(u32 map, s32* size) {
   }
   if (!data) return binding;
 
-  const u64 data_hash = hash_bytes(data, bytes);
+  const u64 data_hash = from_tmem ? hash_bytes(data, bytes) : memory_hash(data, address, bytes);
 
   // An EFB copy at this address, not overwritten since?
   if (!from_tmem) {
     if (auto it = copies_.find(address); it != copies_.end() && it->second.width == width && it->second.height == height) {
       const u32 copy_bytes = texture_level_size(it->second.format, width, height);
       const u8* mem = read_(context_, address, copy_bytes);
-      if (mem && hash_bytes(mem, copy_bytes) == it->second.memory_hash) {
+      if (mem && memory_hash(mem, address, copy_bytes) == it->second.memory_hash) {
         binding.texture = it->second.handle;
         return binding;
       }
@@ -721,6 +721,16 @@ TextureBinding Frontend::bind_texture(u32 map, s32* size) {
                  static_cast<u32>(format), width, height, levels, from_tmem ? " (TMEM)" : "");
   binding.texture = up.handle;
   return binding;
+}
+
+u64 Frontend::memory_hash(const u8* data, u32 address, u32 size) {
+  if (memory_hashes_.size() > 16384) memory_hashes_.clear();
+  MemoryHash& m = memory_hashes_[(u64{size} << 32) | address];
+  if (m.frame != frames_ + 1) {
+    m.hash = hash_bytes(data, size);
+    m.frame = frames_ + 1;
+  }
+  return m.hash;
 }
 
 // ---- Draws ---------------------------------------------------------------------------------------

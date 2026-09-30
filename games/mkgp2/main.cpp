@@ -31,6 +31,7 @@
 #include "hw/vi.h"
 #include "machine.h"
 #include "os/crash.h"
+#include "os/profiler.h"
 #include "ppc/hooks.h"
 #include "patches.h"
 #include "ppc/trace.h"
@@ -204,6 +205,7 @@ int main(int argc, char** argv) {
   };
   static const auto status_on_crash = print_status;
   os::install_crash_handler(machine.base(), [] { status_on_crash("crash"); });
+  os::start_profiler_from_env();
 
   std::thread([timeout_s, status_s, print_status] {
     using clock = std::chrono::steady_clock;

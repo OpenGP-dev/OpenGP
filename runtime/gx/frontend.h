@@ -143,6 +143,15 @@ class Frontend {
     u64 memory_hash;  // of the destination memory when copied
   };
   std::unordered_map<u32, CopiedTexture> copies_;
+  // Hashes of guest memory ranges (address, size) taken this frame. Hashing
+  // is the expensive part of binding a texture, and games bind the same ones
+  // many times a frame; memory is assumed not to change within a frame.
+  struct MemoryHash {
+    u64 frame;  // frames_ + 1 when taken
+    u64 hash;
+  };
+  std::unordered_map<u64, MemoryHash> memory_hashes_;
+  u64 memory_hash(const u8* data, u32 address, u32 size);
   u32 next_handle_ = 1;
   std::vector<u32> scratch_;
 

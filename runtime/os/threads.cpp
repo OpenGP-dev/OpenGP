@@ -103,7 +103,18 @@ void ThreadManager::on_save_context(ppc::Context&, u32 context) {
   if (t_self) t_self->saved_ctx = context;
 }
 
-void ThreadManager::idle(ppc::Context&) { hw_.wait_for_interrupt(4); }
+void ThreadManager::idle(ppc::Context& ctx) {
+  // The loop's back-edge takes interrupts too, and jumps straight back here:
+  // if one was taken since the last call, let the loop look at the run queue
+  // before waiting again. Otherwise a thread readied by a retrace would wait
+  // for the next interrupt (up to a few milliseconds) before running.
+  const u64 delivered = exceptions_delivered_.load(std::memory_order_relaxed);
+  if (delivered == idle_seen_) {
+    hw_.wait_for_interrupt(4);
+    service_interrupts(ctx);
+  }
+  idle_seen_ = exceptions_delivered_.load(std::memory_order_relaxed);
+}
 
 void ThreadManager::load_context(ppc::Context& ctx, u32 target) {
   HostThread* self = t_self;

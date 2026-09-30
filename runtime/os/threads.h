@@ -67,7 +67,9 @@ class ThreadManager {
   void on_save_context(ppc::Context& ctx, u32 context);
   // The OSLoadContext replacement.
   void load_context(ppc::Context& ctx, u32 context);
-  // Idle-loop hook: blocks briefly until an interrupt may be pending.
+  // Idle-loop hook (top of "while (RunQueueBits == 0)"): waits for an
+  // interrupt and takes it, so that the loop sees any thread its handler
+  // made ready.
   void idle(ppc::Context& ctx);
   // Delivers pending exceptions if MSR[EE] allows (g_hooks.service_interrupts).
   void service_interrupts(ppc::Context& ctx);
@@ -101,6 +103,7 @@ class ThreadManager {
   std::vector<std::unique_ptr<HostThread>> threads_;
   std::unordered_map<u32, Owner> owners_;  // only touched by the thread holding the CPU
   std::atomic<u64> exceptions_delivered_{0}, exception_returns_{0};
+  u64 idle_seen_ = 0;  // exceptions_delivered_ when the idle hook last returned
 };
 
 extern ThreadManager* g_threads;
