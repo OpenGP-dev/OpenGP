@@ -87,7 +87,8 @@ See `Triforce/MarioKartGP.cpp` in Dolphin.
   | `C01` | FFB on |
   | `C06` | FFB off (end of race) |
 
-- It maps naturally onto SDL haptics.
+- It maps naturally onto SDL haptics: centering as a spring, friction as friction, and roll (a
+  signed push, see milestone 5 below) as a constant force.
 
 ### Magnetic card reader
 
@@ -209,3 +210,40 @@ Notes:
 - The game's first DI command is a disc ID read into `0x80000000`, before which it clears that
   memory. That is why the media board keys must be seeded at boot rather than on the first
   command.
+
+### Playing it (milestone 5)
+
+With a coin, start and the menus, the game goes from attract mode into a race, and after the race
+(or "TIME UP!") shows the Mario Coin results and goes back to character select. What that took:
+
+- **Controls** (JVS, Namco FCA-1, as in Dolphin): start is switch byte 0 bit `0x80` of player 1,
+  the item button byte 1 bit `0x20`, VS cancel byte 1 bit `0x02`; analog channels 0-2 are
+  steering, gas and brake; coin slot 1 is the coin chute. The game counts coins from the JVS
+  coin counter itself and never decrements it.
+- **Analog ranges**: the game calibrates the wheel and pedals from its settings block
+  (`0x805986C0`: steering centre `+0x34`, default `0x7FFF`; gas and brake rest positions `+0x40`
+  and `+0x3C`, default 0), at start-up and in the test menu's handle set-up. Steering then spans
+  the centre +/- `0x5000` (0 is full left), and a pedal reads from `0x800` above its rest position
+  to `0x4000` further. The I/O board scales the controls to exactly that range
+  (`triforce/mkgp.cpp`). The decomp names the setters `JvsInput_Set*Calibration`.
+- **Force feedback**: centering and friction are 0 to about `0x7FFF` (a race uses `0x2800` and
+  `0x1E00`); **roll is a signed push centred on `0x8000`**: `0x7F00`/`0x8100` alternate as the
+  road's buzz, bumps and hits reach `0x5800`/`0xA800`. It is 0 while force feedback is off (menus).
+- **Free play**: the coin settings are not the game's own but the arcade library's (SegaBoot's
+  system settings, from the backup's `ACBU0001` block). Its set-up routine (`0x80289B54`) copies
+  them to `0x80690AA0`; bytes `0xC`-`0xF` are the cost of a play per coin slot, and at 0 the game
+  shows "CREDIT(S) 0/0" and "Step on gas pedal to start". `--free-play` clears them after the
+  set-up runs.
+- **LINK wait**: after the device check the game waits 60 seconds for linked cabinets (a
+  3600-frame timer set at `0x80084850`). `recomp.toml` sets it to 1 frame (from the community
+  patch).
+- **Frame pacing**: the frame ends with one `VIWaitForRetrace`. Races need 10-14 ms of CPU a
+  frame, so any delay in resuming the game thread after a retrace costs a whole frame. The idle
+  loop in `SelectThread` takes interrupts at its back-edge and jumps straight back to the idle
+  hook, which then waited again for the next interrupt with the game thread already runnable;
+  races ran at 40-50 fps until the hook took the interrupt itself (`os/threads.cpp`).
+- **Test switch**: not solved. JVS system bit `0x80` (Dolphin's test button) starts a game
+  instead of the test menu. The game's service-button handler (`0x8002D050`) opens the menu when
+  input bits `0x0800` and `0x1000` are held and pressed; those bits come from the baseboard's
+  status switches (inverted, shifted up 8), but setting status bits `0x08`/`0x10` also only
+  started a game.

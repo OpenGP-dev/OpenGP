@@ -288,11 +288,23 @@ Rendering is split in two, with plain data (`gx::Frame`, `runtime/gx/frame.h`) i
 
 A queue of at most two frames between the two paces the game if rendering falls behind.
 
+### Input (`runtime/input/`)
+
+The main thread reads the player's devices once a frame and hands the result to the machine
+(`Machine::set_controls`), where the JVS I/O board picks it up on the guest thread:
+
+- `input::HostInput` maps the keyboard, SDL gamepads and other joysticks (wheels, pedals) onto
+  the cabinet's controls (`triforce::Controls`), from bindings in `user/controls.toml`. It also
+  plays the cabinet's outputs (`Machine::outputs()`: the wheel's forces) as SDL haptic effects or
+  gamepad rumble.
+- `input::Script` plays controls by frame number, for runs without a player. Its events are
+  applied on top of the player's controls, keyed to the frame the GPU has reached.
+
 ## What comes next
 
 | Area | Plan |
 |------|------|
 | GPU | Remaining GX features as games need them (depth textures, z-freeze, destination alpha with blending, logic ops); Metal |
-| Input | Keyboard and controller mapping onto the cabinet controls (`Machine::set_controls`) |
+| Input | The game's test menu (the test switch); a webcam for the NamCam2 |
 | Audio | The game's MusyX DSP microcode, run by HLE or LLE |
 | Network | The media board's socket API, for linking cabinets |

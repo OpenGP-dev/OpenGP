@@ -10,12 +10,12 @@ compiled together with a runtime that stands in for the Triforce hardware (GameC
 DSP, AM-Baseboard, AM-Mediaboard), so the game runs as a normal native program, with room for
 modern features such as higher resolutions, widescreen and remappable controls.
 
-> **Status: early development, not playable yet.** Milestones 1 to 4 are done. Mario Kart Arcade
-> GP 2 (7,612 functions) recompiles, boots from its disc image through the emulated Triforce
-> hardware (media board, baseboard, JVS I/O, card reader), and renders in a window (Vulkan) from
-> its start-up device check through attract mode: the title screen, demo races and character
-> introductions. It cannot be played yet: controls come in milestone 5. See the
-> [roadmap](#roadmap).
+> **Status: early development, playable without sound.** Milestones 1 to 5 are done. Mario Kart
+> Arcade GP 2 (7,612 functions) recompiles, boots from its disc image through the emulated
+> Triforce hardware (media board, baseboard, JVS I/O, card reader) and plays in a window
+> (Vulkan): insert a coin (or use `--free-play`), make a Mario Card, pick a character and cup, and
+> race at 60 fps with the keyboard, a gamepad or a steering wheel with force feedback. There is no
+> sound yet (milestone 6). See [docs/playing.md](docs/playing.md) and the [roadmap](#roadmap).
 
 ## How it works
 
@@ -36,6 +36,7 @@ your GGPE02.iso ─extract─> main.dol ─decomp-toolkit─> symbols.txt
 | CPU runtime | `runtime/ppc/` | Register context, guest memory, instruction semantics, interpreter fallback, indirect-call dispatch |
 | Machine | `runtime/hw/`, `runtime/os/`, `runtime/triforce/`, `runtime/gx/` | Hardware models (interrupts, timers, VI, DSP, AI, SI, EXI, DI), boot and guest threads, the Triforce boards, and the GPU (command processor, vertex loading and transform, textures, EFB copies) |
 | Renderer | `runtime/video/` | SDL3 GPU renderer: the TEV ubershader, EFB, presenting |
+| Input | `runtime/input/` | Keyboard, gamepads and wheels (SDL3) mapped onto the cabinet's controls, force feedback, scripted input |
 | Games | `games/` | Per-game symbol maps, recompiler config, patches and launcher |
 | Scripts | `tools/*.py`, `tools/devshell.ps1` | Game setup (extract and verify `main.dol`), SDK signature matching, Windows build shell |
 | Tests | `tests/` | Decoder tests, known-answer semantics tests, and differential tests (interpreter vs recompiled code) |
@@ -85,7 +86,7 @@ marked as such in the source. Vendored third-party code in `thirdparty/` keeps i
 | M2 | MKAGP2 (GGPE02) analysis: symbol map, SDK functions identified, whole game recompiles and builds (**done**) | yes |
 | M3 | Boot to the main loop: guest threads, hardware models, media board, baseboard and JVS, card reader, GPU FIFO (**done**) | yes |
 | M4 | Graphics: vertex loader, textures, TEV ubershader, first frames, attract mode; hardware-check patches as needed (**done**) | yes |
-| M5 | Input and gameplay: JVS mapping, free play, full race, wheel force feedback | yes |
+| M5 | Input and gameplay: JVS mapping, free play, full race, wheel force feedback (**done**) | yes |
 | M6 | Audio (the game uses MusyX; DSP microcode HLE or LLE) | yes |
 | M7 | Card saves, settings menu, resolution scaling, widescreen | yes |
 | M8 | Mario Kart Arcade GP (GGPE01) | yes |

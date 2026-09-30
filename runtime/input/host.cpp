@@ -268,7 +268,7 @@ struct HostInput::Impl {
     SDL_Joystick* joystick = nullptr;  // owned only without a gamepad
     SDL_Haptic* haptic = nullptr;
     // Wheel effects (-1: not supported).
-    SDL_HapticEffectID spring = -1, friction = -1, torque = -1;
+    int spring = -1, friction = -1, torque = -1;
   };
 
   Config config;
@@ -401,9 +401,9 @@ void HostInput::Impl::start_effects(Device& d) {
   const Uint32 features = SDL_GetHapticFeatures(d.haptic);
   if (features & SDL_HAPTIC_AUTOCENTER) SDL_SetHapticAutocenter(d.haptic, 0);
   if (features & SDL_HAPTIC_GAIN) SDL_SetHapticGain(d.haptic, 100);
-  auto create = [&](Uint32 feature, const SDL_HapticEffect& effect) -> SDL_HapticEffectID {
+  auto create = [&](Uint32 feature, const SDL_HapticEffect& effect) -> int {
     if (!(features & feature)) return -1;
-    const SDL_HapticEffectID id = SDL_CreateHapticEffect(d.haptic, &effect);
+    const int id = SDL_CreateHapticEffect(d.haptic, &effect);
     if (id >= 0) SDL_RunHapticEffect(d.haptic, id, 1);
     return id;
   };

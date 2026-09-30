@@ -63,8 +63,11 @@ Vulkan driver at run time.
 
 ```sh
 build/<preset>/games/mkgp2/opengp-mkgp2 [--iso PATH] [--timeout SECONDS] [--status SECONDS] [--scale N]
-                                        [--headless] [--no-video] [--screenshot FRAME]...
+                                        [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]
+                                        [--input SCRIPT] [--input-file PATH] [--free-play]
 ```
+
+Controls and playing are covered in [playing.md](playing.md).
 
 The launcher finds the image in `ISO/` or `private/` (or takes `--iso`), boots it and runs the
 game in a window (Vulkan, through SDL3's GPU API). It prints:
@@ -79,10 +82,13 @@ game in a window (Vulkan, through SDL3's GPU API). It prints:
 | `--headless` | Render without a window (for screenshots) |
 | `--no-video` | Do not render at all (only the GPU's registers are emulated) |
 | `--screenshot FRAME` | Save frame number FRAME to `user/screenshots/` (repeatable); F12 does the same while playing |
+| `--screenshot-every N` | Save every Nth frame |
 | `--timeout SECONDS` | Quit after this long; default: never with a window, 20 seconds otherwise |
+| `--free-play` | No coins needed |
+| `--input SCRIPT`, `--input-file PATH` | Play scripted input (see [playing.md](playing.md#scripted-input)) |
 
-Files the machine writes (baseboard backup memory, media board settings, magnetic cards,
-screenshots) go in `user/`, which is gitignored.
+Files the machine writes (baseboard backup memory, media board settings, magnetic cards, the
+controls, screenshots) go in `user/`, which is gitignored.
 
 Environment variables for debugging:
 
@@ -92,10 +98,12 @@ Environment variables for debugging:
 | `OPENGP_LOG_MEDIABOARD=1` | media board commands |
 | `OPENGP_LOG_EXI=<n>` / `OPENGP_LOG_SI=<n>` | the first *n* EXI / SI transfers |
 | `OPENGP_LOG_JVS=1` | the JVS I/O protocol |
+| `OPENGP_LOG_FFB=1` | the forces the game sends to the steering wheel |
 | `OPENGP_GPU_DEBUG=1` | enables the GPU API's validation (needs the Vulkan SDK's validation layers) |
 | `OPENGP_GX_DUMP=<n>` | every draw (with its pipeline state), texture, EFB copy and clear of frame *n* |
 | `OPENGP_EFB_SYNC=1` | (not a log) CPU reads of the EFB wait for the GPU instead of returning the previous frame's contents |
 | `OPENGP_FRAME_LOG=1` | each frame's duration, time in draws and vertex count |
+| `OPENGP_PROFILE=START,SECONDS` | (Windows) samples every thread for SECONDS seconds, starting START seconds in, then prints each busy thread's hottest functions, self and inclusive |
 
 The status line also shows where time goes: the guest thread's time in draws (pipeline state,
 textures, vertex transform) and EFB readbacks, and the render thread's time rendering and idle.
