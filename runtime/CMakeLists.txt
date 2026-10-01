@@ -16,7 +16,10 @@ target_link_libraries(ppc_runtime
 
 # The emulated machine around the CPU: hardware, OS support, boot, disc.
 add_library(opengp_machine STATIC
+  audio/wav.cpp
   disc/disc.cpp
+  dsp/accelerator.cpp
+  dsp/ax.cpp
   gx/decoder.cpp
   gx/frontend.cpp
   gx/gpu.cpp
@@ -74,4 +77,10 @@ if(OPENGP_BUILD_VIDEO)
   target_link_libraries(opengp_input
     PUBLIC opengp_machine SDL3::SDL3
     PRIVATE tomlplusplus opengp_warnings)
+
+  # Sound output (SDL3).
+  add_library(opengp_audio STATIC audio/host.cpp)
+  target_link_libraries(opengp_audio
+    PUBLIC opengp_machine SDL3::SDL3
+    PRIVATE opengp_warnings)
 endif()

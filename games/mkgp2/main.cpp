@@ -9,9 +9,12 @@
 //   opengp-mkgp2 [--iso PATH] [--timeout SECONDS] [--status SECONDS] [--scale N]
 //                [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]
 //                [--input SCRIPT] [--input-file PATH] [--free-play]
+//                [--no-audio] [--volume PERCENT] [--audio-dump PATH]
 //
 // --headless renders without a window (for screenshots); --no-video skips
 // rendering entirely. F12 saves a screenshot to user/screenshots/.
+// Sound plays on the default output device (not when headless);
+// --audio-dump also writes it to a WAV file.
 // --input and --input-file play scripted input (see runtime/input/script.h).
 // --free-play needs no coins. Controls are set in user/controls.toml.
 
@@ -27,7 +30,9 @@
 #include <string>
 #include <thread>
 
+#include "audio/wav.h"
 #include "disc/disc.h"
+#include "hw/dsp.h"
 #include "hw/vi.h"
 #include "machine.h"
 #include "os/crash.h"
@@ -42,6 +47,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include "audio/host.h"
 #include "input/host.h"
 #include "video/renderer.h"
 #endif
@@ -84,6 +90,11 @@ std::map<u32, std::string> load_function_names() {
   return names;
 }
 
+#ifdef OPENGP_VIDEO
+audio::HostOutput* g_audio_out = nullptr;
+#endif
+audio::WavWriter* g_audio_dump = nullptr;
+
 std::atomic<unsigned long long> g_rendered{0};
 std::atomic<unsigned long long> g_render_ns{0}, g_wait_ns{0};  // render thread: rendering, idle
 
@@ -105,10 +116,12 @@ int main(int argc, char** argv) {
   std::string image;
   int timeout_s = -1, status_s = 5;
   unsigned scale = 1;
-  bool headless = false, use_video = true;
+  bool headless = false, use_video = true, use_audio = true;
+  int volume = 100;
   std::set<u64> screenshots;
   u64 screenshot_every = 0;
   input::Script script;
+  std::string audio_dump;
   std::string error;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
@@ -121,6 +134,9 @@ int main(int argc, char** argv) {
     else if (a == "--headless") headless = true;
     else if (a == "--no-video") use_video = false;
     else if (a == "--free-play") mkgp2::g_free_play = true;
+    else if (a == "--audio-dump" && i + 1 < argc) audio_dump = argv[++i];
+    else if (a == "--no-audio") use_audio = false;
+    else if (a == "--volume" && i + 1 < argc) volume = std::clamp(std::atoi(argv[++i]), 0, 100);
     else if ((a == "--input" || a == "--input-file") && i + 1 < argc) {
       std::string text = argv[++i];
       if (a == "--input-file") {
@@ -139,7 +155,8 @@ int main(int argc, char** argv) {
       std::fprintf(stderr,
                    "usage: opengp-mkgp2 [--iso PATH] [--timeout SECONDS] [--status SECONDS] [--scale N]\n"
                    "                    [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]\n"
-                   "                    [--input SCRIPT] [--input-file PATH] [--free-play]\n");
+                   "                    [--input SCRIPT] [--input-file PATH] [--free-play]\n"
+                   "                    [--no-audio] [--volume PERCENT] [--audio-dump PATH]\n");
       return 2;
     }
   }
@@ -164,6 +181,21 @@ int main(int argc, char** argv) {
     return 1;
   }
   machine.install(guest::g_module);
+
+  static audio::WavWriter wav;
+  if (!audio_dump.empty()) {
+    if (!wav.open(audio_dump)) {
+      std::fprintf(stderr, "cannot write %s\n", audio_dump.c_str());
+      return 1;
+    }
+    g_audio_dump = &wav;
+  }
+  machine.hardware().device<hw::DspDevice>()->set_audio_sink([](const s16* samples, u32 frames, u32 rate) {
+#ifdef OPENGP_VIDEO
+    if (g_audio_out) g_audio_out->push(samples, frames, rate);
+#endif
+    if (g_audio_dump) g_audio_dump->write(samples, frames, rate);
+  });
   std::printf("OpenGP: Mario Kart Arcade GP 2 (%s)\n", machine.disc().game_id().c_str());
   std::printf("  image:  %s\n", image.c_str());
   std::printf("  memory: %u MiB, entry %08X, FST %08X, arena %08X-%08X\n", machine.mem1_size() >> 20,
@@ -190,6 +222,12 @@ int main(int argc, char** argv) {
                  static_cast<double>(g_render_ns.load()) * 1e-9, static_cast<double>(g_wait_ns.load()) * 1e-9,
                  static_cast<unsigned long long>(machine.exceptions_delivered()),
                  static_cast<unsigned long long>(machine.exception_returns()));
+#ifdef OPENGP_VIDEO
+    if (g_audio_out)
+      std::fprintf(stderr, "  audio: queue %.0f ms, %llu underruns, %llu overflows\n", g_audio_out->queue_ms(),
+                   static_cast<unsigned long long>(g_audio_out->underruns()),
+                   static_cast<unsigned long long>(g_audio_out->overflows()));
+#endif
     for (ppc::TraceStack* s : ppc::trace_all_stacks()) {
       const auto frames = ppc::trace_snapshot(*s);
       if (frames.empty()) continue;
@@ -255,6 +293,16 @@ int main(int argc, char** argv) {
       use_input = host_input.init(&error);
       if (!use_input) std::fprintf(stderr, "[input] controllers unavailable: %s\n", error.c_str());
       std::printf("  input:  %s\n", controls_path.c_str());
+    }
+
+    static audio::HostOutput audio_out;
+    if (!headless && use_audio) {
+      if (audio_out.init(static_cast<float>(volume) / 100.0f, &error)) {
+        g_audio_out = &audio_out;
+        std::printf("  audio:  %s\n", audio_out.device_name());
+      } else {
+        std::fprintf(stderr, "[audio] no sound: %s\n", error.c_str());
+      }
     }
 
     static video::FrameQueue queue;

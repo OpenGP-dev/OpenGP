@@ -235,7 +235,7 @@ guest code to the devices, and owns:
 | Block | Model |
 |-------|-------|
 | VI | Beam position and display interrupts at 60 Hz |
-| DSP | Mailboxes, the boot ROM's microcode handshake, ARAM and audio DMA. Microcode is identified by hash; its commands are logged but not run yet (milestone 6). |
+| DSP | Mailboxes, the boot ROM's microcode handshake, ARAM and its DMA, the audio DMA (which hands each 5 ms buffer to the sound output as it starts), and the microcode: identified by hash, AX is emulated at a high level (see below) |
 | AI | Streaming sample counter and its interrupt |
 | SI | Transfers through the communication buffer to the baseboard on port 0 |
 | EXI | IPL chip (RTC, SRAM, debug UART) and the baseboard's backup memory |
@@ -288,6 +288,29 @@ Rendering is split in two, with plain data (`gx::Frame`, `runtime/gx/frame.h`) i
 
 A queue of at most two frames between the two paces the game if rendering falls behind.
 
+### Audio (`runtime/dsp/`, `runtime/audio/`)
+
+The game's sound library is MusyX, which drives Nintendo's AX microcode on the DSP (CRC
+`0x3AD3B7AC`, which Dolphin also treats as AX). The microcode is emulated at a high level, ported
+from Dolphin's AX HLE:
+
+- Every 5 ms the game sends a command list. `dsp::AxUcode` (`dsp/ax.cpp`) walks the voices'
+  parameter blocks in main RAM; each running voice's samples are read from ARAM through the
+  accelerator (`dsp/accelerator.cpp`: ADPCM or PCM decoding, looping), resampled to 32 kHz,
+  shaped by its envelope and low-pass filter, and mixed into the main and two effects buses.
+  MusyX runs its effects on the CPU; the final stereo mix goes to main RAM.
+- The audio DMA plays those buffers. As each one starts, `hw::DspDevice` hands its samples to a
+  sink: `audio::HostOutput` (`audio/host.cpp`, SDL3) and/or a WAV file (`--audio-dump`).
+- The audio DMA runs on the time base, so the game makes sound in real time. The DMA is
+  scheduled from where the previous buffer ended, never from when the timer event ran, so the
+  timer thread's lateness does not slow the sound down. The output keeps a queue of about 30 ms
+  to absorb the 5 ms bursts, and holds it there by resampling up to 0.5% faster or slower,
+  since the sound card's clock drifts against the host clock.
+
+Not emulated: the polyphase resampler's coefficient table (it is in the DSP's ROM; linear
+interpolation is used instead, as Dolphin does without the ROM), and AX's initial time delay (a
+phase shift for 3D sound).
+
 ### Input (`runtime/input/`)
 
 The main thread reads the player's devices once a frame and hands the result to the machine
@@ -306,5 +329,4 @@ The main thread reads the player's devices once a frame and hands the result to 
 |------|------|
 | GPU | Remaining GX features as games need them (depth textures, z-freeze, destination alpha with blending, logic ops); Metal |
 | Input | The game's test menu (the test switch); a webcam for the NamCam2 |
-| Audio | The game's MusyX DSP microcode, run by HLE or LLE |
 | Network | The media board's socket API, for linking cabinets |

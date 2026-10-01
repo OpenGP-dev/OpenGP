@@ -5,6 +5,9 @@
 #include <cstdio>
 #include <cstring>
 
+#include "dsp/ax.h"
+#include "hw/ai.h"
+
 namespace hw {
 
 namespace {
@@ -41,7 +44,10 @@ constexpr u16 CR_INT_BITS = DspDevice::INT_AID | DspDevice::INT_ARAM | DspDevice
 constexpr u16 CR_MASK_BITS = CR_INT_BITS << 1;
 
 constexpr u32 kAramSize = 16 * 1024 * 1024;
-constexpr u64 kAudioBlockTicks = kTimebaseHz / 4000;  // one 32-byte block at 32 kHz stereo
+
+// Hashes Dolphin uses for the boot ROM and init microcode (not real hashes).
+constexpr u32 kCrcRom = 0x00000000;
+constexpr u32 kCrcInit = 0x00000001;
 
 // Dolphin's Common::HashEctor, which its DSP HLE uses to identify microcode.
 u32 hash_ector(const u8* data, u32 len) {
@@ -53,29 +59,28 @@ u32 hash_ector(const u8* data, u32 len) {
   return crc;
 }
 
-// A game's own microcode, not emulated yet. It announces itself the way the
-// SDK's DSP task manager expects (DSP_INIT) and logs the mail it receives.
+// A microcode that is not emulated. It announces itself the way the SDK's
+// DSP task manager expects (DSP_INIT) and logs the mail it receives.
 class TaskUcode : public DspUcode {
  public:
-  TaskUcode(DspDevice& dsp, u32 crc) : DspUcode(dsp), crc_(crc) {}
-  void initialize() override { dsp_.push_mail(0xDCD10000, true); }
+  using DspUcode::DspUcode;
+  void initialize() override { dsp_.push_mail(DSP_INIT, true); }
   void handle_mail(u32 mail) override {
     if (logged_ < 32) {
-      std::fprintf(stderr, "[dsp] ucode %08X: mail %08X (not emulated)\n", crc_, mail);
+      std::fprintf(stderr, "[dsp] ucode %08X: mail %08X (not emulated)\n", crc(), mail);
       ++logged_;
     }
   }
-  const char* name() const override { return "task"; }
+  const char* name() const override { return "not emulated"; }
 
  private:
-  u32 crc_;
   int logged_ = 0;
 };
 
 // The microcode __OSInitAudioSystem runs: it only says hello.
 class InitUcode : public DspUcode {
  public:
-  using DspUcode::DspUcode;
+  explicit InitUcode(DspDevice& dsp) : DspUcode(dsp, kCrcInit) {}
   void initialize() override { dsp_.push_mail(0x80544348); }
   void handle_mail(u32) override {}
   const char* name() const override { return "init"; }
@@ -84,7 +89,7 @@ class InitUcode : public DspUcode {
 // The DSP boot ROM: greets, then accepts a microcode upload sequence.
 class RomUcode : public DspUcode {
  public:
-  using DspUcode::DspUcode;
+  explicit RomUcode(DspDevice& dsp) : DspUcode(dsp, kCrcRom) {}
   void initialize() override { dsp_.push_mail(0x8071FEED); }
   const char* name() const override { return "rom"; }
   void handle_mail(u32 mail) override {
@@ -118,24 +123,67 @@ DspDevice::DspDevice(Hardware& hw) : Device(hw), aram_(kAramSize, 0) {
   set_ucode(std::make_unique<RomUcode>(*this));
 }
 
+// The replaced microcode may be the caller (switching from its mail
+// handler), so it is kept alive until the next switch.
 void DspDevice::set_ucode(std::unique_ptr<DspUcode> ucode) {
   mails_.clear();
+  retired_ucode_ = std::move(ucode_);
   ucode_ = std::move(ucode);
   ucode_->initialize();
+}
+
+std::unique_ptr<DspUcode> DspDevice::make_ucode(u32 crc) {
+  if (dsp::is_ax_ucode(crc)) return std::make_unique<dsp::AxUcode>(*this, crc);
+  return std::make_unique<TaskUcode>(*this, crc);
 }
 
 void DspDevice::boot_ucode(u32 ram_address, u32 length, u32 imem_address, u32 dmem_length, u32 start_pc) {
   const u8* code = hw_.ram(ram_address, length);
   const u32 crc = code ? hash_ector(code, length) : 0;
-  std::fprintf(stderr, "[dsp] booting ucode: crc %08X, %u bytes from %08X (imem %04X, dmem %u, pc %04X)\n", crc,
-               length, ram_address, imem_address, dmem_length, start_pc);
-  set_ucode(std::make_unique<TaskUcode>(*this, crc));
+  auto ucode = make_ucode(crc);
+  std::fprintf(stderr, "[dsp] booting ucode: crc %08X (%s), %u bytes from %08X (imem %04X, dmem %u, pc %04X)\n",
+               crc, ucode->name(), length, ram_address, imem_address, dmem_length, start_pc);
+  set_ucode(std::move(ucode));
 }
 
-void DspDevice::push_mail(u32 mail, bool interrupt) {
+void DspDevice::swap_ucode(u32 crc) {
+  mails_.clear();
+  retired_ucode_ = std::move(ucode_);
+  if (last_ucode_ && last_ucode_->crc() == crc) {
+    ucode_ = std::move(last_ucode_);
+    if (ucode_->needs_resume) {
+      ucode_->needs_resume = false;
+      push_mail(DspUcode::DSP_RESUME, true);
+    }
+    return;
+  }
+  if (!last_ucode_) last_ucode_ = std::move(retired_ucode_);
+  ucode_ = make_ucode(crc);
+  std::fprintf(stderr, "[dsp] switching to ucode %08X (%s)\n", crc, ucode_->name());
+  ucode_->initialize();
+}
+
+void DspDevice::reset_ucode() { set_ucode(std::make_unique<RomUcode>(*this)); }
+
+void DspUcode::prepare_boot_ucode(u32 mail) {
+  // The mails: MRAM destination, size and DRAM source (for saving DSP memory,
+  // not emulated); IRAM source, size, destination and start PC; DRAM source,
+  // size and destination.
+  if (boot_steps_ == 3) boot_iram_addr_ = mail;
+  if (boot_steps_ == 4) boot_iram_size_ = mail & 0xFFFF;
+  if (++boot_steps_ < 10) return;
+  boot_steps_ = 0;
+  upload_in_progress_ = false;
+  needs_resume = true;
+  const u8* code = dsp_.ram(boot_iram_addr_, boot_iram_size_);
+  dsp_.swap_ucode(code ? hash_ector(code, boot_iram_size_) : 0);
+}
+
+void DspDevice::push_mail(u32 mail, bool interrupt, u64 delay) {
   if (interrupt) {
-    if (mails_.empty()) raise(INT_DSP);
-    else mails_.front().second = true;
+    if (!mails_.empty()) mails_.front().second = true;
+    else if (delay) hw_.schedule_after(delay, [this] { raise(INT_DSP); });
+    else raise(INT_DSP);
   }
   mails_.emplace_back(mail, false);
 }
@@ -160,7 +208,7 @@ void DspDevice::write_control(u16 value) {
   u16 dsp = value & kDspSideMask;
   halted_ = (dsp & CR_HALT) != 0;
   if (dsp & CR_RESET) {
-    set_ucode(std::make_unique<RomUcode>(*this));
+    reset_ucode();
     dsp &= ~CR_RESET;
     audio_control_ = 0;
   }
@@ -211,7 +259,7 @@ u16 DspDevice::read16(u32 offset) {
     case AUDIO_DMA_BLOCKS_LEFT: {
       // Zero-based count of blocks left in the current buffer.
       if (!(audio_control_ & 0x8000) || audio_blocks_left_ == 0) return 0;
-      const u64 elapsed = (hw_.timebase() - audio_block_start_) / kAudioBlockTicks;
+      const u64 elapsed = (hw_.timebase() - audio_block_start_) / audio_block_ticks_;
       const u64 left = elapsed >= audio_blocks_left_ ? 0 : audio_blocks_left_ - elapsed;
       return static_cast<u16>(left > 0 ? left - 1 : 0);
     }
@@ -290,27 +338,52 @@ void DspDevice::do_aram_dma() {
   raise(INT_ARAM);
 }
 
+// The audio DMA plays a buffer of 32-byte blocks from main RAM. When a buffer
+// starts, its address and length are latched and the AID interrupt fires, so
+// the game can set up the next buffer; when it ends, the next one is latched.
 void DspDevice::start_audio_dma() {
-  audio_current_ = audio_source_;
-  audio_blocks_left_ = audio_control_ & 0x7FFF;
-  audio_block_start_ = hw_.timebase();
   if (audio_event_) hw_.cancel(audio_event_);
-  // The interrupt fires as a buffer starts, so the game can queue the next one.
+  // Dolphin: some games crash if this comes sooner than ~87 CPU cycles.
   hw_.schedule_after(8, [this] { raise(INT_AID); });
-  audio_event_ = hw_.schedule_after(kAudioBlockTicks * (audio_blocks_left_ ? audio_blocks_left_ : 1),
-                                    [this] { audio_dma_block_done(); });
+  latch_audio_dma(hw_.timebase());
 }
 
-void DspDevice::audio_dma_block_done() {
+void DspDevice::latch_audio_dma(u64 start) {
+  auto* ai = hw_.device<AiDevice>();
+  const u32 rate = ai ? ai->dma_sample_rate() : 32000;
+  audio_block_ticks_ = 8 * kTimebaseHz / rate;
+  audio_blocks_left_ = audio_control_ & 0x7FFF;
+  audio_block_start_ = start;
+  // An empty buffer replays its first block.
+  const u32 blocks = audio_blocks_left_ ? audio_blocks_left_ : 1;
+  audio_buffer_end_ = start + audio_block_ticks_ * blocks;
+  audio_event_ = hw_.schedule_at(audio_buffer_end_, [this] { audio_dma_done(); });
+
+  // The buffer's contents are final once it starts: the game writes the next.
+  if (!audio_sink_) return;
+  const u32 frames = blocks * 8;
+  const u8* src = hw_.ram(audio_source_, frames * 4);
+  audio_samples_.assign(frames * 2, 0);
+  if (src) {
+    // Big-endian 16-bit samples, right channel first.
+    for (u32 i = 0; i < frames; ++i) {
+      audio_samples_[2 * i + 0] = static_cast<s16>((src[4 * i + 2] << 8) | src[4 * i + 3]);
+      audio_samples_[2 * i + 1] = static_cast<s16>((src[4 * i + 0] << 8) | src[4 * i + 1]);
+    }
+  }
+  audio_sink_(audio_samples_.data(), frames, rate);
+}
+
+void DspDevice::audio_dma_done() {
   audio_event_ = 0;
   if (!(audio_control_ & 0x8000)) return;
-  // The buffer finished: reload from the (possibly updated) registers.
-  audio_current_ = audio_source_;
-  audio_blocks_left_ = audio_control_ & 0x7FFF;
-  audio_block_start_ = hw_.timebase();
   raise(INT_AID);
-  audio_event_ = hw_.schedule_after(kAudioBlockTicks * (audio_blocks_left_ ? audio_blocks_left_ : 1),
-                                    [this] { audio_dma_block_done(); });
+  // The next buffer starts where this one ended, not when this event ran, so
+  // that the timer thread's lateness does not add up (the sound would slow
+  // down). After a long stall, start again from now.
+  const u64 now = hw_.timebase();
+  const bool stalled = now > audio_buffer_end_ + kTimebaseHz / 20;
+  latch_audio_dma(stalled ? now : audio_buffer_end_);
 }
 
 }  // namespace hw

@@ -61,6 +61,12 @@ cabinet's effects: a centering spring, friction, and pushes from bumps and crash
 rumble on bumps and crashes. `[force_feedback]` in `controls.toml` sets the strength (0 turns it
 off).
 
+## Sound
+
+Sound plays on the system's default output device. `--volume PERCENT` turns it down, and
+`--no-audio` turns it off. The attract mode (the demo that loops before a coin goes in) is
+silent, which looks like the game's own setting: the sound starts with the first coin.
+
 ## Scripted input
 
 For tests and screenshots without a player, `--input` and `--input-file` play controls by frame
@@ -77,7 +83,6 @@ ahead), `gas=0..255`, `brake=0..255`. Buttons without a range are held for 10 fr
 
 ## Not done yet
 
-- Sound (milestone 6).
 - The game's own test menu: the test switch is not wired up correctly yet (it starts a game
-  instead), so the game's settings cannot be changed.
+  instead), so the game's settings (such as sound in the attract mode) cannot be changed.
 - The NamCam2 camera is disabled, and cabinets cannot be linked.

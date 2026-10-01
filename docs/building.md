@@ -65,6 +65,7 @@ Vulkan driver at run time.
 build/<preset>/games/mkgp2/opengp-mkgp2 [--iso PATH] [--timeout SECONDS] [--status SECONDS] [--scale N]
                                         [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]
                                         [--input SCRIPT] [--input-file PATH] [--free-play]
+                                        [--no-audio] [--volume PERCENT] [--audio-dump PATH]
 ```
 
 Controls and playing are covered in [playing.md](playing.md).
@@ -73,8 +74,8 @@ The launcher finds the image in `ISO/` or `private/` (or takes `--iso`), boots i
 game in a window (Vulkan, through SDL3's GPU API). It prints:
 - the game's `OSReport` output;
 - a status line every `--status` seconds (default 5; 0 for none): retraces, frames and draws so
-  far, guest threads, pending interrupts, and each guest thread's call stack when call tracing is
-  on.
+  far, guest threads, pending interrupts, the sound output's queue (its length, and how often it
+  ran dry or overflowed), and each guest thread's call stack when call tracing is on.
 
 | Option | Effect |
 |--------|--------|
@@ -86,6 +87,9 @@ game in a window (Vulkan, through SDL3's GPU API). It prints:
 | `--timeout SECONDS` | Quit after this long; default: never with a window, 20 seconds otherwise |
 | `--free-play` | No coins needed |
 | `--input SCRIPT`, `--input-file PATH` | Play scripted input (see [playing.md](playing.md#scripted-input)) |
+| `--no-audio` | No sound (there is none with `--headless` or `--no-video` either) |
+| `--volume PERCENT` | Sound volume, 0-100 (default 100) |
+| `--audio-dump PATH` | Also write the sound to a WAV file (works headless too) |
 
 Files the machine writes (baseboard backup memory, media board settings, magnetic cards, the
 controls, screenshots) go in `user/`, which is gitignored.

@@ -10,12 +10,13 @@ compiled together with a runtime that stands in for the Triforce hardware (GameC
 DSP, AM-Baseboard, AM-Mediaboard), so the game runs as a normal native program, with room for
 modern features such as higher resolutions, widescreen and remappable controls.
 
-> **Status: early development, playable without sound.** Milestones 1 to 5 are done. Mario Kart
+> **Status: early development, playable with sound.** Milestones 1 to 6 are done. Mario Kart
 > Arcade GP 2 (7,612 functions) recompiles, boots from its disc image through the emulated
 > Triforce hardware (media board, baseboard, JVS I/O, card reader) and plays in a window
 > (Vulkan): insert a coin (or use `--free-play`), make a Mario Card, pick a character and cup, and
-> race at 60 fps with the keyboard, a gamepad or a steering wheel with force feedback. There is no
-> sound yet (milestone 6). See [docs/playing.md](docs/playing.md) and the [roadmap](#roadmap).
+> race at 60 fps with the keyboard, a gamepad or a steering wheel with force feedback, with the
+> game's music and sound effects (its DSP audio microcode is emulated). See
+> [docs/playing.md](docs/playing.md) and the [roadmap](#roadmap).
 
 ## How it works
 
@@ -87,7 +88,7 @@ marked as such in the source. Vendored third-party code in `thirdparty/` keeps i
 | M3 | Boot to the main loop: guest threads, hardware models, media board, baseboard and JVS, card reader, GPU FIFO (**done**) | yes |
 | M4 | Graphics: vertex loader, textures, TEV ubershader, first frames, attract mode; hardware-check patches as needed (**done**) | yes |
 | M5 | Input and gameplay: JVS mapping, free play, full race, wheel force feedback (**done**) | yes |
-| M6 | Audio (the game uses MusyX; DSP microcode HLE or LLE) | yes |
+| M6 | Audio: the DSP's AX microcode (driven by MusyX) at a high level, sound output (**done**) | yes |
 | M7 | Card saves, settings menu, resolution scaling, widescreen | yes |
 | M8 | Mario Kart Arcade GP (GGPE01) | yes |
 
