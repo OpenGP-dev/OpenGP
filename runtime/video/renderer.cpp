@@ -141,28 +141,21 @@ bool Renderer::init(SDL_Window* window, u32 scale, std::string* error) {
     window_ = window;
     SDL_SetGPUSwapchainParameters(device_, window_, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, SDL_GPU_PRESENTMODE_VSYNC);
   }
-  scale_ = std::max(1u, scale);
-  efb_width_ = gx::kEfbWidth * scale_;
-  efb_height_ = gx::kEfbHeight * scale_;
-
+  set_scale(scale);
+  if (!resize_efb(gx::kEfbWidth)) {
+    *error = std::string("could not create the EFB: ") + SDL_GetError();
+    return false;
+  }
   SDL_GPUTextureCreateInfo t{};
   t.type = SDL_GPU_TEXTURETYPE_2D;
   t.format = kColorFormat;
-  t.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-  t.width = efb_width_;
-  t.height = efb_height_;
-  t.layer_count_or_depth = 1;
-  t.num_levels = 1;
-  efb_color_ = SDL_CreateGPUTexture(device_, &t);
-  t.format = kDepthFormat;
-  t.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-  efb_depth_ = SDL_CreateGPUTexture(device_, &t);
-  t.format = kColorFormat;
   t.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
   t.width = t.height = 1;
+  t.layer_count_or_depth = 1;
+  t.num_levels = 1;
   white_ = SDL_CreateGPUTexture(device_, &t);
-  if (!efb_color_ || !efb_depth_ || !white_) {
-    *error = std::string("could not create the EFB: ") + SDL_GetError();
+  if (!white_) {
+    *error = std::string("could not create a texture: ") + SDL_GetError();
     return false;
   }
 
@@ -228,6 +221,52 @@ bool Renderer::init(SDL_Window* window, u32 scale, std::string* error) {
   SDL_SubmitGPUCommandBuffer(cmd);
   SDL_ReleaseGPUTransferBuffer(device_, one);
   return true;
+}
+
+void Renderer::set_scale(u32 scale) { requested_scale_ = std::clamp(scale, 1u, kMaxScale); }
+
+void Renderer::set_vsync(bool vsync) {
+  if (!window_) return;
+  SDL_GPUPresentMode mode = SDL_GPU_PRESENTMODE_VSYNC;
+  if (!vsync) {
+    mode = SDL_WindowSupportsGPUPresentMode(device_, window_, SDL_GPU_PRESENTMODE_MAILBOX) ? SDL_GPU_PRESENTMODE_MAILBOX
+           : SDL_WindowSupportsGPUPresentMode(device_, window_, SDL_GPU_PRESENTMODE_IMMEDIATE)
+               ? SDL_GPU_PRESENTMODE_IMMEDIATE
+               : SDL_GPU_PRESENTMODE_VSYNC;
+  }
+  SDL_SetGPUSwapchainParameters(device_, window_, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode);
+}
+
+u32 Renderer::window_format() const {
+  return window_ ? static_cast<u32>(SDL_GetGPUSwapchainTextureFormat(device_, window_)) : SDL_GPU_TEXTUREFORMAT_INVALID;
+}
+
+bool Renderer::resize_efb(u32 width) {
+  // The EFB is (re)created at the internal resolution and the frame's width;
+  // its contents are lost (the next frame draws them again).
+  const u32 scale = requested_scale_;
+  if (efb_color_ && efb_depth_ && width == efb_logical_width_ && scale == scale_) return true;
+  end_pass();
+  if (efb_color_) SDL_ReleaseGPUTexture(device_, efb_color_);
+  if (efb_depth_) SDL_ReleaseGPUTexture(device_, efb_depth_);
+  scale_ = scale;
+  efb_logical_width_ = width;
+  efb_width_ = width * scale_;
+  efb_height_ = gx::kEfbHeight * scale_;
+  SDL_GPUTextureCreateInfo t{};
+  t.type = SDL_GPU_TEXTURETYPE_2D;
+  t.format = kColorFormat;
+  t.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+  t.width = efb_width_;
+  t.height = efb_height_;
+  t.layer_count_or_depth = 1;
+  t.num_levels = 1;
+  efb_color_ = SDL_CreateGPUTexture(device_, &t);
+  t.format = kDepthFormat;
+  t.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+  efb_depth_ = SDL_CreateGPUTexture(device_, &t);
+  efb_initialised_ = false;
+  return efb_color_ && efb_depth_;
 }
 
 // ---- Pipelines and samplers ------------------------------------------------------------------
@@ -440,7 +479,7 @@ void Renderer::begin_efb(SDL_GPUCommandBuffer* cmd) {
     SDL_GPUBufferBinding ib{index_buffer_, 0};
     SDL_BindGPUIndexBuffer(pass_, &ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
   }
-  const float host[4] = {static_cast<float>(scale_), 0, 0, 0};
+  const float host[4] = {static_cast<float>(scale_), static_cast<float>((efb_logical_width_ - gx::kEfbWidth) / 2), 0, 0};
   SDL_PushGPUFragmentUniformData(cmd, 1, host, sizeof(host));
 }
 
@@ -523,7 +562,7 @@ void Renderer::copy(SDL_GPUCommandBuffer* cmd, const gx::CopyCmd& c) {
   SDL_GPUTextureSamplerBinding src{c.depth ? efb_depth_ : efb_color_, c.depth ? nearest_ : linear_};
   SDL_BindGPUFragmentSamplers(pass, 0, &src, 1);
 
-  const float ew = gx::kEfbWidth, eh = gx::kEfbHeight;
+  const float ew = static_cast<float>(efb_logical_width_), eh = gx::kEfbHeight;
   const FullscreenUniforms vs{{c.src_x / ew, c.src_y / eh, (c.src_x + c.src_width) / ew, (c.src_y + c.src_height) / eh},
                               {0, 0, 0, 0}};
   SDL_PushGPUVertexUniformData(cmd, 0, &vs, sizeof(vs));
@@ -542,29 +581,44 @@ void Renderer::copy(SDL_GPUCommandBuffer* cmd, const gx::CopyCmd& c) {
   SDL_EndGPURenderPass(pass);
 }
 
-void Renderer::present(SDL_GPUCommandBuffer* cmd, const Texture& xfb) {
+void Renderer::present(SDL_GPUCommandBuffer* cmd, const Texture* xfb, float aspect) {
   SDL_GPUTexture* swapchain = nullptr;
   Uint32 sw = 0, sh = 0;
   if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmd, window_, &swapchain, &sw, &sh) || !swapchain) return;
+  if (overlay_) overlay_->prepare(cmd);
   SDL_GPUColorTargetInfo target{};
   target.texture = swapchain;
   target.load_op = SDL_GPU_LOADOP_CLEAR;
   target.clear_color = {0, 0, 0, 1};
   target.store_op = SDL_GPU_STOREOP_STORE;
   SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &target, 1, nullptr);
-  // Letterbox to 4:3.
-  float w = static_cast<float>(sw), h = static_cast<float>(sh);
-  if (w * 3 > h * 4) w = h * 4 / 3;
-  else h = w * 3 / 4;
-  SDL_GPUViewport vp{(static_cast<float>(sw) - w) / 2, (static_cast<float>(sh) - h) / 2, w, h, 0, 1};
-  SDL_SetGPUViewport(pass, &vp);
-  SDL_BindGPUGraphicsPipeline(pass, present_pipeline_);
-  SDL_GPUTextureSamplerBinding src{xfb.texture, linear_};
-  SDL_BindGPUFragmentSamplers(pass, 0, &src, 1);
-  const FullscreenUniforms vs{{0, 0, 1, 1}, {0, 0, 0, 0}};
-  SDL_PushGPUVertexUniformData(cmd, 0, &vs, sizeof(vs));
-  SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+  if (xfb) {
+    // Letterbox to the XFB's aspect ratio.
+    float w = static_cast<float>(sw), h = static_cast<float>(sh);
+    if (w > h * aspect) w = h * aspect;
+    else h = w / aspect;
+    SDL_GPUViewport vp{(static_cast<float>(sw) - w) / 2, (static_cast<float>(sh) - h) / 2, w, h, 0, 1};
+    SDL_SetGPUViewport(pass, &vp);
+    SDL_BindGPUGraphicsPipeline(pass, present_pipeline_);
+    SDL_GPUTextureSamplerBinding src{xfb->texture, linear_};
+    SDL_BindGPUFragmentSamplers(pass, 0, &src, 1);
+    const FullscreenUniforms vs{{0, 0, 1, 1}, {0, 0, 0, 0}};
+    SDL_PushGPUVertexUniformData(cmd, 0, &vs, sizeof(vs));
+    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+    SDL_GPUViewport all{0, 0, static_cast<float>(sw), static_cast<float>(sh), 0, 1};
+    SDL_SetGPUViewport(pass, &all);
+  }
+  if (overlay_) overlay_->draw(cmd, pass);
   SDL_EndGPURenderPass(pass);
+}
+
+void Renderer::redraw() {
+  if (!window_) return;
+  SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device_);
+  if (!cmd) return;
+  const auto xfb = last_xfb_ ? textures_.find(last_xfb_) : textures_.end();
+  present(cmd, xfb != textures_.end() && xfb->second.texture ? &xfb->second : nullptr, last_aspect_);
+  SDL_SubmitGPUCommandBuffer(cmd);
 }
 
 void Renderer::capture(SDL_GPUCommandBuffer* cmd, const Texture& xfb) {
@@ -660,7 +714,9 @@ void Renderer::read_efb(SDL_GPUCommandBuffer* cmd, std::shared_ptr<gx::EfbReadba
   SDL_BindGPUGraphicsPipeline(pass, request->depth ? read_depth_pipeline_ : read_color_pipeline_);
   SDL_GPUTextureSamplerBinding src{request->depth ? efb_depth_ : efb_color_, nearest_};
   SDL_BindGPUFragmentSamplers(pass, 0, &src, 1);
-  const FullscreenUniforms vs{{0, 0, 1, 1}, {0, 0, 0, 0}};
+  // The game's part of a wide EFB.
+  const float ew = static_cast<float>(efb_logical_width_), side = (ew - static_cast<float>(w)) / 2;
+  const FullscreenUniforms vs{{side / ew, 0, (side + static_cast<float>(w)) / ew, 1}, {0, 0, 0, 0}};
   SDL_PushGPUVertexUniformData(cmd, 0, &vs, sizeof(vs));
   SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
   SDL_EndGPURenderPass(pass);
@@ -705,6 +761,10 @@ void Renderer::poll_reads(bool wait_all) {
 }
 
 void Renderer::render(const gx::Frame& f, Image* capture_image) {
+  if (!resize_efb(f.efb_width)) {
+    std::fprintf(stderr, "[video] could not resize the EFB: %s\n", SDL_GetError());
+    return;
+  }
   SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device_);
   if (!cmd) return;
   cmd_ = cmd;
@@ -728,8 +788,10 @@ void Renderer::render(const gx::Frame& f, Image* capture_image) {
 
   const auto xfb = f.xfb ? textures_.find(f.xfb) : textures_.end();
   if (xfb != textures_.end() && xfb->second.texture) {
-    if (window_) present(cmd, xfb->second);
+    if (window_) present(cmd, &xfb->second, f.xfb_aspect);
     if (capture_image) capture(cmd, xfb->second);
+    last_xfb_ = f.xfb;
+    last_aspect_ = f.xfb_aspect;
   }
 
   // Submit, with a fence if downloads were recorded. Wait for it if the

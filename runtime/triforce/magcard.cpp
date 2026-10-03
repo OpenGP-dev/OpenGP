@@ -9,6 +9,8 @@
 #include <numeric>
 #include <string_view>
 
+#include "os/atomic_file.h"
+
 namespace triforce {
 
 namespace {
@@ -39,7 +41,7 @@ void card_message(const char* text) { std::fprintf(stderr, "[card] %s\n", text);
 
 }  // namespace
 
-MagCardReader::MagCardReader(std::string card_path) : card_path_(std::move(card_path)) {}
+MagCardReader::MagCardReader(std::shared_ptr<CardFolder> cards) : cards_(std::move(cards)) {}
 
 MagCardReader::~MagCardReader() {
   if (card_loaded()) card_message("shut down with a card in the reader");
@@ -51,14 +53,9 @@ u8 MagCardReader::position_value() const {
   return kValues[static_cast<std::size_t>(status_.r)];
 }
 
-bool MagCardReader::card_file_exists() const {
-  std::error_code ec;
-  return std::filesystem::exists(card_path_, ec);
-}
-
 void MagCardReader::read_card_file() {
   for (auto& t : tracks_) t.reset();
-  std::ifstream file(card_path_, std::ios::binary);
+  std::ifstream file(os::utf8_path(card_path_), std::ios::binary);
   for (auto& t : tracks_) {
     std::array<u8, kTrackSize> data{};
     if (!file.read(reinterpret_cast<char*>(data.data()), kTrackSize)) break;
@@ -68,17 +65,18 @@ void MagCardReader::read_card_file() {
 
 void MagCardReader::write_card_file() {
   // Only the game writes cards: creating blank cards here would upset games,
-  // which expect to dispense their own.
-  std::error_code ec;
-  std::filesystem::create_directories(std::filesystem::path(card_path_).parent_path(), ec);
-  std::fstream file(card_path_, std::ios::binary | std::ios::in | std::ios::out);
-  if (!file) file.open(card_path_, std::ios::binary | std::ios::out);
+  // which expect to dispense their own. The tracks written replace those in
+  // the file; the whole file is rewritten, through a temporary file.
+  std::string data;
+  if (std::ifstream file(os::utf8_path(card_path_), std::ios::binary); file) {
+    data.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+  }
   for (std::size_t i = 0; i < kTracks; ++i) {
     if (!tracks_[i]) continue;
-    file.seekp(static_cast<std::streamoff>(i * kTrackSize));
-    file.write(reinterpret_cast<const char*>(tracks_[i]->data()), kTrackSize);
+    if (data.size() < (i + 1) * kTrackSize) data.resize((i + 1) * kTrackSize);
+    std::copy(tracks_[i]->begin(), tracks_[i]->end(), data.begin() + static_cast<std::ptrdiff_t>(i * kTrackSize));
   }
-  if (!file) card_message("writing the card file failed");
+  if (!os::write_file_atomically(card_path_, data.data(), data.size())) card_message("writing the card file failed");
 }
 
 void MagCardReader::update() {
@@ -134,21 +132,27 @@ void MagCardReader::build_packet() {
 }
 
 void MagCardReader::step_person(Duration elapsed) {
-  // Emulates a player: insert the card into the entry slot when the reader is
-  // empty, take it back once the machine has ejected it.
+  // Emulates a player: insert the card they hold into the entry slot when
+  // the reader is empty, take it back once the machine has ejected it (or if
+  // they chose another card meanwhile).
   // Mario Kart GP polls for cards with ReadData(CardCapture) whenever it
   // wants one, and waits for ejected cards to be taken.
   since_person_moved_card_ += elapsed;
+  cards_->set_inserted(card_loaded());
   if (card_loaded()) return;
+  const std::string held = cards_->held();
+  const bool have_card = cards_->exists(held);
   if (!card_present()) {
-    if (since_person_moved_card_ > Duration{500} && card_file_exists()) {
+    if (since_person_moved_card_ > Duration{500} && have_card) {
+      card_path_ = cards_->path(held);
       status_.r = R::EntrySlot;
       since_person_moved_card_ = {};
     }
     return;
   }
   const bool machine_moved_last = since_machine_moved_card_ < since_person_moved_card_;
-  if ((machine_moved_last && since_machine_moved_card_ > Duration{100}) || !card_file_exists()) {
+  if ((machine_moved_last && since_machine_moved_card_ > Duration{100}) || !have_card ||
+      cards_->path(held) != card_path_) {
     status_.r = R::NoCard;
     since_person_moved_card_ = {};
   }
@@ -228,7 +232,7 @@ void MagCardReader::command_read_data() {
       if (status_.r != R::ReadWriteHead) {
         move_card(R::ReadWriteHead);
         read_card_file();
-        card_message("inserted");
+        std::fprintf(stderr, "[card] inserted: %s\n", card_path_.c_str());
       }
     } else {
       const auto indices = track_indices(parameters_[2]);
@@ -327,7 +331,14 @@ void MagCardReader::eject_card() {
 
 void MagCardReader::dispense_card() {
   if (card_loaded()) return set_s_error(S::IllegalCommand);
-  card_message("dispensing a new card");
+  // A blank card, saved under the held card's name if that has no file yet,
+  // else under a new name; the player then holds it.
+  std::string name = cards_->held();
+  if (name.empty() || cards_->exists(name)) name = cards_->unused_name();
+  cards_->hold(name);
+  card_path_ = cards_->path(name);
+  for (auto& t : tracks_) t.reset();
+  std::fprintf(stderr, "[card] dispensing a new card: %s\n", card_path_.c_str());
   move_card(R::DispenserThermal);
 }
 

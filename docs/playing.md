@@ -3,16 +3,63 @@
 ## Starting a game
 
 Mario Kart Arcade GP 2 behaves like the arcade cabinet: insert a coin and press start; in the menus,
-steer to choose and step on the gas pedal to decide. Start the launcher with `--free-play` to play
-without coins ("Step on gas pedal to start").
+steer to choose and step on the gas pedal to decide. Turn on free play in the menu (Esc), or start
+the launcher with `--free-play`, to play without coins ("Step on gas pedal to start").
 
 ```sh
 build/<preset>/games/mkgp2/opengp-mkgp2 --free-play
 ```
 
 The first time, the game asks "Do you have Mario Card?". Choose **No**, then **Yes** to make one:
-the card is saved in `user/tricard_GGPE02.bin` and keeps your progress (Mario Coins, titles,
-unlocked characters).
+the card keeps your progress (Mario Coins, titles, unlocked characters). See [Mario Cards](#mario-cards).
+
+## The menu
+
+**Esc** (or a gamepad's guide button) opens the menu over the game; Esc again closes it. The game
+keeps running behind it but gets no controls while it is open.
+
+| Tab | Settings |
+|-----|----------|
+| Game | The Mario Card you hold; free play |
+| Video | Fullscreen, aspect ratio, internal resolution, VSync |
+| Sound | Volume |
+
+**F11** (or Alt+Enter) switches between a window and fullscreen, and **F12** saves a screenshot to
+`user/screenshots/`.
+
+## Settings
+
+The menu's settings are saved in `user/settings.toml` when the menu closes and when the game quits,
+along with the window's size. The file can be edited by hand; command-line options (see
+[building.md](building.md#running)) override it for one run without changing it.
+
+### Widescreen
+
+The aspect ratio is **Fit the window** by default: the picture takes the window's shape, from 4:3
+up to 32:9 (a window narrower than 4:3 gets black bars above and below). 4:3, 16:9, 16:10 and 21:9
+can also be chosen; the window then gets bars at the sides if its shape differs.
+
+In widescreen, the races show more on each side. The game's 2D graphics (the speedometer, the map,
+the menus' panels) stay in the middle at their original shape, and full-screen backgrounds and
+fades are stretched to the edges. Some menu banners that run off the edge of the 4:3 screen end
+short of the widescreen edge.
+
+### Internal resolution
+
+The game renders at its native 640x528 times the internal resolution. **Match the window** (the
+default) picks the smallest multiple at least as tall as the window: 2x for 720p, 3x for 1080p,
+5x for 4K.
+
+## Mario Cards
+
+Cards are saved in `user/cards/GGPE02/`, one file per card (`Card 1.bin`, ...). In the menu's Game
+tab you choose the card you hold: you insert it when the game asks for your card, and the game
+takes it back at the end. **New card** gives you a blank one (answer **No** to "Do you have Mario
+Card?", then buy a card, and it is saved under that name); **No card** plays without one. A card the
+game gives you is yours to hold from then on, so you can keep a card per player. Files can be
+renamed (the name is only for the menu) or copied to back them up.
+
+A card saved by an earlier version as `user/tricard_GGPE02.bin` is moved to `Card 1.bin`.
 
 ## Controls
 
@@ -26,6 +73,8 @@ unlocked characters).
 | Start | Enter, 1 | Start |
 | Coin | 5, C | Back |
 | Service / test | F1 / F2 | |
+| Menu | Esc | Guide |
+| Fullscreen | F11, Alt+Enter | |
 | Screenshot | F12 | |
 
 Every connected device works at once. Keys and d-pad steer gradually (a keyboard cannot hold the
@@ -63,8 +112,8 @@ off).
 
 ## Sound
 
-Sound plays on the system's default output device. `--volume PERCENT` turns it down, and
-`--no-audio` turns it off. The attract mode (the demo that loops before a coin goes in) is
+Sound plays on the system's default output device. The menu's volume (or `--volume PERCENT`)
+turns it down, and `--no-audio` turns it off. The attract mode (the demo that loops before a coin goes in) is
 silent, which looks like the game's own setting: the sound starts with the first coin.
 
 ## Scripted input

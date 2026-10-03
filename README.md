@@ -38,6 +38,7 @@ your GGPE02.iso ─extract─> main.dol ─decomp-toolkit─> symbols.txt
 | Machine | `runtime/hw/`, `runtime/os/`, `runtime/triforce/`, `runtime/gx/` | Hardware models (interrupts, timers, VI, DSP, AI, SI, EXI, DI), boot and guest threads, the Triforce boards, and the GPU (command processor, vertex loading and transform, textures, EFB copies) |
 | Renderer | `runtime/video/` | SDL3 GPU renderer: the TEV ubershader, EFB, presenting |
 | Input | `runtime/input/` | Keyboard, gamepads and wheels (SDL3) mapped onto the cabinet's controls, force feedback, scripted input |
+| Launcher | `runtime/app/` | Command line, settings, window, the in-game menu (Dear ImGui) |
 | Games | `games/` | Per-game symbol maps, recompiler config, patches and launcher |
 | Scripts | `tools/*.py`, `tools/devshell.ps1` | Game setup (extract and verify `main.dol`), SDK signature matching, Windows build shell |
 | Tests | `tests/` | Decoder tests, known-answer semantics tests, and differential tests (interpreter vs recompiled code) |
@@ -89,7 +90,7 @@ marked as such in the source. Vendored third-party code in `thirdparty/` keeps i
 | M4 | Graphics: vertex loader, textures, TEV ubershader, first frames, attract mode; hardware-check patches as needed (**done**) | yes |
 | M5 | Input and gameplay: JVS mapping, free play, full race, wheel force feedback (**done**) | yes |
 | M6 | Audio: the DSP's AX microcode (driven by MusyX) at a high level, sound output (**done**) | yes |
-| M7 | Card saves, settings menu, resolution scaling, widescreen | yes |
+| M7 | Card saves, settings menu, resolution scaling, widescreen (**in progress**: menu, settings, fullscreen, widescreen, Mario Cards done) | yes |
 | M8 | Mario Kart Arcade GP (GGPE01) | yes |
 
 ## Acknowledgements

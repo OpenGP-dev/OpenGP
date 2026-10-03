@@ -31,6 +31,9 @@ class HostOutput {
   bool init(float volume, std::string* error);
   const char* device_name() const { return device_name_.c_str(); }
 
+  // 0 to 1. Thread-safe.
+  void set_volume(float volume);
+
   // Interleaved left/right samples at `rate` Hz. Thread-safe.
   void push(const s16* samples, u32 frames, u32 rate);
 

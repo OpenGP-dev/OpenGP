@@ -111,12 +111,14 @@ float fog_float(u32 sign, u32 exp, u32 mant) { return std::bit_cast<float>((sign
 // Maps GX clip space to host clip space for the current viewport and
 // scissor offset: x/y in EFB pixels become host NDC (+y up), z becomes the
 // EFB depth (0..1). Linear in the clip coordinates, so the host still
-// clips (and interpolates) correctly.
+// clips (and interpolates) correctly. With widescreen, the host's NDC span
+// the wide EFB (x0 includes the added side).
 struct Frontend::Viewport {
   float wd, ht, zrange, farz, x0, y0;
+  float efb_width;
   void apply(const float* clip, float* out) const {
     const float w = clip[3];
-    out[0] = (clip[0] * wd + x0 * w) * (2.0f / kEfbWidth) - w;
+    out[0] = (clip[0] * wd + x0 * w) * (2.0f / efb_width) - w;
     out[1] = w - (clip[1] * ht + y0 * w) * (2.0f / kEfbHeight);
     out[2] = (clip[2] * zrange + farz * w) * (1.0f / 16777216.0f);
     out[3] = w;
@@ -138,11 +140,16 @@ Frame& Frontend::frame() {
     frame_ = output_ ? output_->recycle() : nullptr;
     if (frame_) frame_->clear();
     else frame_ = std::make_unique<Frame>();
+    // The EFB's width only changes between displayed frames.
+    if (new_display_frame_) side_ = std::min(requested_side_.load(std::memory_order_relaxed), 2048u);
+    new_display_frame_ = false;
+    frame_->efb_width = efb_width();
     // New frame: state and texture indices are per frame, and textures are
     // re-checked against memory at least once per frame.
     state_dirty_ = true;
     textures_dirty_ = true;
     dumping_ = frames_ == dump_frame_;
+    run_.active = false;
     dumped_state_ = ~0u;
     if (dumping_) std::fprintf(stderr, "[gx] ---- frame %llu ----\n", static_cast<unsigned long long>(frames_));
   }
@@ -154,6 +161,7 @@ void Frontend::end_frame(bool present) {
   f.number = frames_;
   if (present) {
     ++frames_;
+    new_display_frame_ = true;
     peeks_[0].requested = peeks_[1].requested = false;
     // Evict textures not used for a while.
     for (auto it = textures_.begin(); it != textures_.end();) {
@@ -335,8 +343,12 @@ void Frontend::efb_copy(u32 trigger) {
   if (output_) {
     Frame& f = frame();
     const u32 dest = (bp_[BP_EFB_ADDR] << 5) & 0x01FFFFFF;
+    // Widescreen: a copy of the whole width copies the wide EFB, and its
+    // texture is as much wider.
+    const bool wide = side_ && x == 0 && w == kEfbWidth;
+    auto host_width = [&](u32 width) { return wide ? width * efb_width() / kEfbWidth : width; };
     CopyCmd c{};
-    c.src_x = x, c.src_y = y, c.src_width = w, c.src_height = h;
+    c.src_x = wide ? 0 : x + side_, c.src_y = y, c.src_width = host_width(w), c.src_height = h;
     c.depth = pixel_format() == PixelFormat::Z24;
     c.efb_has_alpha = pixel_format() == PixelFormat::RGBA6_Z24;
     c.clamp_top = copy_clamp_top(trigger);
@@ -353,12 +365,13 @@ void Frontend::efb_copy(u32 trigger) {
       const float yscale = copy_scale_invert(trigger) ? 256.0f / static_cast<float>(std::max(yscale_reg, 1u))
                                                       : static_cast<float>(yscale_reg) / 256.0f;
       c.format = CopyFormat::XFB;
-      c.width = w;
+      const u32 width = w;
       c.height = std::max(1u, static_cast<u32>(1.0f + static_cast<float>(bits(wh, 10, 10)) * yscale));
+      c.width = host_width(width);
       auto it = copies_.find(dest);
-      if (it == copies_.end() || it->second.width != c.width || it->second.height != c.height) {
+      if (it == copies_.end() || it->second.width != width || it->second.height != c.height) {
         if (it != copies_.end()) f.releases.push_back(it->second.handle);
-        it = copies_.insert_or_assign(dest, CopiedTexture{new_handle(), c.width, c.height, TexFormat::RGBA8, 0}).first;
+        it = copies_.insert_or_assign(dest, CopiedTexture{new_handle(), width, c.height, TexFormat::RGBA8, 0}).first;
       }
       c.dest = it->second.handle;
       f.copies.push_back(c);
@@ -366,19 +379,22 @@ void Frontend::efb_copy(u32 trigger) {
       f.xfb = c.dest;
       f.xfb_width = c.width;
       f.xfb_height = c.height;
+      // The game's XFB is 4:3; a wide one is as much wider.
+      f.xfb_aspect = 4.0f / 3.0f * static_cast<float>(c.width) / static_cast<float>(width);
     } else {
       c.format = copy_format(trigger);
       c.intensity = copy_intensity(trigger) && copy_auto_conv(trigger);
-      c.width = copy_half_scale(trigger) ? std::max(1u, w / 2) : w;
+      const u32 width = copy_half_scale(trigger) ? std::max(1u, w / 2) : w;
       c.height = copy_half_scale(trigger) ? std::max(1u, h / 2) : h;
+      c.width = host_width(width);
       const TexFormat tf = copy_texture_format(c.format);
-      const u32 size = texture_level_size(tf, c.width, c.height);
+      const u32 size = texture_level_size(tf, width, c.height);
       const u8* mem = read_(context_, dest, size);
       const u64 memory_hash = mem ? hash_bytes(mem, size) : 0;
       auto it = copies_.find(dest);
-      if (it == copies_.end() || it->second.width != c.width || it->second.height != c.height) {
+      if (it == copies_.end() || it->second.width != width || it->second.height != c.height) {
         if (it != copies_.end()) f.releases.push_back(it->second.handle);
-        it = copies_.insert_or_assign(dest, CopiedTexture{new_handle(), c.width, c.height, tf, memory_hash}).first;
+        it = copies_.insert_or_assign(dest, CopiedTexture{new_handle(), width, c.height, tf, memory_hash}).first;
       }
       it->second.format = tf;
       it->second.memory_hash = memory_hash;
@@ -416,7 +432,8 @@ void Frontend::clear(u32 x, u32 y, u32 width, u32 height) {
   if (!output_) return;
   const PixelFormat fmt = pixel_format();
   ClearCmd c{};
-  c.x = x, c.y = y, c.width = width, c.height = height;
+  const bool wide = x == 0 && width == kEfbWidth;
+  c.x = wide ? 0 : x + side_, c.y = y, c.width = wide ? efb_width() : width, c.height = height;
   c.color = bits(bp_[BP_BLENDMODE], 3, 1);
   c.alpha = bits(bp_[BP_BLENDMODE], 4, 1) && fmt == PixelFormat::RGBA6_Z24;
   c.depth = bits(bp_[BP_ZMODE], 4, 1);
@@ -488,6 +505,9 @@ void Frontend::scissor(s32* rect) const {
   const s32 bottom = std::clamp(static_cast<s32>(bits(br, 0, 11)) - y_off + 1, 0, static_cast<s32>(kEfbHeight));
   rect[0] = left, rect[1] = top;
   rect[2] = std::max(0, right - left), rect[3] = std::max(0, bottom - top);
+  // Into the wide EFB: a scissor over the whole width spans it.
+  if (left == 0 && right == static_cast<s32>(kEfbWidth)) rect[2] = static_cast<s32>(efb_width());
+  else rect[0] += static_cast<s32>(side_);
 }
 
 void Frontend::build_uniforms(PixelUniforms& u) const {
@@ -753,8 +773,9 @@ void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertice
                     xf_.viewport_ht(),
                     xf_.viewport_zrange(),
                     xf_.viewport_farz(),
-                    xf_.viewport_x() - static_cast<float>(bits(off, 0, 9) << 1),
-                    xf_.viewport_y() - static_cast<float>(bits(off, 10, 9) << 1)};
+                    xf_.viewport_x() - static_cast<float>(bits(off, 0, 9) << 1) + static_cast<float>(side_),
+                    xf_.viewport_y() - static_cast<float>(bits(off, 10, 9) << 1),
+                    static_cast<float>(efb_width())};
 
   const u32 base = static_cast<u32>(f.vertices.size());
   f.vertices.resize(base + count);
@@ -780,6 +801,10 @@ void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertice
   const u32 first = static_cast<u32>(f.indices.size());
   assemble(primitive, base, count, vp);
   const u32 added = static_cast<u32>(f.indices.size()) - first;
+  if (side_ && added) {
+    if (xf_.perspective()) run_.active = false;
+    else stretch_full_screen(base);
+  }
 
   if (dumping_) {
     if (state != dumped_state_) {
@@ -809,11 +834,20 @@ void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertice
     }
     const Vertex& v = f.vertices[base];
     const float w = v.pos[3] != 0.0f ? v.pos[3] : 1.0f;
+    // The draw's extent in game pixels (after any widescreen stretch).
+    float lo = std::numeric_limits<float>::max(), hi = std::numeric_limits<float>::lowest();
+    for (std::size_t i = base; i < f.vertices.size(); ++i) {
+      const float vw = f.vertices[i].pos[3] != 0.0f ? f.vertices[i].pos[3] : 1.0f;
+      lo = std::min(lo, f.vertices[i].pos[0] / vw);
+      hi = std::max(hi, f.vertices[i].pos[0] / vw);
+    }
+    const float half = static_cast<float>(efb_width()) * 0.5f, side = static_cast<float>(side_);
     std::fprintf(stderr,
-                 "[gx]  draw prim %u vat %u count %u -> %u indices; v0 ndc %.3f,%.3f z %.5f w %.3f color %08X/%08X "
-                 "tex0 %.3f,%.3f,%.3f\n",
-                 primitive, vat, count, added, v.pos[0] / w, v.pos[1] / w, v.pos[2] / w, v.pos[3], v.color[0],
-                 v.color[1], v.tex[0][0], v.tex[0][1], v.tex[0][2]);
+                 "[gx]  draw prim %u vat %u count %u -> %u indices; %s x %.1f..%.1f; v0 ndc %.3f,%.3f z %.5f w %.3f "
+                 "color %08X/%08X tex0 %.3f,%.3f,%.3f\n",
+                 primitive, vat, count, added, xf_.perspective() ? "persp" : "ortho", (lo + 1.0f) * half - side,
+                 (hi + 1.0f) * half - side, v.pos[0] / w, v.pos[1] / w, v.pos[2] / w, v.pos[3], v.color[0], v.color[1],
+                 v.tex[0][0], v.tex[0][1], v.tex[0][2]);
   }
   if (added == 0) return;
   efb_changed();
@@ -828,6 +862,42 @@ void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertice
   }
   f.draws.push_back({state, first, added});
   f.commands.push_back({Command::Type::Draw, static_cast<u32>(f.draws.size() - 1)});
+}
+
+// Widescreen: 2D that spans the game's whole width (a background, a fade) is
+// stretched over the wide EFB, unless it already covers it. Backgrounds are
+// often drawn as a row of tiles, one draw each, so a run of draws of the
+// same height, each starting where the last one ended, counts as one.
+void Frontend::stretch_full_screen(u32 first_vertex) {
+  Frame& f = frame();
+  // Orthographic, so w is 1 and x/y are NDC.
+  float x0 = std::numeric_limits<float>::max(), x1 = std::numeric_limits<float>::lowest();
+  float y0 = x0, y1 = x1;
+  for (std::size_t i = first_vertex; i < f.vertices.size(); ++i) {
+    const float* p = f.vertices[i].pos;
+    x0 = std::min(x0, p[0]), x1 = std::max(x1, p[0]);
+    y0 = std::min(y0, p[1]), y1 = std::max(y1, p[1]);
+  }
+  // In game pixels.
+  const float half_width = static_cast<float>(efb_width()) * 0.5f, side = static_cast<float>(side_);
+  const float left = (x0 + 1.0f) * half_width - side, right = (x1 + 1.0f) * half_width - side;
+  const float top = (1.0f - y1) * (kEfbHeight * 0.5f), bottom = (1.0f - y0) * (kEfbHeight * 0.5f);
+
+  Run& run = run_;
+  if (run.active && std::abs(left - run.right) <= 1.0f && std::abs(top - run.top) <= 1.0f &&
+      std::abs(bottom - run.bottom) <= 1.0f) {
+    run.right = std::max(run.right, right);
+  } else {
+    run = {true, first_vertex, left, right, top, bottom};
+  }
+  const float width = static_cast<float>(kEfbWidth);
+  const bool spans = run.left <= 1.0f && run.right >= width - 1.0f;
+  const bool covers_wide = run.left <= -side && run.right >= width + side;
+  if (!spans || covers_wide) return;
+  // Mapping the game's 640 pixels onto the whole wide EFB scales NDC x.
+  const float scale = static_cast<float>(efb_width()) / width;
+  for (std::size_t i = run.first_vertex; i < f.vertices.size(); ++i) f.vertices[i].pos[0] *= scale;
+  run.active = false;
 }
 
 void Frontend::assemble(u8 primitive, u32 base, u16 count, const Viewport& vp) {
@@ -875,15 +945,15 @@ void Frontend::assemble(u8 primitive, u32 base, u16 count, const Viewport& vp) {
     const float ax = va.pos[0] / va.pos[3], ay = va.pos[1] / va.pos[3];
     const float bx = vb.pos[0] / vb.pos[3], by = vb.pos[1] / vb.pos[3];
     // Expand perpendicular to the major axis (in pixels), half the width each side.
-    const float px = std::abs(bx - ax) * kEfbWidth, py = std::abs(by - ay) * kEfbHeight;
-    const float dx = py > px ? width / kEfbWidth : 0.0f;
+    const float px = std::abs(bx - ax) * vp.efb_width, py = std::abs(by - ay) * kEfbHeight;
+    const float dx = py > px ? width / vp.efb_width : 0.0f;
     const float dy = py > px ? 0.0f : width / kEfbHeight;
     quad_from(a, dx, dy, b, dx, dy);
   };
   auto point = [&](u32 a) {
     if (skip_[a]) return;
     const float size = static_cast<float>(bits(lp, 8, 8)) / 6.0f;
-    const float dx = size / kEfbWidth, dy = size / kEfbHeight;
+    const float dx = size / vp.efb_width, dy = size / kEfbHeight;
     // Top edge (a - dy) and bottom edge (a + dy), each spanning -dx..+dx.
     const u32 q = static_cast<u32>(f.vertices.size());
     const Vertex v = f.vertices[base + a];

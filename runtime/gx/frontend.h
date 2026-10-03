@@ -14,6 +14,7 @@
 //     registered at its destination address. A later texture read at that
 //     address uses it, as long as the memory there has not been rewritten
 //     (the copy itself never writes guest memory).
+//   * Widescreen widens the EFB on both sides (see set_widescreen()).
 //
 // Based on Dolphin's VideoCommon (BPStructs.cpp, BPFunctions.cpp,
 // RenderState.cpp, PixelShaderManager.cpp; Copyright Dolphin Emulator
@@ -48,6 +49,17 @@ class Frontend {
   // Where finished frames go. Without an output, only register state is
   // tracked (no vertex or texture work is done).
   void set_output(FrameOutput* output) { output_ = output; }
+
+  // Widescreen: widens the EFB by `side` pixels on the left and right, from
+  // the next frame on (0: the game's 4:3). Thread-safe.
+  //   * 3D scenes show more on the sides: the game's pixels keep their size
+  //     and place, and the host no longer clips at the game's screen edges.
+  //   * 2D (orthographic) draws stay in the middle, except ones that span
+  //     the whole screen (backgrounds, fades), which are stretched to the
+  //     full width.
+  //   * Scissors, clears and copies that span the whole width do so in the
+  //     wide EFB, so full-screen copies (and the displayed frame) are wide.
+  void set_widescreen(u32 side) { requested_side_.store(side, std::memory_order_relaxed); }
 
   // Command stream input (see gx::Decoder). `cp` is the CP register file.
   void bp_write(u8 reg, u32 value);
@@ -87,6 +99,8 @@ class Frontend {
   void build_uniforms(PixelUniforms& u) const;
   PipelineKey pipeline_key() const;
   void scissor(s32* rect) const;
+  u32 efb_width() const { return kEfbWidth + 2 * side_; }
+  void stretch_full_screen(u32 first_vertex);
   PixelFormat pixel_format() const { return static_cast<PixelFormat>(bits(bp_[BP_ZCOMPARE], 0, 3)); }
 
   TextureBinding bind_texture(u32 map, s32* size);
@@ -103,6 +117,17 @@ class Frontend {
   u64 frames_ = 0;
   // OPENGP_GX_DUMP=<frame>: log that frame's draws, copies and clears.
   Stats stats_;
+  // Widescreen: pixels added on each side of the EFB (fixed within a frame).
+  std::atomic<u32> requested_side_{0};
+  u32 side_ = 0;
+  bool new_display_frame_ = true;
+  // The latest run of 2D draws that may make up a full-width background, in
+  // game pixels (see stretch_full_screen()).
+  struct Run {
+    bool active = false;
+    u32 first_vertex = 0;
+    float left = 0, right = 0, top = 0, bottom = 0;
+  } run_;
   u64 dump_frame_ = ~0ull;
   bool dumping_ = false;
   u32 dumped_state_ = ~0u;

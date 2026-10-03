@@ -18,6 +18,7 @@
 #include "os/threads.h"
 #include "ppc/memory.h"
 #include "ppc/module.h"
+#include "triforce/card_folder.h"
 #include "triforce/io_ports.h"
 
 namespace opengp {
@@ -31,6 +32,9 @@ class Machine {
 
   // Folder for files the machine writes (backup memory, card saves).
   void set_user_dir(std::string dir) { user_dir_ = std::move(dir); }
+
+  // The player's save cards, in `user_dir`/cards/<game ID> (after boot()).
+  triforce::CardFolder& cards() { return *cards_; }
 
   // The player's controls, as the cabinet's I/O board reads them (thread-safe).
   void set_controls(const triforce::Controls& controls) {
@@ -81,6 +85,7 @@ class Machine {
   ppc::Context ctx_{};
   u32 entry_ = 0;
   std::string user_dir_ = "user";
+  std::shared_ptr<triforce::CardFolder> cards_;
   mutable std::mutex controls_mutex_;
   triforce::Controls controls_{};
   triforce::Outputs outputs_{};

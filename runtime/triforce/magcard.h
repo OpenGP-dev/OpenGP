@@ -2,7 +2,8 @@
 //
 // Magnetic card reader/writer/printer (Sanwa CRP-1231LR, as used by Mario
 // Kart Arcade GP and GP 2 for save cards). A card is kept as a file of up to
-// three 69-byte tracks; a simulated player inserts it when the game asks.
+// three 69-byte tracks (see card_folder.h); a simulated player inserts the
+// card they hold when the game asks.
 // Based on Dolphin's MagCard/MagneticCardReader.cpp (Copyright Dolphin
 // Emulator Project, GPL-2.0-or-later), itself based on YACardEmu
 // (https://github.com/GXTX/YACardEmu, Copyright (C) 2020-2023 wutno,
@@ -11,11 +12,13 @@
 
 #include <array>
 #include <chrono>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
 #include <vector>
 
+#include "triforce/card_folder.h"
 #include "triforce/serial_device.h"
 
 namespace triforce {
@@ -25,7 +28,7 @@ class MagCardReader final : public SerialDevice {
   static constexpr std::size_t kTrackSize = 69;
   static constexpr std::size_t kTracks = 3;
 
-  explicit MagCardReader(std::string card_path);
+  explicit MagCardReader(std::shared_ptr<CardFolder> cards);
   ~MagCardReader() override;
   void update() override;
 
@@ -62,7 +65,6 @@ class MagCardReader final : public SerialDevice {
   bool running_command() const { return step_ > 0; }
   bool card_present() const { return status_.r != R::NoCard; }
   bool card_loaded() const { return status_.r != R::NoCard && status_.r != R::EntrySlot; }
-  bool card_file_exists() const;
   void read_card_file();
   void write_card_file();
   void move_card(R position);
@@ -75,7 +77,8 @@ class MagCardReader final : public SerialDevice {
   void command_print_line_or_erase(bool erase);
   void command_dispense();
 
-  std::string card_path_;
+  std::shared_ptr<CardFolder> cards_;
+  std::string card_path_;  // of the card in the reader (or its entry slot)
   Status status_{};
   u8 command_ = 0;             // sent in every ENQUIRY response
   std::vector<u8> payload_;    // data sent with the ENQUIRY response

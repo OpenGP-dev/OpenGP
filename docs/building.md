@@ -62,7 +62,8 @@ Vulkan driver at run time.
 ## Running
 
 ```sh
-build/<preset>/games/mkgp2/opengp-mkgp2 [--iso PATH] [--timeout SECONDS] [--status SECONDS] [--scale N]
+build/<preset>/games/mkgp2/opengp-mkgp2 [--iso PATH] [--user-dir PATH] [--timeout SECONDS] [--status SECONDS]
+                                        [--fullscreen | --windowed] [--aspect RATIO] [--scale N]
                                         [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]
                                         [--input SCRIPT] [--input-file PATH] [--free-play]
                                         [--no-audio] [--volume PERCENT] [--audio-dump PATH]
@@ -77,9 +78,15 @@ game in a window (Vulkan, through SDL3's GPU API). It prints:
   far, guest threads, pending interrupts, the sound output's queue (its length, and how often it
   ran dry or overflowed), and each guest thread's call stack when call tracing is on.
 
+The settings in `user/settings.toml` (see [playing.md](playing.md#settings)) apply to every run;
+options that change them do so for that run only.
+
 | Option | Effect |
 |--------|--------|
-| `--scale N` | Internal resolution: N times the native 640x528 |
+| `--user-dir PATH` | Where saves, settings and screenshots go (default `user/`) |
+| `--fullscreen`, `--windowed` | Start fullscreen or in a window |
+| `--aspect RATIO` | `auto` (the window's shape), `4:3`, `16:9`, `16:10` or `21:9` |
+| `--scale N` | Internal resolution: N times the native 640x528 (1-8) |
 | `--headless` | Render without a window (for screenshots) |
 | `--no-video` | Do not render at all (only the GPU's registers are emulated) |
 | `--screenshot FRAME` | Save frame number FRAME to `user/screenshots/` (repeatable); F12 does the same while playing |
@@ -91,8 +98,8 @@ game in a window (Vulkan, through SDL3's GPU API). It prints:
 | `--volume PERCENT` | Sound volume, 0-100 (default 100) |
 | `--audio-dump PATH` | Also write the sound to a WAV file (works headless too) |
 
-Files the machine writes (baseboard backup memory, media board settings, magnetic cards, the
-controls, screenshots) go in `user/`, which is gitignored.
+Files the machine writes (baseboard backup memory, media board settings, Mario Cards, the
+settings and controls, screenshots) go in `user/`, which is gitignored.
 
 Environment variables for debugging:
 

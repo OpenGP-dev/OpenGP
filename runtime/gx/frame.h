@@ -9,6 +9,11 @@
 //
 // Everything here is plain data, so frames can be built on the guest thread
 // and rendered on another thread without sharing any GX state.
+//
+// Widescreen: the EFB can be wider than the game's 640 pixels, with the
+// game's EFB in the middle (Frame::efb_width). Rectangles in a frame (scissors,
+// clears, copies) are in the wide EFB's pixels; ones that span the game's
+// whole width span the wide EFB.
 #pragma once
 
 #include <condition_variable>
@@ -76,7 +81,7 @@ struct DrawState {
   PipelineKey pipeline;
   u32 uniforms = 0;  // index into Frame::uniforms
   TextureBinding textures[8];
-  s32 scissor[4] = {};  // x, y, width, height in EFB pixels
+  s32 scissor[4] = {};  // x, y, width, height in (wide) EFB pixels
   bool operator==(const DrawState&) const = default;
 };
 
@@ -97,8 +102,8 @@ struct ClearCmd {
 // converting it to what the game would read back from memory.
 struct CopyCmd {
   u32 dest;                     // texture handle (the renderer creates it on first use)
-  u32 src_x, src_y, src_width, src_height;  // EFB rectangle
-  u32 width, height;            // destination size (half scale / y scale applied)
+  u32 src_x, src_y, src_width, src_height;  // (wide) EFB rectangle
+  u32 width, height;            // destination size in EFB pixels (half scale / y scale applied)
   CopyFormat format;
   bool depth;                   // copy the depth buffer (EFB format Z24)
   bool intensity;               // convert RGB to YUV (intensity formats)
@@ -128,8 +133,9 @@ class EfbReadback {
  public:
   EfbReadback(bool depth, bool urgent) : depth(depth), urgent(urgent) {}
   const bool depth, urgent;
-  // kEfbWidth * kEfbHeight values: RGBA8 colours (red in the lowest byte)
-  // or 24-bit depths. Filled by the renderer before complete().
+  // kEfbWidth * kEfbHeight values (the game's EFB, without the widescreen
+  // sides): RGBA8 colours (red in the lowest byte) or 24-bit depths. Filled
+  // by the renderer before complete().
   std::vector<u32> pixels;
 
   void complete() {
@@ -187,6 +193,8 @@ struct Frame {
   std::vector<u32> releases;  // texture handles no longer used (destroy after this frame)
   u32 xfb = 0;                // XFB copy to display (texture handle), 0 if none
   u32 xfb_width = 0, xfb_height = 0;
+  float xfb_aspect = 4.0f / 3.0f;  // the XFB's display aspect ratio
+  u32 efb_width = kEfbWidth;       // 640, or more for widescreen (see above)
   u64 number = 0;             // displayed frames before this one (partial frames share the number)
   std::vector<std::shared_ptr<EfbReadback>> readbacks;
 
@@ -204,6 +212,8 @@ struct Frame {
     texels.clear();
     releases.clear();
     xfb = xfb_width = xfb_height = 0;
+    xfb_aspect = 4.0f / 3.0f;
+    efb_width = kEfbWidth;
     number = 0;
     readbacks.clear();
   }

@@ -43,6 +43,10 @@ bool HostOutput::init(float volume, std::string* error) {
   return true;
 }
 
+void HostOutput::set_volume(float volume) {
+  if (stream_) SDL_SetAudioStreamGain(stream_, std::clamp(volume, 0.0f, 1.0f));
+}
+
 void HostOutput::push(const s16* samples, u32 frames, u32 rate) {
   if (!stream_ || !frames || !rate) return;
   if (rate != rate_) {

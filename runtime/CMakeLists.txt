@@ -35,12 +35,14 @@ add_library(opengp_machine STATIC
   hw/vi.cpp
   input/script.cpp
   machine.cpp
+  os/atomic_file.cpp
   os/boot.cpp
   os/crash.cpp
   os/printf.cpp
   os/profiler.cpp
   os/threads.cpp
   triforce/baseboard.cpp
+  triforce/card_folder.cpp
   triforce/io_ports.cpp
   triforce/jvsio.cpp
   triforce/mediaboard.cpp
@@ -83,4 +85,40 @@ if(OPENGP_BUILD_VIDEO)
   target_link_libraries(opengp_audio
     PUBLIC opengp_machine SDL3::SDL3
     PRIVATE opengp_warnings)
+
+  # Dear ImGui, for the menu: the pinned release, built with its SDL3 and
+  # SDL GPU backends.
+  include(FetchContent)
+  FetchContent_Declare(imgui
+    URL https://github.com/ocornut/imgui/archive/refs/tags/v1.92.9b.tar.gz
+    URL_HASH SHA256=21d8a0a565e85dce943e375db00812c2f3f0ab21f3f0f7964e364a63422d7f99
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+  FetchContent_MakeAvailable(imgui)
+  add_library(imgui STATIC
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlgpu3.cpp)
+  target_include_directories(imgui SYSTEM PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+  target_link_libraries(imgui PUBLIC SDL3::SDL3)
+endif()
+
+# The player's settings (user/settings.toml).
+add_library(opengp_settings STATIC app/settings.cpp)
+target_link_libraries(opengp_settings
+  PUBLIC opengp_machine
+  PRIVATE tomlplusplus opengp_warnings)
+
+# The launcher the games share: settings, window, sound, controls, menu.
+add_library(opengp_app STATIC app/launcher.cpp)
+target_link_libraries(opengp_app
+  PUBLIC opengp_machine opengp_settings
+  PRIVATE opengp_warnings)
+target_compile_definitions(opengp_app PRIVATE OPENGP_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+if(OPENGP_BUILD_VIDEO)
+  target_sources(opengp_app PRIVATE app/menu.cpp)
+  target_link_libraries(opengp_app PUBLIC opengp_video opengp_input opengp_audio imgui)
+  target_compile_definitions(opengp_app PRIVATE OPENGP_VIDEO)
 endif()

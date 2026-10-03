@@ -48,6 +48,7 @@ class XfUnit {
   float viewport_y() const { return f(XF_VIEWPORT + 4); }
   float viewport_farz() const { return f(XF_VIEWPORT + 5); }
   u32 num_texgens() const { return reg(XF_NUM_TEXGENS) & 0xF; }
+  bool perspective() const { return reg(XF_PROJECTION + 6) == 0; }
 
   // Decodes the registers for the next draws (cheap if nothing changed).
   void prepare();

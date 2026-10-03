@@ -12,6 +12,7 @@
 #include <string>
 
 #include "hw/si.h"
+#include "triforce/card_folder.h"
 #include "triforce/io_ports.h"
 #include "triforce/jvsio.h"
 
@@ -19,9 +20,9 @@ namespace triforce {
 
 class BaseboardSi final : public hw::SiDevice {
  public:
-  // `game_id` picks the cabinet (I/O board and serial devices); cards are
-  // stored in `user_dir`. `outputs` is told when the cabinet's outputs change.
-  BaseboardSi(const std::string& game_id, const std::string& user_dir, ControlsSource controls,
+  // `game_id` picks the cabinet (I/O board and serial devices); save cards
+  // come from `cards`. `outputs` is told when the cabinet's outputs change.
+  BaseboardSi(const std::string& game_id, std::shared_ptr<CardFolder> cards, ControlsSource controls,
               OutputsSink outputs = {});
   ~BaseboardSi() override;
 

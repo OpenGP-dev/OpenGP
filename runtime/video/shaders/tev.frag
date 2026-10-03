@@ -50,7 +50,7 @@ layout(std140, set = 3, binding = 0) uniform PixelBlock {
 
 // Set by the renderer.
 layout(std140, set = 3, binding = 1) uniform HostBlock {
-  vec4 host;  // x: EFB scale (host pixels per EFB pixel)
+  vec4 host;  // x: EFB scale (host pixels per EFB pixel), y: widescreen side (EFB pixels)
 };
 
 // Per-pixel TEV state.
@@ -369,7 +369,7 @@ void main() {
       ze = fog_f.x * float(zcoord) / 16777216.0;  // orthographic
     }
     if (bitfieldExtract(misc.w, 10, 1) != 0u) {  // range adjustment
-      float offset = (2.0 * ((gl_FragCoord.x / host.x) / fog_f.w)) - 1.0 - fog_f.z;
+      float offset = (2.0 * ((gl_FragCoord.x / host.x - host.y) / fog_f.w)) - 1.0 - fog_f.z;
       float findex = clamp(9.0 - abs(offset) * 9.0, 0.0, 9.0);
       uint lo = uint(findex), hi = lo + 1u;
       float k = mix(fog_range[lo >> 2u][lo & 3u], fog_range[hi >> 2u][hi & 3u], fract(findex));

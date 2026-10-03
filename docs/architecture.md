@@ -288,6 +288,19 @@ Rendering is split in two, with plain data (`gx::Frame`, `runtime/gx/frame.h`) i
 
 A queue of at most two frames between the two paces the game if rendering falls behind.
 
+**Widescreen** (`Frontend::set_widescreen`) widens the EFB by the same number of pixels on each
+side (107 for 16:9), with the game's 640 pixels in the middle:
+- The front end maps the game's clip space onto the wide EFB without changing a draw's scale or
+  place, so the host no longer clips 3D scenes at the game's screen edges: races show more on the
+  sides (the game draws the scenery around the camera, so little is missing there).
+- 2D (orthographic) draws stay in the middle, at their shape. Ones that span the game's whole
+  width are stretched to the wide EFB's: full-screen backgrounds, fades, and the rows of tiles that
+  menu backgrounds are drawn as (a run of draws of the same height, each starting where the last
+  ended).
+- Scissors, clears and EFB copies that span the game's width span the wide EFB, so a full-screen
+  copy (and the copy to the XFB, which is displayed) is as much wider. CPU reads of the EFB see
+  the game's part.
+
 ### Audio (`runtime/dsp/`, `runtime/audio/`)
 
 The game's sound library is MusyX, which drives Nintendo's AX microcode on the DSP (CRC
@@ -310,6 +323,19 @@ from Dolphin's AX HLE:
 Not emulated: the polyphase resampler's coefficient table (it is in the DSP's ROM; linear
 interpolation is used instead, as Dolphin does without the ROM), and AX's initial time delay (a
 phase shift for 3D sound).
+
+### The launcher (`runtime/app/`)
+
+The games' executables only describe the game (`app::Game`: its ID, its recompiled module, how to
+turn free play on); `app::run` does the rest:
+- the command line and the player's settings (`settings.h`: `user/settings.toml`);
+- booting, the status line, crash reports;
+- the window (fullscreen, and the aspect ratio and internal resolution that follow its size), the
+  controls, the sound;
+- the menu (`menu.h`): Dear ImGui, drawn by the renderer over the presented picture
+  (`video::Overlay`), with the settings and the Mario Card the player holds. Settings changed there
+  apply at once; they are saved when the menu closes and at exit, except those set on the command
+  line.
 
 ### Input (`runtime/input/`)
 

@@ -54,7 +54,7 @@ bool is_mario_kart(const std::string& game_id) {
 
 }  // namespace
 
-BaseboardSi::BaseboardSi(const std::string& game_id, const std::string& user_dir, ControlsSource controls,
+BaseboardSi::BaseboardSi(const std::string& game_id, std::shared_ptr<CardFolder> cards, ControlsSource controls,
                          OutputsSink outputs)
     : outputs_sink_(std::move(outputs)) {
   io_ports_.add_adapter(std::make_unique<CommonIOAdapter>(controls));
@@ -63,7 +63,7 @@ BaseboardSi::BaseboardSi(const std::string& game_id, const std::string& user_dir
     auto wheel = std::make_unique<MkgpSteeringWheel>(&outputs_);
     io_ports_.add_adapter(std::make_unique<MkgpIOAdapter>(wheel.get(), controls, &outputs_));
     serial_a_ = std::move(wheel);
-    serial_b_ = std::make_unique<MagCardReader>(user_dir + "/tricard_" + game_id + ".bin");
+    serial_b_ = std::make_unique<MagCardReader>(std::move(cards));
   } else {
     jvs_ = std::make_unique<Sega837_13551Board>(&io_ports_);
   }

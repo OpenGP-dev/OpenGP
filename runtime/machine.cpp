@@ -3,7 +3,10 @@
 #include "machine.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <filesystem>
 
+#include "os/atomic_file.h"
 #include "hw/ai.h"
 #include "hw/di.h"
 #include "hw/dsp.h"
@@ -60,9 +63,21 @@ bool Machine::boot(const std::string& image_path, os::BootResult* boot, std::str
   triforce::MediaBoard* mb = mediaboard.get();
   di->set_backend(std::move(mediaboard));
   h.map(0x6000, 0x0400, std::move(di));
+  // Save cards. Before cards had a folder, the one card was tricard_<ID>.bin.
+  cards_ = std::make_shared<triforce::CardFolder>(user_dir_ + "/cards/" + disc_.game_id());
+  {
+    namespace fs = std::filesystem;
+    const fs::path legacy = os::utf8_path(user_dir_ + "/tricard_" + disc_.game_id() + ".bin");
+    std::error_code ec;
+    if (fs::is_regular_file(legacy, ec) && cards_->list().empty()) {
+      fs::create_directories(os::utf8_path(cards_->dir()), ec);
+      fs::rename(legacy, os::utf8_path(cards_->path("Card 1")), ec);
+      if (!ec) std::fprintf(stderr, "[card] moved %s to %s\n", legacy.string().c_str(), cards_->path("Card 1").c_str());
+    }
+  }
   auto si = std::make_unique<hw::SiBus>(h);
   si->attach(0, std::make_unique<triforce::BaseboardSi>(
-                   disc_.game_id(), user_dir_, [this] { return controls(); },
+                   disc_.game_id(), cards_, [this] { return controls(); },
                    [this](const triforce::Outputs& outputs) {
                      std::lock_guard lock(controls_mutex_);
                      outputs_ = outputs;

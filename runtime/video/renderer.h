@@ -4,7 +4,7 @@
 // D3D12/Metal) and shows their external framebuffer in a window.
 //
 //   * The EFB is a colour + depth render target (640x528, times the
-//     internal resolution scale).
+//     internal resolution scale; wider for widescreen, see gx/frame.h).
 //   * Draws use one pipeline per blend/depth combination, all with the TEV
 //     ubershader (shaders/tev.frag).
 //   * EFB copies render into textures the frame's draws can then sample;
@@ -66,6 +66,16 @@ class FrameQueue final : public gx::FrameOutput {
   std::size_t max_pending_;
 };
 
+// Something drawn over the presented picture (the menu).
+class Overlay {
+ public:
+  virtual ~Overlay() = default;
+  // Before the window's render pass (uploads).
+  virtual void prepare(SDL_GPUCommandBuffer* cmd) = 0;
+  // In the window's render pass, over the whole window.
+  virtual void draw(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass) = 0;
+};
+
 class Renderer {
  public:
   Renderer();
@@ -73,9 +83,27 @@ class Renderer {
   Renderer(const Renderer&) = delete;
   Renderer& operator=(const Renderer&) = delete;
 
+  static constexpr u32 kMaxScale = 8;
+
   // `window` may be null: frames are then rendered off screen (for
   // screenshots). `scale` is the internal resolution (1 = native).
   bool init(SDL_Window* window, u32 scale, std::string* error);
+
+  // Changes the internal resolution from the next frame on.
+  void set_scale(u32 scale);
+  u32 scale() const { return scale_; }
+  // Waits for the display's refresh to present (else presents at once,
+  // tearing if need be).
+  void set_vsync(bool vsync);
+  // Drawn over every presented frame (nullptr: nothing).
+  void set_overlay(Overlay* overlay) { overlay_ = overlay; }
+
+  // Presents the last frame again (with the overlay), for when the game has
+  // shown nothing new for a while.
+  void redraw();
+
+  SDL_GPUDevice* device() const { return device_; }
+  u32 window_format() const;  // the window's SDL_GPUTextureFormat
 
   // Renders a frame and presents its XFB. If `capture` is given and the
   // frame has an XFB, it receives the XFB image (at the internal resolution).
@@ -93,13 +121,14 @@ class Renderer {
   SDL_GPUGraphicsPipeline* clear_pipeline(bool color, bool alpha, bool depth);
   SDL_GPUSampler* sampler(u32 mode0, u32 mode1);
   SDL_GPUShader* shader(const u32* code, std::size_t size, bool fragment, u32 samplers, u32 uniforms);
+  bool resize_efb(u32 width);
   bool upload(SDL_GPUCommandBuffer* cmd, const gx::Frame& frame);
   void begin_efb(SDL_GPUCommandBuffer* cmd);
   void end_pass();
   void draw(const gx::Frame& frame, const gx::DrawCmd& d);
   void clear(const gx::ClearCmd& c);
   void copy(SDL_GPUCommandBuffer* cmd, const gx::CopyCmd& c);
-  void present(SDL_GPUCommandBuffer* cmd, const Texture& xfb);
+  void present(SDL_GPUCommandBuffer* cmd, const Texture* xfb, float aspect);
   void capture(SDL_GPUCommandBuffer* cmd, const Texture& xfb);
   void finish_capture(Image* image);
   void read_efb(SDL_GPUCommandBuffer* cmd, std::shared_ptr<gx::EfbReadback> request);
@@ -108,8 +137,12 @@ class Renderer {
 
   SDL_Window* window_ = nullptr;
   SDL_GPUDevice* device_ = nullptr;
-  u32 scale_ = 1;
-  u32 efb_width_ = 0, efb_height_ = 0;
+  Overlay* overlay_ = nullptr;
+  u32 last_xfb_ = 0;  // texture handle of the last frame presented
+  float last_aspect_ = 4.0f / 3.0f;
+  u32 scale_ = 1, requested_scale_ = 1;
+  u32 efb_logical_width_ = 0;         // in EFB pixels (640, or wider)
+  u32 efb_width_ = 0, efb_height_ = 0;  // in host pixels
   SDL_GPUTexture* efb_color_ = nullptr;
   SDL_GPUTexture* efb_depth_ = nullptr;
   bool efb_initialised_ = false;
