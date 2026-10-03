@@ -4,11 +4,16 @@
 #pragma once
 
 #include "gekko/types.h"
+#include "os/reboot.h"
 
 namespace mkgp2 {
 
 // Plays cost nothing: no coins needed. Takes effect when the game sets its
 // coins up at start-up, or at once if it already has.
 void set_free_play(gekko::u8* base, bool on);
+
+// The restart into the test menu (what the game does when the test button is
+// pressed while it starts up).
+os::Reboot test_menu_reboot();
 
 }  // namespace mkgp2

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Unit tests for the player's settings (runtime/app/settings.h) and the save
-// card folder (runtime/triforce/card_folder.h).
+// Unit tests for the player's settings (runtime/app/settings.h), the save
+// card folder (runtime/triforce/card_folder.h) and reboot files
+// (runtime/os/reboot.h).
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
@@ -10,6 +11,7 @@
 
 #include "app/settings.h"
 #include "os/atomic_file.h"
+#include "os/reboot.h"
 #include "triforce/card_folder.h"
 
 namespace fs = std::filesystem;
@@ -122,4 +124,27 @@ TEST_CASE("card folder") {
   cards.hold("Luigi");
   CHECK(cards.held() == "Luigi");
   CHECK_FALSE(cards.inserted());
+}
+
+TEST_CASE("reboot files") {
+  const fs::path path = temp_dir("reboot") / "reboot.bin";
+  os::Reboot r;
+  r.restart = true;
+  r.reset_code = 0x12345678;
+  r.region_start = 0x811FFF00;
+  r.region_end = 0x81200000;
+  r.region.assign(0x100, 0);
+  r.region[3] = 1;
+  REQUIRE(os::save_reboot(path.string(), r));
+  os::Reboot loaded;
+  REQUIRE(os::load_reboot(path.string(), &loaded));
+  CHECK(loaded.restart);
+  CHECK(loaded.reset_code == r.reset_code);
+  CHECK(loaded.region_start == r.region_start);
+  CHECK(loaded.region_end == r.region_end);
+  CHECK(loaded.region == r.region);
+
+  write(path, "not a reboot");
+  CHECK_FALSE(os::load_reboot(path.string(), &loaded));
+  CHECK_FALSE(os::load_reboot((temp_dir("reboot") / "missing.bin").string(), &loaded));
 }

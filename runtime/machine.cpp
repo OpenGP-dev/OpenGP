@@ -103,7 +103,7 @@ triforce::Controls Machine::controls() const {
     std::lock_guard lock(controls_mutex_);
     c = controls_;
   }
-  if (!script_.empty() && gpu_) script_.apply(gpu_->frames(), c);
+  if (!script_.empty() && gpu_) script_.apply(frame_offset_ + gpu_->frames(), c);
   return c;
 }
 

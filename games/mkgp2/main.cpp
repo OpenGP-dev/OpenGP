@@ -14,5 +14,6 @@ int main(int argc, char** argv) {
   game.module = &guest::g_module;
   game.symbols = OPENGP_SYMBOLS;
   game.set_free_play = mkgp2::set_free_play;
+  game.test_menu = mkgp2::test_menu_reboot;
   return app::run(game, argc, argv);
 }

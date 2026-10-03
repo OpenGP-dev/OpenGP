@@ -65,7 +65,7 @@ Vulkan driver at run time.
 build/<preset>/games/mkgp2/opengp-mkgp2 [--iso PATH] [--user-dir PATH] [--timeout SECONDS] [--status SECONDS]
                                         [--fullscreen | --windowed] [--aspect RATIO] [--scale N]
                                         [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]
-                                        [--input SCRIPT] [--input-file PATH] [--free-play]
+                                        [--input SCRIPT] [--input-file PATH] [--free-play] [--test-menu]
                                         [--no-audio] [--volume PERCENT] [--audio-dump PATH]
 ```
 
@@ -93,6 +93,7 @@ options that change them do so for that run only.
 | `--screenshot-every N` | Save every Nth frame |
 | `--timeout SECONDS` | Quit after this long; default: never with a window, 20 seconds otherwise |
 | `--free-play` | No coins needed |
+| `--test-menu` | Start in the game's test menu (see [playing.md](playing.md#the-test-menu)) |
 | `--input SCRIPT`, `--input-file PATH` | Play scripted input (see [playing.md](playing.md#scripted-input)) |
 | `--no-audio` | No sound (there is none with `--headless` or `--no-video` either) |
 | `--volume PERCENT` | Sound volume, 0-100 (default 100) |

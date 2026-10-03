@@ -227,6 +227,12 @@ void Menu::game_tab(MenuModel& m) {
 
   ImGui::SeparatorText("Arcade");
   ImGui::Checkbox("Free play (no coins needed)", &s.free_play);
+  if (m.test_menu) {
+    if (ImGui::Button("Test menu")) m.test_menu();
+    ImGui::SameLine();
+    ImGui::AlignTextToFramePadding();
+    hint("The operator's settings: restarts the game.");
+  }
 }
 
 void Menu::video_tab(MenuModel& m) {

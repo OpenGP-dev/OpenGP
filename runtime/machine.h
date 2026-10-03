@@ -52,6 +52,10 @@ class Machine {
 
   // Scripted input, applied on top of the player's controls (set before run()).
   void set_script(input::Script script) { script_ = std::move(script); }
+  // Frames shown before this boot (by the runs the game rebooted from), for
+  // the script's timing.
+  void set_frame_offset(u64 frames) { frame_offset_ = frames; }
+  u64 frame_offset() const { return frame_offset_; }
 
   // Opens the disc image, sizes RAM from its bi2.bin, maps the hardware and
   // runs the boot ROM emulation (apploader). Fills `boot` on success.
@@ -90,6 +94,7 @@ class Machine {
   triforce::Controls controls_{};
   triforce::Outputs outputs_{};
   input::Script script_;
+  u64 frame_offset_ = 0;
 };
 
 }  // namespace opengp

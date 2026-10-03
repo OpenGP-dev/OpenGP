@@ -242,8 +242,14 @@ With a coin, start and the menus, the game goes from attract mode into a race, a
   loop in `SelectThread` takes interrupts at its back-edge and jumps straight back to the idle
   hook, which then waited again for the next interrupt with the game thread already runnable;
   races ran at 40-50 fps until the hook took the interrupt itself (`os/threads.cpp`).
-- **Test switch**: not solved. JVS system bit `0x80` (Dolphin's test button) starts a game
-  instead of the test menu. The game's service-button handler (`0x8002D050`) opens the menu when
-  input bits `0x0800` and `0x1000` are held and pressed; those bits come from the baseboard's
-  status switches (inverted, shifted up 8), but setting status bits `0x08`/`0x10` also only
-  started a game.
+- **Test switch** (solved in milestone 7): the game's service-button handler (`0x8002D050`,
+  every frame) reads input bit `0x1000` (test: JVS system bit `0x80`, or baseboard status bit
+  `0x40` inverted) and `0x0800` (service: player 1 switch bit `0x40`, or status bit `0x80`
+  inverted). Service held and test pressed opens the I/O test (`ServiceMenu` page `0xB`). Test
+  alone ends the main loop, and `main` then **reboots** into the test menu (`8002DC1C`): it keeps
+  0x100 bytes at `811FFF00` (`OSSetSaveRegion`), the first word 1 ("wake test mode"), and calls
+  `OSResetSystem(0, 0, 0)`. At the next boot `BootDispatcher` reads them back
+  (`OSGetSavedRegion`) and starts the test menu (flow mode 12 instead of 3). The test menu's EXIT
+  reboots the same way; on the cabinet these reboots go through SegaBoot's system menu, which
+  then starts the game. OpenGP emulates a reboot by restarting the process (`os/reboot.h`); a
+  reboot from a boot that kept memory (the test menu) boots afresh.

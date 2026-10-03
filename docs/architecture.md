@@ -337,6 +337,15 @@ turn free play on); `app::run` does the rest:
   apply at once; they are saved when the menu closes and at exit, except those set on the command
   line.
 
+### Reboots (`runtime/os/reboot.h`)
+
+Games restart themselves with `OSResetSystem`, keeping a region of memory for the next boot (the
+Triforce games use it to enter and leave their test menus). OpenGP replaces `OSResetSystem` (see
+`games/common/sdk_hle.cpp`) and restarts the whole process: the launcher writes the reset code and
+the kept memory to `user/reboot.bin` and starts itself again with the same options; the new
+process hands them to the game's `OSInit` (`__OSGetExecParams`). Frame numbers (for scripted
+input and screenshots) carry on across the restart.
+
 ### Input (`runtime/input/`)
 
 The main thread reads the player's devices once a frame and hands the result to the machine

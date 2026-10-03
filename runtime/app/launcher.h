@@ -9,7 +9,7 @@
 //   opengp-<game> [--iso PATH] [--user-dir PATH] [--timeout SECONDS] [--status SECONDS]
 //                 [--fullscreen | --windowed] [--aspect RATIO] [--scale N]
 //                 [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]
-//                 [--input SCRIPT] [--input-file PATH] [--free-play]
+//                 [--input SCRIPT] [--input-file PATH] [--free-play] [--test-menu]
 //                 [--no-audio] [--volume PERCENT] [--audio-dump PATH]
 //
 // Options override user/settings.toml for one run (see docs/building.md).
@@ -18,6 +18,7 @@
 #include <functional>
 
 #include "gekko/types.h"
+#include "os/reboot.h"
 #include "ppc/module.h"
 
 namespace app {
@@ -32,6 +33,9 @@ struct Game {
   // Turns free play on or off: at start-up (before the game runs) and from
   // the menu (while it runs). `base` is guest memory.
   std::function<void(u8* base, bool on)> set_free_play;
+  // The reboot into the game's test menu (the operator's settings), if the
+  // menu offers it.
+  std::function<os::Reboot()> test_menu;
 };
 
 // Runs the game; returns the process exit code.

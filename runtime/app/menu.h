@@ -28,6 +28,7 @@ struct MenuModel {
   triforce::CardFolder* cards = nullptr;
   std::string video_info;          // renderer, internal resolution
   std::function<void()> quit;
+  std::function<void()> test_menu;  // restarts into the game's test menu (if it has one)
 };
 
 class Menu final : public video::Overlay {

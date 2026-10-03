@@ -10,10 +10,12 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "app/settings.h"
 #include "audio/wav.h"
@@ -22,8 +24,10 @@
 #include "hw/vi.h"
 #include "input/script.h"
 #include "machine.h"
+#include "os/atomic_file.h"
 #include "os/crash.h"
 #include "os/profiler.h"
+#include "os/reboot.h"
 #include "ppc/hooks.h"
 #include "ppc/trace.h"
 
@@ -48,10 +52,14 @@ constexpr const char* kUsage =
     "usage: %s [--iso PATH] [--user-dir PATH] [--timeout SECONDS] [--status SECONDS]\n"
     "          [--fullscreen | --windowed] [--aspect auto|4:3|16:9|16:10|21:9] [--scale N]\n"
     "          [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]\n"
-    "          [--input SCRIPT] [--input-file PATH] [--free-play]\n"
+    "          [--input SCRIPT] [--input-file PATH] [--free-play] [--test-menu]\n"
     "          [--no-audio] [--volume PERCENT] [--audio-dump PATH]\n";
 
 struct Options {
+  std::vector<std::string> args;  // as given, for restarts (without --reboot and --frame-offset)
+  std::string reboot;             // file describing the reboot this run continues
+  u64 frame_offset = 0;           // frames shown by the runs before the reboot
+  bool test_menu = false;         // start in the game's test menu
   std::string image;
   fs::path user_dir;
   int timeout_s = -1, status_s = 5;
@@ -72,7 +80,20 @@ int parse_options(int argc, char** argv, Options& o) {
   std::string error;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
+    if ((a == "--reboot" || a == "--frame-offset") && i + 1 < argc) ++i;
+    else if (a != "--test-menu") o.args.push_back(a);
+  }
+  for (int i = 1; i < argc; ++i) {
+    const std::string a = argv[i];
     const bool has_value = i + 1 < argc;
+    if (a == "--reboot" && has_value) {
+      o.reboot = argv[++i];
+      continue;
+    }
+    if (a == "--frame-offset" && has_value) {
+      o.frame_offset = std::strtoull(argv[++i], nullptr, 10);
+      continue;
+    }
     if (a == "--iso" && has_value) o.image = argv[++i];
     else if (a == "--user-dir" && has_value) o.user_dir = argv[++i];
     else if (a == "--timeout" && has_value) o.timeout_s = std::atoi(argv[++i]);
@@ -81,6 +102,7 @@ int parse_options(int argc, char** argv, Options& o) {
     else if (a == "--screenshot" && has_value) o.screenshots.insert(std::strtoull(argv[++i], nullptr, 10));
     else if (a == "--screenshot-every" && has_value) o.screenshot_every = std::strtoull(argv[++i], nullptr, 10);
     else if (a == "--headless") o.headless = true;
+    else if (a == "--test-menu") o.test_menu = true;
     else if (a == "--no-video") o.use_video = false;
     else if (a == "--fullscreen") o.fullscreen = true;
     else if (a == "--windowed") o.fullscreen = false;
@@ -143,6 +165,44 @@ Settings settings_to_save(const Settings& file, const Settings& start, const Set
   OPENGP_KEEP_CHANGE(card);
 #undef OPENGP_KEEP_CHANGE
   return s;
+}
+
+// The reboot the game asked for (set on the guest thread; the main thread
+// restarts the process).
+std::mutex g_reboot_mutex;
+std::optional<os::Reboot> g_pending_reboot;
+std::atomic<bool> g_reboot_requested{false};
+
+// Restarts the process to continue with `reboot` (see os/reboot.h).
+// `frames` is how many frames have been shown since power-on.
+[[noreturn]] void restart(const Options& o, const fs::path& user_dir, const char* argv0, const os::Reboot& reboot,
+                          u64 frames) {
+  const fs::path path = user_dir / "reboot.bin";
+  if (!os::save_reboot(path.string(), reboot)) {
+    std::fprintf(stderr, "[opengp] cannot write %s\n", path.string().c_str());
+    std::_Exit(1);
+  }
+  std::vector<std::string> args = o.args;
+  args.push_back("--reboot");
+  args.push_back(path.string());
+  args.push_back("--frame-offset");
+  args.push_back(std::to_string(frames));
+  std::fprintf(stderr, "[opengp] restarting\n");
+  os::restart_process(argv0, args);
+}
+
+// What a reboot the game asks for comes back up as. On a Triforce, games
+// reboot through SegaBoot's system menu, which starts either the game's test
+// menu or the game: Mario Kart GP 2 reboots with the same "test mode" memory
+// both to enter its test menu (the test button) and to leave it (EXIT). So a
+// reboot from a boot that kept memory (the test menu) boots afresh.
+os::Reboot next_boot(const os::Reboot& requested) {
+  if (os::g_previous_boot && !os::g_previous_boot->region.empty() && !requested.region.empty()) {
+    os::Reboot fresh;
+    fresh.restart = false;
+    return fresh;
+  }
+  return requested;
 }
 
 // Looks for the game's image in ISO/ and private/.
@@ -227,9 +287,35 @@ int run(const Game& game, int argc, char** argv) {
   apply_options(o, settings);
   static const Settings start_settings = settings;
 
+  // A reboot to continue (the game restarted itself, see os/reboot.h).
+  static os::Reboot previous_boot;
+  if (!o.reboot.empty()) {
+    if (os::load_reboot(o.reboot, &previous_boot)) os::g_previous_boot = &previous_boot;
+    else std::fprintf(stderr, "[opengp] cannot read %s; booting afresh\n", o.reboot.c_str());
+    std::error_code ec;
+    fs::remove(os::utf8_path(o.reboot), ec);
+  } else if (o.test_menu && game.test_menu) {
+    previous_boot = game.test_menu();
+    os::g_previous_boot = &previous_boot;
+  }
   static opengp::Machine machine;
   machine.set_user_dir(user_dir.string());
   machine.set_script(std::move(o.script));
+  machine.set_frame_offset(o.frame_offset);
+  // A reboot now: with a window, the main thread restarts (after saving the
+  // settings); without one, at once.
+  static const Options* options = &o;
+  static fs::path reboot_dir = user_dir;
+  static const char* argv0 = argc ? argv[0] : "opengp";
+  static bool main_thread_restarts = false;
+  os::g_reboot_handler = [](const os::Reboot& r) {
+    if (!main_thread_restarts)
+      restart(*options, reboot_dir, argv0, next_boot(r), machine.frame_offset() + machine.gpu().frames());
+    std::lock_guard lock(g_reboot_mutex);
+    g_pending_reboot = r;
+    g_reboot_requested = true;
+  };
+
   os::BootResult boot;
   if (!machine.boot(o.image, &boot, &error)) {
     std::fprintf(stderr, "boot failed: %s\n", error.c_str());
@@ -319,6 +405,7 @@ int run(const Game& game, int argc, char** argv) {
 
 #ifdef OPENGP_VIDEO
   if (o.use_video) {
+    main_thread_restarts = true;
     SDL_SetMainReady();
     if (!SDL_Init(SDL_INIT_VIDEO)) {
       std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
@@ -421,7 +508,18 @@ int run(const Game& game, int argc, char** argv) {
     model.settings = &settings;
     model.cards = &machine.cards();
     model.quit = [&quit] { quit("quit from the menu"); };
+    if (game.test_menu) {
+      model.test_menu = [&save, &o, &user_dir, &game, argv] {
+        save();
+        restart(o, user_dir, argv[0], game.test_menu(), machine.frame_offset() + machine.gpu().frames());
+      };
+    }
     for (;;) {
+      if (g_reboot_requested) {
+        save();
+        std::lock_guard lock(g_reboot_mutex);
+        restart(o, user_dir, argv[0], next_boot(*g_pending_reboot), machine.frame_offset() + machine.gpu().frames());
+      }
       SDL_Event e;
       while (SDL_PollEvent(&e)) {
         switch (e.type) {
@@ -483,8 +581,10 @@ int run(const Game& game, int argc, char** argv) {
         }
         continue;
       }
-      const bool shoot = frame->xfb && (shot_requested || o.screenshots.count(frame->number) ||
-                                        (o.screenshot_every && frame->number % o.screenshot_every == 0));
+      // Frames count from power-on, across the game's reboots.
+      const u64 number = o.frame_offset + frame->number;
+      const bool shoot = frame->xfb && (shot_requested || o.screenshots.count(number) ||
+                                        (o.screenshot_every && number % o.screenshot_every == 0));
       if (use_menu && frame->xfb) {
         const u32 scale = renderer.scale();
         model.video_info = std::string(renderer.driver()) + ", " + std::to_string(frame->efb_width * scale) + "x" +
@@ -499,7 +599,6 @@ int run(const Game& game, int argc, char** argv) {
         g_rendered.fetch_add(1);
         last_present = std::chrono::steady_clock::now();
       }
-      const u64 number = frame->number;
       queue.give_back(std::move(frame));
       if (shoot && shot.width) {
         std::error_code ec;

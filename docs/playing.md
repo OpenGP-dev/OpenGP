@@ -130,8 +130,18 @@ Each event is a time (`600`, `+60` after the previous event, or a range `1000-20
 hold: `coin`, `start`, `item`, `cancel`, `test`, `service`, `steer=0..255` (128 is straight
 ahead), `gas=0..255`, `brake=0..255`. Buttons without a range are held for 10 frames.
 
+## The test menu
+
+The game's own settings (the operator's: difficulty, sound in the attract mode, card price,
+bookkeeping and so on) are in its **test menu**. Press **F2** (the cabinet's test button) at any
+time, or use **Test menu** in the menu's Game tab, or start with `--test-menu`: the game restarts
+into it (the window closes and opens again, as the cabinet reboots). In the test menu, **F1** (the
+service button) moves to the next item and **F2** chooses it; **EXIT** restarts the game.
+
+Holding **F1** and pressing **F2** during the game opens the I/O test instead (wheel and pedal
+calibration and a switch test); hold F1 and press F2 again to leave it.
+
 ## Not done yet
 
-- The game's own test menu: the test switch is not wired up correctly yet (it starts a game
-  instead), so the game's settings (such as sound in the attract mode) cannot be changed.
 - The NamCam2 camera is disabled, and cabinets cannot be linked.
+- The test menu's clock reads 2000/01/01.

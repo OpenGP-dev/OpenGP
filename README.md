@@ -90,7 +90,7 @@ marked as such in the source. Vendored third-party code in `thirdparty/` keeps i
 | M4 | Graphics: vertex loader, textures, TEV ubershader, first frames, attract mode; hardware-check patches as needed (**done**) | yes |
 | M5 | Input and gameplay: JVS mapping, free play, full race, wheel force feedback (**done**) | yes |
 | M6 | Audio: the DSP's AX microcode (driven by MusyX) at a high level, sound output (**done**) | yes |
-| M7 | Card saves, settings menu, resolution scaling, widescreen (**in progress**: menu, settings, fullscreen, widescreen, Mario Cards done) | yes |
+| M7 | Card saves, settings menu, resolution scaling, widescreen (**in progress**: menu, settings, fullscreen, widescreen, Mario Cards and the game's test menu done) | yes |
 | M8 | Mario Kart Arcade GP (GGPE01) | yes |
 
 ## Acknowledgements

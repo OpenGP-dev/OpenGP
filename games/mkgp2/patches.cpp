@@ -33,6 +33,18 @@ void set_free_play(gekko::u8* base, bool on) {
   if (g_costs_known) write_costs(base, on);
 }
 
+os::Reboot test_menu_reboot() {
+  // The game (802878CC) keeps 0x100 bytes at 811FFF00 across the restart;
+  // at start-up (802879C4) a first word of 1 means "test mode".
+  os::Reboot r;
+  r.restart = true;
+  r.region_start = 0x811FFF00;
+  r.region_end = 0x81200000;
+  r.region.assign(0x100, 0);
+  r.region[3] = 1;
+  return r;
+}
+
 }  // namespace mkgp2
 
 namespace guest {
