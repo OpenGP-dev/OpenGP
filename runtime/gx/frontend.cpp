@@ -800,11 +800,11 @@ void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertice
 
   const u32 first = static_cast<u32>(f.indices.size());
   assemble(primitive, base, count, vp);
-  const u32 added = static_cast<u32>(f.indices.size()) - first;
-  if (side_ && added) {
+  if (side_ && f.indices.size() > first) {
     if (xf_.perspective()) run_.active = false;
-    else stretch_full_screen(base);
+    else if (!widen_2d(base)) extend_edges(base);
   }
+  const u32 added = static_cast<u32>(f.indices.size()) - first;
 
   if (dumping_) {
     if (state != dumped_state_) {
@@ -864,11 +864,12 @@ void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertice
   f.commands.push_back({Command::Type::Draw, static_cast<u32>(f.draws.size() - 1)});
 }
 
-// Widescreen: 2D that spans the game's whole width (a background, a fade) is
-// stretched over the wide EFB, unless it already covers it. Backgrounds are
-// often drawn as a row of tiles, one draw each, so a run of draws of the
-// same height, each starting where the last one ended, counts as one.
-void Frontend::stretch_full_screen(u32 first_vertex) {
+// Widescreen, for 2D (orthographic) draws: 2D that spans the game's whole
+// width (a background, a fade) is stretched over the wide EFB, unless it
+// already covers it. Backgrounds are often drawn as a row of tiles, one draw
+// each, so a run of draws of the same height, each starting where the last
+// one ended, counts as one. Returns true if it stretched.
+bool Frontend::widen_2d(u32 first_vertex) {
   Frame& f = frame();
   // Orthographic, so w is 1 and x/y are NDC.
   float x0 = std::numeric_limits<float>::max(), x1 = std::numeric_limits<float>::lowest();
@@ -893,11 +894,50 @@ void Frontend::stretch_full_screen(u32 first_vertex) {
   const float width = static_cast<float>(kEfbWidth);
   const bool spans = run.left <= 1.0f && run.right >= width - 1.0f;
   const bool covers_wide = run.left <= -side && run.right >= width + side;
-  if (!spans || covers_wide) return;
+  if (!spans || covers_wide) return false;
   // Mapping the game's 640 pixels onto the whole wide EFB scales NDC x.
+  // (Edges extended on the run's first draws end up off the sides.)
   const float scale = static_cast<float>(efb_width()) / width;
   for (std::size_t i = run.first_vertex; i < f.vertices.size(); ++i) f.vertices[i].pos[0] *= scale;
   run.active = false;
+  return true;
+}
+
+// Widescreen, for other 2D draws: they keep their place, but one that
+// reaches the game's left or right screen edge (a banner running off the
+// side) is continued to the wide EFB's edge with its edge's texels, so that
+// it does not end short of it. Each pair of neighbouring vertices on the
+// edge gets a quad out to the wide edge, their attributes copied.
+void Frontend::extend_edges(u32 first_vertex) {
+  Frame& f = frame();
+  const u32 end = static_cast<u32>(f.vertices.size());
+  const float half_width = static_cast<float>(efb_width()) * 0.5f, side = static_cast<float>(side_);
+  const float width = static_cast<float>(kEfbWidth);
+  auto game_x = [&](const Vertex& v) { return (v.pos[0] + 1.0f) * half_width - side; };  // w is 1
+  float lo = std::numeric_limits<float>::max(), hi = std::numeric_limits<float>::lowest();
+  for (u32 i = first_vertex; i < end; ++i) {
+    lo = std::min(lo, game_x(f.vertices[i]));
+    hi = std::max(hi, game_x(f.vertices[i]));
+  }
+  auto extend = [&](float edge, float out_ndc) {
+    std::vector<u32>& on_edge = scratch_;
+    on_edge.clear();
+    for (u32 i = first_vertex; i < end; ++i)
+      if (std::abs(game_x(f.vertices[i]) - edge) < 1.0f) on_edge.push_back(i);
+    if (on_edge.size() < 2) return;
+    std::sort(on_edge.begin(), on_edge.end(), [&](u32 a, u32 b) { return f.vertices[a].pos[1] < f.vertices[b].pos[1]; });
+    for (std::size_t k = 0; k + 1 < on_edge.size(); ++k) {
+      const Vertex a = f.vertices[on_edge[k]], b = f.vertices[on_edge[k + 1]];
+      if (b.pos[1] - a.pos[1] < 1e-4f) continue;
+      Vertex a_out = a, b_out = b;
+      a_out.pos[0] = b_out.pos[0] = out_ndc;
+      const u32 q = static_cast<u32>(f.vertices.size());
+      f.vertices.insert(f.vertices.end(), {a_out, a, b_out, b});
+      f.indices.insert(f.indices.end(), {q, q + 1, q + 2, q + 1, q + 3, q + 2});
+    }
+  };
+  if (lo <= 0.5f && lo > -side) extend(lo, -1.0f);
+  if (hi >= width - 0.5f && hi < width + side) extend(hi, 1.0f);
 }
 
 void Frontend::assemble(u8 primitive, u32 base, u16 count, const Viewport& vp) {

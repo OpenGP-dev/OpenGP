@@ -242,6 +242,11 @@ With a coin, start and the menus, the game goes from attract mode into a race, a
   loop in `SelectThread` takes interrupts at its back-edge and jumps straight back to the idle
   hook, which then waited again for the next interrupt with the game thread already runnable;
   races ran at 40-50 fps until the hook took the interrupt itself (`os/threads.cpp`).
+- **Clock**: the game reads the date from `OSGetTime()` (the time base, which SegaBoot sets), so
+  the time base starts at the local time (`os::boot_time_base()`). Among other things, the game
+  asks for the card reader to be cleaned when a week (168 hours) has passed since the last
+  cleaning, a time kept in the settings block (`+0x18`); a clock that restarted at 2000-01-01 made
+  that last cleaning always lie in the future, and the question came back at every start-up.
 - **Test switch** (solved in milestone 7): the game's service-button handler (`0x8002D050`,
   every frame) reads input bit `0x1000` (test: JVS system bit `0x80`, or baseboard status bit
   `0x40` inverted) and `0x0800` (service: player 1 switch bit `0x40`, or status bit `0x80`

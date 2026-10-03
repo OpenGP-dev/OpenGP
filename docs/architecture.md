@@ -296,7 +296,8 @@ side (107 for 16:9), with the game's 640 pixels in the middle:
 - 2D (orthographic) draws stay in the middle, at their shape. Ones that span the game's whole
   width are stretched to the wide EFB's: full-screen backgrounds, fades, and the rows of tiles that
   menu backgrounds are drawn as (a run of draws of the same height, each starting where the last
-  ended).
+  ended). Other 2D that reaches the game's screen edge (a banner running off the side) gets quads
+  out to the wide edge that repeat its edge texels.
 - Scissors, clears and EFB copies that span the game's width span the wide EFB, so a full-screen
   copy (and the copy to the XFB, which is displayed) is as much wider. CPU reads of the EFB see
   the game's part.

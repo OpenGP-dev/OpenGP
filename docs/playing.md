@@ -41,9 +41,9 @@ up to 32:9 (a window narrower than 4:3 gets black bars above and below). 4:3, 16
 can also be chosen; the window then gets bars at the sides if its shape differs.
 
 In widescreen, the races show more on each side. The game's 2D graphics (the speedometer, the map,
-the menus' panels) stay in the middle at their original shape, and full-screen backgrounds and
-fades are stretched to the edges. Some menu banners that run off the edge of the 4:3 screen end
-short of the widescreen edge.
+the menus' panels) stay in the middle at their original shape, full-screen backgrounds and fades
+are stretched to the edges, and banners that run off the side of the 4:3 screen are continued to
+the edge of the wide one.
 
 ### Internal resolution
 
@@ -135,6 +135,13 @@ Each event is a time (`600`, `+60` after the previous event, or a range `1000-20
 hold: `coin`, `start`, `item`, `cancel`, `test`, `service`, `steer=0..255` (128 is straight
 ahead), `gas=0..255`, `brake=0..255`. Buttons without a range are held for 10 frames.
 
+## Cleaning the card reader
+
+The game's clock is the computer's. Once a week, at start-up, the game asks for the card reader to
+be cleaned ("Please clean the card R/W"): press the **cancel button** (Backspace) to clean it
+(OpenGP inserts the cleaning card), or the **item button** (Space) to skip it until the next
+start-up.
+
 ## The test menu
 
 The game's own settings (the operator's: difficulty, sound in the attract mode, card price,
@@ -149,4 +156,4 @@ calibration and a switch test); hold F1 and press F2 again to leave it.
 ## Not done yet
 
 - The NamCam2 camera is disabled, and cabinets cannot be linked.
-- The test menu's clock reads 2000/01/01.
+

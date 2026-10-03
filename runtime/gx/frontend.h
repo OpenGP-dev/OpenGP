@@ -100,7 +100,8 @@ class Frontend {
   PipelineKey pipeline_key() const;
   void scissor(s32* rect) const;
   u32 efb_width() const { return kEfbWidth + 2 * side_; }
-  void stretch_full_screen(u32 first_vertex);
+  bool widen_2d(u32 first_vertex);
+  void extend_edges(u32 first_vertex);
   PixelFormat pixel_format() const { return static_cast<PixelFormat>(bits(bp_[BP_ZCOMPARE], 0, 3)); }
 
   TextureBinding bind_texture(u32 map, s32* size);
@@ -122,7 +123,7 @@ class Frontend {
   u32 side_ = 0;
   bool new_display_frame_ = true;
   // The latest run of 2D draws that may make up a full-width background, in
-  // game pixels (see stretch_full_screen()).
+  // game pixels (see widen_2d()), and where its vertices start.
   struct Run {
     bool active = false;
     u32 first_vertex = 0;

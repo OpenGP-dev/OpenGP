@@ -26,8 +26,14 @@ struct BootResult {
   u32 bi2_address = 0;  // 0x800000F4
 };
 
+// The time base at boot: the local time, in 40.5 MHz ticks since 2000-01-01.
+// SegaBoot sets the clock (OSSetTime) before the game starts, and the
+// Triforce games read the date from it (OSGetTime).
+u64 boot_time_base();
+
 // Boots `disc` into guest memory. `ctx` is left in the state the IPL hands
 // to the game (MSR, HIDs, stack). The apploader runs in the interpreter.
+// The hardware's time base should be at boot_time_base().
 bool boot_disc(const disc::Image& disc, u8* base, u32 mem1_size, ppc::Context& ctx, BootResult* result,
                std::string* error);
 

@@ -47,6 +47,7 @@ bool Machine::boot(const std::string& image_path, os::BootResult* boot, std::str
 
   hw_ = std::make_unique<hw::Hardware>(memory_.base(), mem1);
   hw::Hardware& h = *hw_;
+  h.set_timebase(os::boot_time_base());
   // Devices not modelled yet keep their registers and log their first accesses.
   gpu_ = std::make_unique<gx::Gpu>(h);
   h.map(0x0000, 0x1000, gpu_->make_cp_device());

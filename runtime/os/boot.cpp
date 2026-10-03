@@ -50,6 +50,8 @@ void run_function(ppc::Context& ctx, u8* base, u32 address) {
 
 }  // namespace
 
+u64 boot_time_base() { return local_seconds_since_2000() * kTimebaseHz; }
+
 bool boot_disc(const disc::Image& disc, u8* base, u32 mem1_size, ppc::Context& ctx, BootResult* result,
                std::string* error) {
   auto fail = [&](const std::string& msg) {
@@ -75,7 +77,9 @@ bool boot_disc(const disc::Image& disc, u8* base, u32 mem1_size, ppc::Context& c
   store_be<u32>(base + 0x80000300, 0x4C000064);   // default DSI handler: rfi
   store_be<u32>(base + 0x80000800, 0x4C000064);   // default FPU handler: rfi
   store_be<u32>(base + 0x80000C00, 0x4C000064);   // default syscall handler: rfi
-  store_be<u64>(base + 0x800030D8, local_seconds_since_2000() * kTimebaseHz);  // system time
+  // System time = time base + this: none, as the time base already has the
+  // date (see boot_time_base()).
+  store_be<u64>(base + 0x800030D8, 0);
 
   // Registers the IPL leaves for the apploader (NTSC values).
   ctx.gpr[1] = 0x81566550;
