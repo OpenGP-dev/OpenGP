@@ -23,6 +23,7 @@ keeps running behind it but gets no controls while it is open.
 | Game | The Mario Card you hold; free play |
 | Video | Fullscreen, aspect ratio, internal resolution, VSync |
 | Sound | Volume |
+| Controls | The keys, buttons and axes for each control; force feedback, steering speed, dead zones |
 
 **F11** (or Alt+Enter) switches between a window and fullscreen, and **F12** saves a screenshot to
 `user/screenshots/`.
@@ -82,9 +83,13 @@ wheel half-way); sticks and wheels steer directly.
 
 ### Changing them
 
-The controls are read from `user/controls.toml`, which is written with the defaults the first time
-the game runs (with a window). Edit it and restart; delete it to get the defaults back. Each
-control lists the inputs that drive it:
+In the menu's **Controls** tab, choose the keyboard, gamepads or wheels and joysticks, then click
+**+** next to a control and press the key or button (or move the axis, the pedal or the wheel)
+to add it; click an input to remove it. Changes apply at once and are saved when the menu closes.
+
+They are kept in `user/controls.toml`, which is written with the defaults the first time the game
+runs (with a window). It can also be edited by hand (then restart); delete it to get the defaults
+back. Each control lists the inputs that drive it:
 
 ```toml
 [keyboard]

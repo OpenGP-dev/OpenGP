@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // The in-game menu (Dear ImGui), drawn over the game: settings (video, sound,
-// game options, the Mario Card), opened with Esc or a gamepad's guide
-// button. It also shows short notices ("Screenshot saved").
+// controls, game options, the Mario Card), opened with Esc or a gamepad's
+// guide button. It also shows short notices ("Screenshot saved").
 //
 // The game keeps running behind it, but gets no controls while it is open.
 #pragma once
@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "app/settings.h"
+#include "input/host.h"
 #include "triforce/card_folder.h"
 #include "video/renderer.h"
 
@@ -26,6 +27,7 @@ struct MenuModel {
   const char* title = "";          // the game's
   Settings* settings = nullptr;    // edited in place
   triforce::CardFolder* cards = nullptr;
+  input::HostInput* input = nullptr;  // null without controls (their tab is hidden)
   std::string video_info;          // renderer, internal resolution
   std::function<void()> quit;
   std::function<void()> test_menu;  // restarts into the game's test menu (if it has one)
@@ -72,6 +74,7 @@ class Menu final : public video::Overlay {
   void game_tab(MenuModel& m);
   void video_tab(MenuModel& m);
   void sound_tab(MenuModel& m);
+  void controls_tab(MenuModel& m);
   void draw_notices();
 
   SDL_Window* window_ = nullptr;
@@ -81,6 +84,8 @@ class Menu final : public video::Overlay {
   bool rendered_ = false;    // ImGui::Render() ran for the next present
   float scale_ = 0.0f;       // UI scale in use
   std::vector<Notice> notices_;
+  input::HostInput::DeviceKind controls_kind_ = input::HostInput::DeviceKind::Keyboard;
+  std::size_t capture_control_ = 0;  // the control an input is being chosen for
 };
 
 }  // namespace app

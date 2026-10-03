@@ -14,6 +14,8 @@
 #include <map>
 #include <vector>
 
+#include "os/atomic_file.h"
+
 #define TOML_EXCEPTIONS 0
 #include <toml.hpp>
 
@@ -117,6 +119,10 @@ enum Control : std::size_t {
 };
 constexpr std::array<const char*, kControlCount> kControlNames = {
     "steer", "steer_left", "steer_right", "gas", "brake", "item", "cancel", "start", "coin", "test", "service"};
+constexpr std::array<const char*, kControlCount> kControlLabels = {
+    "Steering", "Steer left", "Steer right", "Gas", "Brake", "Item button", "Cancel button",
+    "Start",    "Coin",       "Test",        "Service"};
+static_assert(kControlCount == HostInput::kControlCount);
 
 // The bindings of one kind of device.
 struct Bindings {
@@ -254,6 +260,77 @@ bool parse_config(std::string_view text, Config* config, std::string* error) {
   return true;
 }
 
+// An input's name in the file (the inverse of parse_source).
+std::string source_name(const Source& s) {
+  std::string name;
+  switch (s.kind) {
+    case Source::Kind::Key: return SDL_GetScancodeName(static_cast<SDL_Scancode>(s.index));
+    case Source::Kind::PadButton: {
+      const char* n = SDL_GetGamepadStringForButton(static_cast<SDL_GamepadButton>(s.index));
+      return n ? n : "";
+    }
+    case Source::Kind::JoyButton: return "button" + std::to_string(s.index);
+    case Source::Kind::JoyHat: {
+      const char* dir = s.hat == SDL_HAT_UP ? "up" : s.hat == SDL_HAT_DOWN ? "down" : s.hat == SDL_HAT_LEFT ? "left" : "right";
+      return "hat" + std::to_string(s.index) + dir;
+    }
+    case Source::Kind::PadAxis: {
+      const char* n = SDL_GetGamepadStringForAxis(static_cast<SDL_GamepadAxis>(s.index));
+      name = n ? n : "";
+      break;
+    }
+    case Source::Kind::JoyAxis: name = "axis" + std::to_string(s.index); break;
+  }
+  if (s.range == Source::Range::Positive) name += '+';
+  else if (s.range == Source::Range::Negative) name += '-';
+  if (s.invert) name = "-" + name;
+  return name;
+}
+
+bool same_source(const Source& a, const Source& b) {
+  return a.kind == b.kind && a.index == b.index && a.hat == b.hat && a.range == b.range && a.invert == b.invert;
+}
+
+// The file for `config`: the default file's comments, then the bindings.
+std::string config_text(const Config& c) {
+  const std::string_view defaults(kDefaultConfig);
+  std::string out(defaults.substr(0, defaults.find("\n[keyboard]") + 1));  // the comments before the first section
+  char number[32];
+  auto real = [&](float v) {
+    std::snprintf(number, sizeof(number), "%.2f", static_cast<double>(v));
+    return std::string(number);
+  };
+  auto section = [&](const char* name, const Bindings& b, bool axes, bool deadzone) {
+    out += std::string("[") + name + "]\n";
+    if (std::string_view(name) == "joystick") {
+      out += "# Wheels differ: set these up for yours. Pedals are often \"-axis1\", \"-axis2\"\n# and so on.\n";
+    }
+    for (std::size_t control = 0; control < kControlCount; ++control) {
+      if (control == kSteer && !axes) continue;
+      out += std::string(kControlNames[control]) + " = [";
+      for (std::size_t i = 0; i < b.sources[control].size(); ++i) {
+        std::string name = source_name(b.sources[control][i]);
+        std::string quoted = "\"";
+        for (const char ch : name) {
+          if (ch == '"' || ch == '\\') quoted += '\\';
+          quoted += ch;
+        }
+        out += (i ? ", " : "") + quoted + "\"";
+      }
+      out += "]\n";
+    }
+    if (deadzone) out += "deadzone = " + real(b.deadzone) + "\n";
+    out += "\n";
+  };
+  section("keyboard", c.keyboard, false, false);
+  section("gamepad", c.gamepad, true, true);
+  section("joystick", c.joystick, true, true);
+  out += "[steering]\n# Keys and buttons turn the wheel gradually: full turns per second.\nspeed = " + real(c.steer_speed) +
+         "\n\n[force_feedback]\n# 0 turns it off, 1 is the game's full strength.\nstrength = " + real(c.ffb_strength) +
+         "\n# Gamepads rumble on bumps and hits.\nrumble = " + (c.rumble ? "true" : "false") + "\n";
+  return out;
+}
+
 float apply_deadzone(float v, float deadzone) {
   const float m = std::fabs(v);
   if (m <= deadzone) return 0.0f;
@@ -272,7 +349,16 @@ struct HostInput::Impl {
   };
 
   Config config;
+  std::string path;
+  bool dirty = false;  // bindings changed since load() or save()
   std::map<SDL_JoystickID, Device> devices;
+  // Binding an input from the menu: waiting for one of `kind`, for `control`.
+  struct Capture {
+    bool active = false;
+    DeviceKind kind = DeviceKind::Keyboard;
+    std::size_t control = 0;
+    std::map<SDL_JoystickID, std::vector<Sint16>> axes;  // where each axis was at the start
+  } capture;
   float digital_steer = 0.0f;  // -1..1, keys and buttons turn it gradually
   std::chrono::steady_clock::time_point last_poll = std::chrono::steady_clock::now();
   triforce::Outputs outputs;
@@ -280,6 +366,10 @@ struct HostInput::Impl {
 
   void open(SDL_JoystickID id);
   void close(SDL_JoystickID id);
+  Bindings& bindings(DeviceKind kind) {
+    return kind == DeviceKind::Keyboard ? config.keyboard : kind == DeviceKind::Gamepad ? config.gamepad : config.joystick;
+  }
+  bool finish_capture(const Source& source);
   void start_effects(Device& d);
   void play(Device& d);
   static SDL_HapticEffect condition_effect(Uint16 type, float amount);
@@ -334,6 +424,8 @@ HostInput::~HostInput() {
 
 bool HostInput::load(const std::string& path, std::string* error) {
   namespace fs = std::filesystem;
+  impl_->path = path;
+  impl_->dirty = false;
   std::error_code ec;
   if (!fs::exists(path, ec)) {
     fs::create_directories(fs::path(path).parent_path(), ec);
@@ -517,5 +609,185 @@ triforce::Controls HostInput::poll() {
   c.service = amount[kService] > 0.5f;
   return c;
 }
+
+}  // namespace input
+
+namespace input {
+
+// ---- Seeing and changing the bindings ------------------------------------------------------
+
+const char* HostInput::control_name(std::size_t control) { return control < kControlCount ? kControlNames[control] : ""; }
+const char* HostInput::control_label(std::size_t control) { return control < kControlCount ? kControlLabels[control] : ""; }
+bool HostInput::control_is_axis(std::size_t control) { return control == kSteer; }
+
+std::vector<std::string> HostInput::bindings(DeviceKind kind, std::size_t control) const {
+  std::vector<std::string> names;
+  if (control >= kControlCount) return names;
+  for (const Source& source : impl_->bindings(kind).sources[control]) names.push_back(source_name(source));
+  return names;
+}
+
+void HostInput::remove_binding(DeviceKind kind, std::size_t control, std::size_t index) {
+  if (control >= kControlCount) return;
+  auto& sources = impl_->bindings(kind).sources[control];
+  if (index >= sources.size()) return;
+  sources.erase(sources.begin() + static_cast<std::ptrdiff_t>(index));
+  impl_->dirty = true;
+}
+
+void HostInput::start_capture(DeviceKind kind, std::size_t control) {
+  Impl& m = *impl_;
+  m.capture = {};
+  if (control >= kControlCount) return;
+  m.capture.active = true;
+  m.capture.kind = kind;
+  m.capture.control = control;
+  for (const auto& [id, d] : m.devices) {
+    std::vector<Sint16>& axes = m.capture.axes[id];
+    if (d.gamepad) {
+      for (int a = 0; a < SDL_GAMEPAD_AXIS_COUNT; ++a) axes.push_back(SDL_GetGamepadAxis(d.gamepad, static_cast<SDL_GamepadAxis>(a)));
+    } else {
+      for (int a = 0; a < SDL_GetNumJoystickAxes(d.joystick); ++a) axes.push_back(SDL_GetJoystickAxis(d.joystick, a));
+    }
+  }
+}
+
+void HostInput::cancel_capture() { impl_->capture.active = false; }
+bool HostInput::capturing() const { return impl_->capture.active; }
+
+bool HostInput::Impl::finish_capture(const Source& source) {
+  auto& sources = bindings(capture.kind).sources[capture.control];
+  if (std::none_of(sources.begin(), sources.end(), [&](const Source& s) { return same_source(s, source); })) {
+    sources.push_back(source);
+    dirty = true;
+  }
+  capture.active = false;
+  return true;
+}
+
+bool HostInput::capture_event(const SDL_Event& e) {
+  Impl& m = *impl_;
+  if (!m.capture.active) return false;
+  const DeviceKind kind = m.capture.kind;
+  const bool steering = control_is_axis(m.capture.control);
+  // How far an axis must move from where it was, and where a pedal rests.
+  constexpr int kMoved = 16000, kRest = 24000;
+  auto baseline = [&](SDL_JoystickID id, int axis) -> int {
+    const auto it = m.capture.axes.find(id);
+    return it != m.capture.axes.end() && axis < static_cast<int>(it->second.size()) ? it->second[axis] : 0;
+  };
+  auto is_gamepad = [&](SDL_JoystickID id) {
+    const auto it = m.devices.find(id);
+    return it != m.devices.end() && it->second.gamepad;
+  };
+  Source s;
+  switch (e.type) {
+    case SDL_EVENT_KEY_DOWN:
+      if (e.key.scancode == SDL_SCANCODE_ESCAPE) {
+        m.capture.active = false;
+        return true;
+      }
+      if (kind != DeviceKind::Keyboard || steering || e.key.repeat) return true;
+      s.kind = Source::Kind::Key;
+      s.index = e.key.scancode;
+      return m.finish_capture(s);
+    case SDL_EVENT_KEY_UP:
+    case SDL_EVENT_TEXT_INPUT: return true;
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+      if (kind != DeviceKind::Gamepad || steering) return true;
+      s.kind = Source::Kind::PadButton;
+      s.index = e.gbutton.button;
+      return m.finish_capture(s);
+    case SDL_EVENT_GAMEPAD_BUTTON_UP: return true;
+    case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
+      if (kind != DeviceKind::Gamepad) return true;
+      const int moved = e.gaxis.value - baseline(e.gaxis.which, e.gaxis.axis);
+      if (std::abs(moved) < kMoved) return true;
+      s.kind = Source::Kind::PadAxis;
+      s.index = e.gaxis.axis;
+      if (!steering && !is_trigger(s.index)) s.range = moved > 0 ? Source::Range::Positive : Source::Range::Negative;
+      if (steering && is_trigger(s.index)) return true;
+      return m.finish_capture(s);
+    }
+    case SDL_EVENT_JOYSTICK_BUTTON_DOWN:
+      if (kind != DeviceKind::Joystick || steering || is_gamepad(e.jbutton.which)) return kind == DeviceKind::Joystick;
+      s.kind = Source::Kind::JoyButton;
+      s.index = e.jbutton.button;
+      return m.finish_capture(s);
+    case SDL_EVENT_JOYSTICK_HAT_MOTION: {
+      if (kind != DeviceKind::Joystick || steering || is_gamepad(e.jhat.which)) return kind == DeviceKind::Joystick;
+      const u8 v = e.jhat.value;
+      if (v != SDL_HAT_UP && v != SDL_HAT_DOWN && v != SDL_HAT_LEFT && v != SDL_HAT_RIGHT) return true;
+      s.kind = Source::Kind::JoyHat;
+      s.index = e.jhat.hat;
+      s.hat = v;
+      return m.finish_capture(s);
+    }
+    case SDL_EVENT_JOYSTICK_AXIS_MOTION: {
+      if (kind != DeviceKind::Joystick || is_gamepad(e.jaxis.which)) return kind == DeviceKind::Joystick;
+      const int base = baseline(e.jaxis.which, e.jaxis.axis);
+      const int moved = e.jaxis.value - base;
+      if (std::abs(moved) < kMoved) return true;
+      s.kind = Source::Kind::JoyAxis;
+      s.index = e.jaxis.axis;
+      if (!steering) {
+        // A pedal resting at one end is a whole axis (turned around if it
+        // rests at the top); an axis resting in the middle, half of one.
+        if (base < -kRest) s.range = Source::Range::Whole;
+        else if (base > kRest) s.invert = true;
+        else s.range = moved > 0 ? Source::Range::Positive : Source::Range::Negative;
+      }
+      return m.finish_capture(s);
+    }
+    default: return false;
+  }
+}
+
+float HostInput::force_feedback() const { return impl_->config.ffb_strength; }
+void HostInput::set_force_feedback(float strength) {
+  strength = std::clamp(strength, 0.0f, 2.0f);
+  if (strength == impl_->config.ffb_strength) return;
+  impl_->config.ffb_strength = strength;
+  impl_->dirty = true;
+  for (auto& [id, d] : impl_->devices) impl_->play(d);
+}
+
+float HostInput::steer_speed() const { return impl_->config.steer_speed; }
+void HostInput::set_steer_speed(float speed) {
+  speed = std::max(0.1f, speed);
+  if (speed == impl_->config.steer_speed) return;
+  impl_->config.steer_speed = speed;
+  impl_->dirty = true;
+}
+
+float HostInput::deadzone(DeviceKind kind) const { return impl_->bindings(kind).deadzone; }
+void HostInput::set_deadzone(DeviceKind kind, float deadzone) {
+  deadzone = std::clamp(deadzone, 0.0f, 0.9f);
+  if (deadzone == impl_->bindings(kind).deadzone) return;
+  impl_->bindings(kind).deadzone = deadzone;
+  impl_->dirty = true;
+}
+
+void HostInput::restore_defaults() {
+  Config defaults;
+  std::string why;
+  parse_config(kDefaultConfig, &defaults, &why);
+  impl_->config = defaults;
+  impl_->dirty = true;
+}
+
+bool HostInput::save(std::string* error) {
+  Impl& m = *impl_;
+  if (!m.dirty || m.path.empty()) return true;
+  const std::string text = config_text(m.config);
+  if (!os::write_file_atomically(m.path, text.data(), text.size())) {
+    if (error) *error = "cannot write " + m.path;
+    return false;
+  }
+  m.dirty = false;
+  return true;
+}
+
+const std::string& HostInput::path() const { return impl_->path; }
 
 }  // namespace input

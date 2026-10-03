@@ -18,7 +18,8 @@ namespace {
 constexpr auto kNoticeTime = std::chrono::milliseconds(2500);
 
 // Width of the menu window at a UI scale of 1 (a 720-pixel-high window).
-constexpr float kMenuWidth = 600.0f;
+constexpr float kMenuWidth = 640.0f;
+constexpr float kMenuHeight = 620.0f;
 
 // Greyed-out text, wrapped to the window.
 void hint(const char* format, ...) IM_FMTARGS(1);
@@ -143,27 +144,36 @@ void Menu::update(MenuModel& m) {
     ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), io.DisplaySize, IM_COL32(0, 0, 0, 110));
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always,
                             ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(kMenuWidth * scale_, 0.0f), ImGuiCond_Always);
+    // A fixed size (the tabs' contents scroll), within the window.
+    ImGui::SetNextWindowSize(ImVec2(std::min(kMenuWidth * scale_, io.DisplaySize.x * 0.96f),
+                                    std::min(kMenuHeight * scale_, io.DisplaySize.y * 0.94f)),
+                             ImGuiCond_Always);
     if (focus_) {
       ImGui::SetNextWindowFocus();
       focus_ = false;
     }
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-                                   ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;
+                                   ImGuiWindowFlags_NoSavedSettings;
     if (ImGui::Begin("OpenGP", nullptr, flags)) {
       ImGui::TextDisabled("%s", m.title);
       if (ImGui::BeginTabBar("tabs")) {
-        if (ImGui::BeginTabItem("Game")) {
-          game_tab(m);
+        // Room for the buttons and the line of keys below the tab.
+        const ImGuiStyle& style = ImGui::GetStyle();
+        const float footer = ImGui::GetFrameHeightWithSpacing() + ImGui::GetTextLineHeightWithSpacing() +
+                             style.ItemSpacing.y * 2 + style.SeparatorTextBorderSize;
+        auto tab = [&](const char* name, auto&& contents) {
+          if (!ImGui::BeginTabItem(name)) return false;
+          ImGui::BeginChild("page", ImVec2(0, -footer));
+          contents();
+          ImGui::EndChild();
           ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("Video")) {
-          video_tab(m);
-          ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("Sound")) {
-          sound_tab(m);
-          ImGui::EndTabItem();
+          return true;
+        };
+        tab("Game", [&] { game_tab(m); });
+        tab("Video", [&] { video_tab(m); });
+        tab("Sound", [&] { sound_tab(m); });
+        if (m.input && !tab("Controls", [&] { controls_tab(m); }) && m.input->capturing()) {
+          m.input->cancel_capture();  // left the tab
         }
         ImGui::EndTabBar();
       }
@@ -274,6 +284,74 @@ void Menu::sound_tab(MenuModel& m) {
   Settings& s = *m.settings;
   ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
   ImGui::SliderInt("Volume", &s.volume, 0, 100, "%d%%");
+}
+
+void Menu::controls_tab(MenuModel& m) {
+  using Kind = input::HostInput::DeviceKind;
+  input::HostInput& in = *m.input;
+  static constexpr std::pair<Kind, const char*> kKinds[] = {
+      {Kind::Keyboard, "Keyboard"}, {Kind::Gamepad, "Gamepad"}, {Kind::Joystick, "Wheel / joystick"}};
+  for (const auto& [kind, name] : kKinds) {
+    if (kind != Kind::Keyboard) ImGui::SameLine();
+    if (ImGui::RadioButton(name, controls_kind_ == kind)) {
+      controls_kind_ = kind;
+      in.cancel_capture();
+    }
+  }
+  const Kind kind = controls_kind_;
+  const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp;
+  if (ImGui::BeginTable("bindings", 2, flags)) {
+    ImGui::TableSetupColumn("Control", ImGuiTableColumnFlags_WidthFixed, 130.0f * scale_);
+    ImGui::TableSetupColumn("Inputs", ImGuiTableColumnFlags_WidthStretch);
+    for (std::size_t control = 0; control < input::HostInput::kControlCount; ++control) {
+      // Keys cannot hold the wheel half-way: they steer with "steer left/right".
+      if (kind == Kind::Keyboard && input::HostInput::control_is_axis(control)) continue;
+      ImGui::PushID(static_cast<int>(control));
+      ImGui::TableNextRow();
+      ImGui::TableNextColumn();
+      ImGui::AlignTextToFramePadding();
+      ImGui::TextUnformatted(input::HostInput::control_label(control));
+      ImGui::TableNextColumn();
+      const std::vector<std::string> names = in.bindings(kind, control);
+      for (std::size_t i = 0; i < names.size(); ++i) {
+        ImGui::PushID(static_cast<int>(i));
+        if (ImGui::SmallButton((names[i] + "  x").c_str())) in.remove_binding(kind, control, i);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove");
+        ImGui::PopID();
+        ImGui::SameLine();
+      }
+      if (in.capturing() && capture_control_ == control) {
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "%s",
+                           kind == Kind::Keyboard   ? "Press a key..."
+                           : input::HostInput::control_is_axis(control) ? "Move an axis..."
+                                                                        : "Press a button or move an axis...");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Cancel")) in.cancel_capture();
+      } else if (ImGui::SmallButton("+")) {
+        in.start_capture(kind, control);
+        capture_control_ = control;
+      }
+      ImGui::PopID();
+    }
+    ImGui::EndTable();
+  }
+  hint("Click an input to remove it; + adds one (Esc cancels).");
+
+  ImGui::Spacing();
+  ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.45f);
+  float strength = in.force_feedback() * 100.0f;
+  if (ImGui::SliderFloat("Force feedback", &strength, 0.0f, 200.0f, "%.0f%%")) in.set_force_feedback(strength / 100.0f);
+  if (kind == Kind::Keyboard) {
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.45f);
+    float speed = in.steer_speed();
+    if (ImGui::SliderFloat("Steering speed", &speed, 0.5f, 10.0f, "%.1f turns/s")) in.set_steer_speed(speed);
+  } else {
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.45f);
+    float deadzone = in.deadzone(kind) * 100.0f;
+    if (ImGui::SliderFloat("Dead zone", &deadzone, 0.0f, 50.0f, "%.0f%%")) in.set_deadzone(kind, deadzone / 100.0f);
+  }
+  if (ImGui::Button("Restore the defaults")) in.restore_defaults();
+  hint("Saved in %s", in.path().c_str());
 }
 
 void Menu::draw_notices() {

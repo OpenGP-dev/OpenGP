@@ -465,7 +465,11 @@ int run(const Game& game, int argc, char** argv) {
       std::fprintf(stderr, "[opengp] entry point returned\n");
     }).detach();
 
-    auto save = [&settings_path] {
+    auto save = [&settings_path, &use_input] {
+      if (use_input) {
+        std::string why;
+        if (!host_input.save(&why)) std::fprintf(stderr, "[input] %s\n", why.c_str());
+      }
       if (settings == start_settings) return;
       const Settings s = settings_to_save(file_settings, start_settings, settings);
       if (s == file_settings) return;
@@ -507,6 +511,7 @@ int run(const Game& game, int argc, char** argv) {
     model.title = game.title;
     model.settings = &settings;
     model.cards = &machine.cards();
+    model.input = use_input ? &host_input : nullptr;
     model.quit = [&quit] { quit("quit from the menu"); };
     if (game.test_menu) {
       model.test_menu = [&save, &o, &user_dir, &game, argv] {
@@ -545,6 +550,8 @@ int run(const Game& game, int argc, char** argv) {
             break;
           default: break;
         }
+        // Choosing an input for a control in the menu takes the next one.
+        if (use_input && host_input.capturing() && host_input.capture_event(e)) continue;
         const bool was_open = menu.is_open();
         if (use_menu && menu.handle_event(e)) {
           if (was_open && !menu.is_open()) save();
