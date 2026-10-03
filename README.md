@@ -10,13 +10,15 @@ compiled together with a runtime that stands in for the Triforce hardware (GameC
 DSP, AM-Baseboard, AM-Mediaboard), so the game runs as a normal native program, with room for
 modern features such as higher resolutions, widescreen and remappable controls.
 
-> **Status: early development, playable with sound.** Milestones 1 to 6 are done. Mario Kart
-> Arcade GP 2 (7,612 functions) recompiles, boots from its disc image through the emulated
-> Triforce hardware (media board, baseboard, JVS I/O, card reader) and plays in a window
-> (Vulkan): insert a coin (or use `--free-play`), make a Mario Card, pick a character and cup, and
-> race at 60 fps with the keyboard, a gamepad or a steering wheel with force feedback, with the
-> game's music and sound effects (its DSP audio microcode is emulated). See
-> [docs/playing.md](docs/playing.md) and the [roadmap](#roadmap).
+> **Status: playable.** Milestones 1 to 7 are done. Mario Kart Arcade GP 2 (7,612 functions)
+> recompiles, boots from its disc image through the emulated Triforce hardware (media board,
+> baseboard, JVS I/O, card reader) and plays in a window or fullscreen (Vulkan), in 4:3 or
+> widescreen and at up to 8 times its resolution: insert a coin (or turn on free play), make a
+> Mario Card, pick a character and cup, and race at 60 fps with the keyboard, a gamepad or a
+> steering wheel with force feedback, with the game's music and sound effects (its DSP audio
+> microcode is emulated). A menu (Esc) has the settings, the controls and the Mario Cards; the
+> game's own test menu works too. See [docs/playing.md](docs/playing.md) and the
+> [roadmap](#roadmap).
 
 ## How it works
 
@@ -90,7 +92,7 @@ marked as such in the source. Vendored third-party code in `thirdparty/` keeps i
 | M4 | Graphics: vertex loader, textures, TEV ubershader, first frames, attract mode; hardware-check patches as needed (**done**) | yes |
 | M5 | Input and gameplay: JVS mapping, free play, full race, wheel force feedback (**done**) | yes |
 | M6 | Audio: the DSP's AX microcode (driven by MusyX) at a high level, sound output (**done**) | yes |
-| M7 | Card saves, settings menu, resolution scaling, widescreen (**in progress**: menu, settings, controls, fullscreen, widescreen, Mario Cards and the game's test menu done) | yes |
+| M7 | Card saves, settings menu, resolution scaling, widescreen, fullscreen; the game's test menu (**done**) | yes |
 | M8 | Mario Kart Arcade GP (GGPE01) | yes |
 
 ## Acknowledgements
