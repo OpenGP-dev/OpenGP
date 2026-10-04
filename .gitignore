@@ -1,1 +1,42 @@
+# Game data: never commit anything that comes from the games.
+# Put your own images in ISO/ or private/ (see docs/game-files.md).
+/ISO/
+/private/
+/orig/
+/user/
 *.iso
+*.gcm
+*.dol
+*.rel
+*.img
+*.nand
+*.bin
+# ...except the free replacement boot ROM fonts
+!/thirdparty/gc-fonts/*.bin
+*.gdi
+*.chd
+*.rvz
+*.wbfs
+*.ciso
+*.gcz
+
+# Local reference checkout of naari3/mkgp2-decomp (not part of this repo)
+/gp2decomp/
+
+# Local reference checkouts: sparse Dolphin (Triforce hardware) and the
+# community MKAGP2 skip-checks patch (not part of this repo)
+/ref/
+
+# Build output (recompiled code is derived from the game, so it lives here too)
+build/
+out/
+generated/
+.cache/
+compile_commands.json
+CMakeUserPresets.json
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store

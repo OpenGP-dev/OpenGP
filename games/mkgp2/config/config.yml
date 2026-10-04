@@ -1,0 +1,7 @@
+# decomp-toolkit project config for Mario Kart Arcade GP 2 (USA, GGPE02).
+# Paths are relative to the repository root; run dtk from there.
+# symbols.txt and splits.txt hold addresses and names only (no game data).
+object: orig/GGPE02/sys/main.dol
+hash: 2969c177219dda71ad36b41575bede7ad4637f96
+symbols: games/mkgp2/config/symbols.txt
+splits: games/mkgp2/config/splits.txt

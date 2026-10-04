@@ -1,0 +1,44 @@
+# gekkorecomp config for Mario Kart Arcade GP (USA, GGPE01).
+# main.dol SHA-1: 0e84df7cac27eab7d6dbb1892933ae3bf762f742
+#
+# The DOL is extracted from your own disc image into orig/ (gitignored);
+# see docs/game-files.md. The symbol list comes from decomp-toolkit
+# (config/config.yml) and contains addresses and names only.
+
+[input]
+dol = "../../orig/GGPE01/sys/main.dol"
+symbols = "config/symbols.txt"
+
+[output]
+directory = "generated"  # the build passes --out
+file_count = 64
+
+[analysis]
+# Small-data bases set by __init_registers (8000332C).
+sda_base = 0x805BDE20   # r13, _SDA_BASE_
+sda2_base = 0x805C14E0  # r2, _SDA2_BASE_
+interrupt_checks = true
+# The SDK's exception handlers have code after their (early-exit) calls to
+# OSLoadContext, which never returns on hardware: see os/threads.h.
+exception_return = ["OSLoadContext"]
+
+# SelectThread's idle loop ("while (RunQueueBits == 0) {}" with interrupts
+# enabled): wait for an interrupt instead of spinning a host core.
+[[hook]]
+address = 0x8021327C
+function = "OSIdleWait"
+
+# The NamCam2 camera is an IP camera on the media board's network, which is
+# not emulated, so the start-up device check never finishes. As in GP 2, the
+# game can run without it: default its "camera use" setting (byte 0x25 of the
+# settings block at 804B3B40) to off.
+[[patch]]
+address = 0x800790A0
+value = 0x98650025  # stb r3, 0x25(r5); was stb r6 (r6 = 1, r3 = 0)
+
+# At start-up the LINK screen looks for linked cabinets for 60 seconds (a
+# 3600-frame timer set when the link starts; the same code as GP 2's).
+# Linking is not emulated, so don't wait.
+[[patch]]
+address = 0x801B0E28
+value = 0x38000001  # li r0, 1; was li r0, 3600
