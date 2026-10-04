@@ -18,6 +18,7 @@ target_link_libraries(ppc_runtime
 add_library(opengp_machine STATIC
   audio/wav.cpp
   disc/disc.cpp
+  disc/sha1.cpp
   dsp/accelerator.cpp
   dsp/ax.cpp
   gx/decoder.cpp
@@ -117,7 +118,8 @@ add_library(opengp_app STATIC app/launcher.cpp)
 target_link_libraries(opengp_app
   PUBLIC opengp_machine opengp_settings
   PRIVATE opengp_warnings)
-target_compile_definitions(opengp_app PRIVATE OPENGP_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+target_compile_definitions(opengp_app PRIVATE OPENGP_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+  OPENGP_VERSION="${PROJECT_VERSION}")
 if(OPENGP_BUILD_VIDEO)
   target_sources(opengp_app PRIVATE app/menu.cpp)
   target_link_libraries(opengp_app PUBLIC opengp_video opengp_input opengp_audio imgui)

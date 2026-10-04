@@ -1,6 +1,7 @@
 # Mario Kart Arcade GP (USA, GGPE01)
 
-opengp_game_dol(MKGP1_DOL GGPE01 0e84df7cac27eab7d6dbb1892933ae3bf762f742 "Mario Kart Arcade GP")
+set(MKGP1_DOL_SHA1 0e84df7cac27eab7d6dbb1892933ae3bf762f742)
+opengp_game_dol(MKGP1_DOL GGPE01 ${MKGP1_DOL_SHA1} "Mario Kart Arcade GP")
 if(NOT MKGP1_DOL)
   return()
 endif()
@@ -21,4 +22,5 @@ add_executable(opengp-mkgp1 main.cpp patches.cpp ${OPENGP_GAMES_COMMON})
 target_link_libraries(opengp-mkgp1 PRIVATE mkgp1_recomp opengp_app opengp_warnings)
 target_include_directories(opengp-mkgp1 PRIVATE ${PROJECT_SOURCE_DIR}/games/common)
 target_compile_definitions(opengp-mkgp1 PRIVATE
-  OPENGP_SYMBOLS="${CMAKE_CURRENT_SOURCE_DIR}/config/symbols.txt")
+  OPENGP_SYMBOLS="${CMAKE_CURRENT_SOURCE_DIR}/config/symbols.txt"
+  OPENGP_DOL_SHA1="${MKGP1_DOL_SHA1}")

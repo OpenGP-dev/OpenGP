@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include "gekko/types.h"
 
@@ -31,6 +32,10 @@ class Image {
   // image read as zero (and the call returns false).
   bool read(u64 offset, void* dst, u64 size) const;
   u32 read_u32(u64 offset) const;  // big-endian
+
+  // The executable (sys/main.dol): its offset is in the disc header, and its
+  // size follows from its section table.
+  bool read_dol(std::vector<u8>* out) const;
 
   u64 size() const { return size_; }
   const std::string& game_id() const { return game_id_; }  // e.g. "GGPE02"

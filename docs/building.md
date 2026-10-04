@@ -69,7 +69,8 @@ build/<preset>/games/mkgp2/opengp-mkgp2 [--iso PATH] [--user-dir PATH] [--timeou
                                         [--no-audio] [--volume PERCENT] [--audio-dump PATH]
 ```
 
-`opengp-mkgp1` (Mario Kart Arcade GP, in `build/<preset>/games/mkgp1/`) takes the same options.
+`opengp-mkgp1` (Mario Kart Arcade GP, in `build/<preset>/games/mkgp1/`) takes the same options. `--version` prints the
+version and the game.
 
 Controls and playing are covered in [playing.md](playing.md).
 

@@ -67,4 +67,18 @@ u32 Image::read_u32(u64 offset) const {
   return (u32{b[0]} << 24) | (u32{b[1]} << 16) | (u32{b[2]} << 8) | b[3];
 }
 
+bool Image::read_dol(std::vector<u8>* out) const {
+  constexpr u64 kDolOffset = 0x420;  // in the disc header
+  constexpr u32 kHeaderSize = 0x100, kSections = 18;
+  const u64 dol = read_u32(kDolOffset);
+  if (dol == 0 || dol >= size_) return false;
+  u32 end = kHeaderSize;
+  for (u32 i = 0; i < kSections; ++i) {
+    const u32 offset = read_u32(dol + 4 * i), size = read_u32(dol + 0x90 + 4 * i);
+    if (size && offset + size > end) end = offset + size;
+  }
+  out->resize(end);
+  return read(dol, out->data(), end);
+}
+
 }  // namespace disc

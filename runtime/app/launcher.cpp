@@ -20,6 +20,7 @@
 #include "app/settings.h"
 #include "audio/wav.h"
 #include "disc/disc.h"
+#include "disc/sha1.h"
 #include "hw/dsp.h"
 #include "hw/vi.h"
 #include "input/script.h"
@@ -53,7 +54,7 @@ constexpr const char* kUsage =
     "          [--fullscreen | --windowed] [--aspect auto|4:3|16:9|16:10|21:9] [--scale N]\n"
     "          [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]\n"
     "          [--input SCRIPT] [--input-file PATH] [--free-play] [--test-menu]\n"
-    "          [--no-audio] [--volume PERCENT] [--audio-dump PATH]\n";
+    "          [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--version]\n";
 
 struct Options {
   std::vector<std::string> args;  // as given, for restarts (without --reboot and --frame-offset)
@@ -221,6 +222,31 @@ std::string find_image(const char* game_id) {
   return {};
 }
 
+// The build runs only with the release of the game it was recompiled from: the
+// image must hold the same executable. (The recompiled code needs the game's
+// data and everything else from the image, which is not part of OpenGP.)
+bool check_image(const Game& game, const std::string& path) {
+  disc::Image img;
+  std::string error;
+  if (!img.open(path, &error)) {
+    std::fprintf(stderr, "%s\n", error.c_str());
+    return false;
+  }
+  if (img.game_id() != game.id) {
+    std::fprintf(stderr, "%s is %s, not %s (%s).\n", path.c_str(), img.game_id().c_str(), game.title, game.id);
+    return false;
+  }
+  if (!game.dol_sha1) return true;
+  std::vector<u8> dol;
+  const std::string actual = img.read_dol(&dol) ? disc::to_hex(disc::sha1(dol.data(), dol.size())) : "unreadable";
+  if (actual == game.dol_sha1) return true;
+  std::fprintf(stderr,
+               "%s: its main.dol (SHA-1 %s) is not the release of %s this build supports (SHA-1 %s). "
+               "See docs/game-files.md.\n",
+               path.c_str(), actual.c_str(), game.title, game.dol_sha1);
+  return false;
+}
+
 // Function names for backtraces, from the decomp-toolkit symbol file.
 std::map<u32, std::string> load_function_names(const char* path) {
   std::map<u32, std::string> names;
@@ -260,6 +286,12 @@ unsigned long long elapsed_ns(std::chrono::steady_clock::time_point since) {
 }  // namespace
 
 int run(const Game& game, int argc, char** argv) {
+  for (int i = 1; i < argc; ++i) {
+    if (std::string(argv[i]) == "--version") {
+      std::printf("OpenGP %s: %s (%s)\n", OPENGP_VERSION, game.title, game.id);
+      return 0;
+    }
+  }
   Options o;
   if (const int code = parse_options(argc, argv, o)) return code;
 #ifndef OPENGP_VIDEO
@@ -273,6 +305,7 @@ int run(const Game& game, int argc, char** argv) {
     std::fprintf(stderr, "No %s image found in ISO/ or private/ (see docs/game-files.md), or pass --iso.\n", game.id);
     return 1;
   }
+  if (!check_image(game, o.image)) return 1;
   const fs::path user_dir = o.user_dir.empty() ? fs::path(OPENGP_SOURCE_DIR) / "user" : o.user_dir;
 
   // Settings: the file, then this run's options.
@@ -340,7 +373,7 @@ int run(const Game& game, int argc, char** argv) {
 #endif
     if (g_audio_dump) g_audio_dump->write(samples, frames, rate);
   });
-  std::printf("OpenGP: %s (%s)\n", game.title, machine.disc().game_id().c_str());
+  std::printf("OpenGP %s: %s (%s)\n", OPENGP_VERSION, game.title, machine.disc().game_id().c_str());
   std::printf("  image:  %s\n", o.image.c_str());
   std::printf("  memory: %u MiB, entry %08X, FST %08X, arena %08X-%08X\n", machine.mem1_size() >> 20,
               boot.entry_point, boot.fst_address, boot.arena_lo, boot.arena_hi);

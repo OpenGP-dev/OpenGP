@@ -20,6 +20,8 @@ modern features such as higher resolutions, widescreen and remappable controls.
 > the Mario Cards; the games' own test menus work too. See [docs/playing.md](docs/playing.md) and
 > the [roadmap](#roadmap).
 
+The latest release is **0.1.0** (source only, see [CHANGELOG.md](CHANGELOG.md)).
+
 ## How it works
 
 ```

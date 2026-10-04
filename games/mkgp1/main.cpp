@@ -13,6 +13,7 @@ int main(int argc, char** argv) {
   game.title = "Mario Kart Arcade GP";
   game.module = &guest::g_module;
   game.symbols = OPENGP_SYMBOLS;
+  game.dol_sha1 = OPENGP_DOL_SHA1;
   game.set_free_play = arcade::set_free_play;
   game.test_menu = arcade::test_menu_reboot;
   return app::run(game, argc, argv);

@@ -27,6 +27,9 @@ them stays on your machine.
    and checks it against the table above.
 3. Configure and build as usual (see [building.md](building.md)). CMake builds each game whose
    `main.dol` is present and has the expected hash, and skips the others.
+4. Run the game's launcher. It finds the image in `ISO/` or `private/` (or takes `--iso`), and
+   runs only if the image holds the same `main.dol` the build was made from; any other image (a
+   different game, region or revision) is refused with its hash.
 
 ## What gets committed
 

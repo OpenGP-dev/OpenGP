@@ -10,7 +10,7 @@
 //                 [--fullscreen | --windowed] [--aspect RATIO] [--scale N]
 //                 [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]
 //                 [--input SCRIPT] [--input-file PATH] [--free-play] [--test-menu]
-//                 [--no-audio] [--volume PERCENT] [--audio-dump PATH]
+//                 [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--version]
 //
 // Options override user/settings.toml for one run (see docs/building.md).
 #pragma once
@@ -30,6 +30,9 @@ struct Game {
   const char* title = "";  // e.g. "Mario Kart Arcade GP 2"
   const ppc::RecompiledModule* module = nullptr;
   const char* symbols = nullptr;  // decomp-toolkit symbols.txt, for function names in backtraces
+  // SHA-1 of the main.dol the build was recompiled from: the launcher runs only
+  // with an image that holds it.
+  const char* dol_sha1 = nullptr;
   // Turns free play on or off: at start-up (before the game runs) and from
   // the menu (while it runs). `base` is guest memory.
   std::function<void(u8* base, bool on)> set_free_play;
