@@ -96,11 +96,12 @@ marked as such in the source. Vendored third-party code in `thirdparty/` keeps i
 | M6 | Audio: the DSP's AX microcode (driven by MusyX) at a high level, sound output (**done**) | yes |
 | M7 | Card saves, settings menu, resolution scaling, widescreen, fullscreen; the game's test menu (**done**) | yes |
 | M8 | Mario Kart Arcade GP (GGPE01): symbol map, the same runtime, free play, test menu (**done**) | yes |
-| M9 | Linked cabinets: the media board's network (socket API on host sockets), several instances racing each other on one PC or a LAN | yes |
-| M10 | The NamCam2 camera from a webcam: player photos, on the media board's network from M9 | yes |
-| 1.0 | Build-on-install package: prebuilt runtime, recompiler and a redistributable compiler; on first launch it recompiles the game from the player's own image, so no game code is ever distributed | yes |
+| M9 | Installer package for Windows and Linux: the prebuilt runtime and recompiler; on first launch it recompiles and builds the game from the player's own image with a redistributable compiler, so no game code is ever distributed | yes |
+| M10 | Linked cabinets: the media board's network (socket API on host sockets), several instances racing each other on one PC or a LAN | yes |
+| M11 | The NamCam2 camera from a webcam: player photos, on the media board's network from M10 | yes |
+| 1.0 | Release: the installer package with linked cabinets and the camera | yes |
 
-Releases stay source-only until 1.0 (see [CHANGELOG.md](CHANGELOG.md)).
+Until the installer package exists, releases are source only (see [CHANGELOG.md](CHANGELOG.md)).
 
 ## Acknowledgements
 
