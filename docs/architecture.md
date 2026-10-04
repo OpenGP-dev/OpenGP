@@ -87,7 +87,8 @@ Control flow:
 | `b` into another function | Tail call followed by `return` |
 | `bctr` through a jump table | `switch` on the target address |
 | `bctrl`, `blrl`, unresolved `bctr` | `ppc::call()` / `ppc::jump()`: looks up a flat table of function pointers indexed by address, and falls back to the interpreter if nothing is found |
-| Falling off the end of a function into the next one (e.g. the `_savegpr_N` chains) | Tail call to the next function |
+| `bl` or `b` into the middle of another function (e.g. the SDK's `_savegpr_N` entry points into `__save_gpr`) | That address becomes a function of its own: a copy of the code from there to the end of the function it is in |
+| Falling off the end of a function into the next one | Tail call to the next function |
 | Backward branch (loop) | Also polls for pending interrupts, so the runtime can deliver interrupts |
 
 Instruction semantics are **not** duplicated in the generator:

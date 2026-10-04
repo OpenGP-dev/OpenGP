@@ -45,10 +45,11 @@ extern FunctionTable g_functions;
 // ctx.lr. Runs the recompiled function if there is one, otherwise interprets.
 void call(Context& ctx, u8* base, u32 target);
 
-// Transfer into code that is not a known function entry (a branch into the
-// middle of another function). Interprets until control returns to
-// `return_address` with r1 == `return_sp`, i.e. until the recompiled function
-// that jumped would itself have returned.
+// Transfer of control that does not come back (bctr to an address not known
+// at recompile time, or a branch into the middle of another function). A
+// recompiled function there is tail-called; anything else is interpreted until
+// control returns to `return_address` with r1 == `return_sp`, i.e. until the
+// recompiled function that jumped would itself have returned.
 void jump(Context& ctx, u8* base, u32 target, u32 return_address, u32 return_sp);
 
 inline void check_interrupts(Context& ctx, u8* base) {

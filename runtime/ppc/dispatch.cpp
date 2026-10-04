@@ -3,10 +3,29 @@
 #include "ppc/dispatch.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+#include <mutex>
+#include <unordered_set>
 
 #include "ppc/interpreter.h"
 
 namespace ppc {
+
+namespace {
+
+// OPENGP_LOG_INTERP=1 logs each guest address the interpreter is entered at
+// (code the recompiler missed), once.
+void log_interpreted(const char* how, u32 target, u32 from) {
+  static const bool enabled = std::getenv("OPENGP_LOG_INTERP") != nullptr;
+  if (!enabled) return;
+  static std::mutex mutex;
+  static std::unordered_set<u32> seen;
+  std::lock_guard lock(mutex);
+  if (seen.insert(target).second) std::fprintf(stderr, "[interp] %s %08X (lr %08X)\n", how, target, from);
+}
+
+}  // namespace
 
 FunctionTable g_functions;
 
@@ -52,10 +71,16 @@ void call(Context& ctx, u8* base, u32 target) {
     f(ctx, base);
     return;
   }
+  log_interpreted("call", target, ctx.lr);
   interpret(ctx, base, target);
 }
 
 void jump(Context& ctx, u8* base, u32 target, u32 return_address, u32 return_sp) {
+  if (GuestFunc f = g_functions.find(target)) {
+    f(ctx, base);  // a tail call, e.g. through a function pointer
+    return;
+  }
+  log_interpreted("jump", target, ctx.lr);
   interpret_until(ctx, base, target, return_address, return_sp);
 }
 

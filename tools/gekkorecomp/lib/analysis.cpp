@@ -142,7 +142,58 @@ bool Program::build(const Dol& dol, const SymbolFile* symbols, const Config& con
     functions_.push_back(fn);
   }
   for (std::size_t i = 0; i < functions_.size(); ++i) by_entry_[functions_[i].start] = i;
+  add_secondary_entries(symbols, &used_names);
   return true;
+}
+
+// Calls and branches from one function into the middle of another (the SDK's
+// _savegpr_N / _restgpr_N entry points into __save_gpr / __restore_gpr, and
+// tail branches into shared code) would otherwise leave recompiled code for
+// the interpreter. Each such target gets its own function: a copy of the code
+// from there to the end of the function it is in.
+void Program::add_secondary_entries(const SymbolFile* symbols, std::set<std::string>* used_names) {
+  std::map<u32, std::string> labels;
+  if (symbols)
+    for (const Symbol& s : symbols->symbols)
+      if (s.type == Symbol::Type::Label) labels.emplace(s.address, s.name);
+
+  auto containing = [&](u32 addr) -> const Function* {
+    auto it = by_entry_.upper_bound(addr);
+    if (it == by_entry_.begin()) return nullptr;
+    const Function& fn = functions_[std::prev(it)->second];
+    return addr > fn.start && addr < fn.end ? &fn : nullptr;
+  };
+
+  std::map<u32, u32> entries;  // entry -> end
+  for (const Function& fn : functions_) {
+    for (u32 pc = fn.start; pc < fn.end; pc += 4) {
+      const u32 raw = instruction(pc);
+      const Op op = gekko::decode(raw);
+      if (op != Op::b && op != Op::bc) continue;
+      const s32 disp = op == Op::b ? f::li::get(raw) : f::bd::get(raw);
+      const u32 target = (f::aa::get(raw) ? 0 : pc) + static_cast<u32>(disp);
+      if (target >= fn.start && target < fn.end) continue;  // a local branch
+      if (by_entry_.count(target) || (target & 3)) continue;
+      if (const Function* other = containing(target)) entries.emplace(target, other->end);
+    }
+  }
+
+  for (const auto& [start, end] : entries) {
+    Function fn;
+    fn.start = start;
+    fn.end = end;
+    if (const auto it = labels.find(start); it != labels.end()) fn.symbol = it->second;
+    std::string name = sanitize_identifier(fn.symbol, start);
+    if (!used_names->insert(name).second) {
+      char suffix[16];
+      std::snprintf(suffix, sizeof(suffix), "_%08X", start);
+      name += suffix;
+      used_names->insert(name);
+    }
+    fn.cpp_name = name;
+    functions_.push_back(fn);
+  }
+  for (std::size_t i = 0; i < functions_.size(); ++i) by_entry_[functions_[i].start] = i;
 }
 
 const Function* Program::function_at(u32 entry) const {

@@ -66,6 +66,8 @@ class Program {
   FunctionAnalysis analyze(const Function& fn) const;
 
  private:
+  void add_secondary_entries(const SymbolFile* symbols, std::set<std::string>* used_names);
+
   const Dol* dol_ = nullptr;
   const Config* config_ = nullptr;
   std::vector<Function> functions_;
