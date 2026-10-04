@@ -10,15 +10,15 @@ compiled together with a runtime that stands in for the Triforce hardware (GameC
 DSP, AM-Baseboard, AM-Mediaboard), so the game runs as a normal native program, with room for
 modern features such as higher resolutions, widescreen and remappable controls.
 
-> **Status: playable.** Milestones 1 to 7 are done. Mario Kart Arcade GP 2 (7,612 functions)
-> recompiles, boots from its disc image through the emulated Triforce hardware (media board,
-> baseboard, JVS I/O, card reader) and plays in a window or fullscreen (Vulkan), in 4:3 or
-> widescreen and at up to 8 times its resolution: insert a coin (or turn on free play), make a
-> Mario Card, pick a character and cup, and race at 60 fps with the keyboard, a gamepad or a
-> steering wheel with force feedback, with the game's music and sound effects (its DSP audio
-> microcode is emulated). A menu (Esc) has the settings, the controls and the Mario Cards; the
-> game's own test menu works too. See [docs/playing.md](docs/playing.md) and the
-> [roadmap](#roadmap).
+> **Status: playable.** Milestones 1 to 8 are done. Mario Kart Arcade GP 2 (7,612 functions) and
+> Mario Kart Arcade GP (7,504 functions) recompile, boot from their disc images through the
+> emulated Triforce hardware (media board, baseboard, JVS I/O, card reader) and play in a window or
+> fullscreen (Vulkan), in 4:3 or widescreen and at up to 8 times their resolution: insert a coin (or
+> turn on free play), make a Mario Card, pick a character and cup, and race at 60 fps with the
+> keyboard, a gamepad or a steering wheel with force feedback, with the games' music and sound
+> effects (their DSP audio microcode is emulated). A menu (Esc) has the settings, the controls and
+> the Mario Cards; the games' own test menus work too. See [docs/playing.md](docs/playing.md) and
+> the [roadmap](#roadmap).
 
 ## How it works
 
@@ -41,8 +41,8 @@ your GGPE02.iso ─extract─> main.dol ─decomp-toolkit─> symbols.txt
 | Renderer | `runtime/video/` | SDL3 GPU renderer: the TEV ubershader, EFB, presenting |
 | Input | `runtime/input/` | Keyboard, gamepads and wheels (SDL3) mapped onto the cabinet's controls, force feedback, scripted input |
 | Launcher | `runtime/app/` | Command line, settings, window, the in-game menu (Dear ImGui) |
-| Games | `games/` | Per-game symbol maps, recompiler config, patches and launcher |
-| Scripts | `tools/*.py`, `tools/devshell.ps1` | Game setup (extract and verify `main.dol`), SDK signature matching, Windows build shell |
+| Games | `games/` | Per-game symbol maps, recompiler config, patches and launcher (`mkgp1`, `mkgp2`); what both share in `common/` (SDK replacements, the arcade library's free play and test-menu restart) |
+| Scripts | `tools/*.py`, `tools/devshell.ps1` | Game setup (extract and verify `main.dol`), SDK signature matching, matching functions between the games, Windows build shell |
 | Tests | `tests/` | Decoder tests, known-answer semantics tests, and differential tests (interpreter vs recompiled code) |
 
 Details are in [docs/architecture.md](docs/architecture.md). Notes on the arcade hardware are in
@@ -93,7 +93,7 @@ marked as such in the source. Vendored third-party code in `thirdparty/` keeps i
 | M5 | Input and gameplay: JVS mapping, free play, full race, wheel force feedback (**done**) | yes |
 | M6 | Audio: the DSP's AX microcode (driven by MusyX) at a high level, sound output (**done**) | yes |
 | M7 | Card saves, settings menu, resolution scaling, widescreen, fullscreen; the game's test menu (**done**) | yes |
-| M8 | Mario Kart Arcade GP (GGPE01) | yes |
+| M8 | Mario Kart Arcade GP (GGPE01): symbol map, the same runtime, free play, test menu (**done**) | yes |
 
 ## Acknowledgements
 

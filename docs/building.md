@@ -69,6 +69,8 @@ build/<preset>/games/mkgp2/opengp-mkgp2 [--iso PATH] [--user-dir PATH] [--timeou
                                         [--no-audio] [--volume PERCENT] [--audio-dump PATH]
 ```
 
+`opengp-mkgp1` (Mario Kart Arcade GP, in `build/<preset>/games/mkgp1/`) takes the same options.
+
 Controls and playing are covered in [playing.md](playing.md).
 
 The launcher finds the image in `ISO/` or `private/` (or takes `--iso`), boots it and runs the
@@ -115,6 +117,7 @@ Environment variables for debugging:
 | `OPENGP_GX_DUMP=<n>` | every draw (with its pipeline state), texture, EFB copy and clear of frame *n* |
 | `OPENGP_EFB_SYNC=1` | (not a log) CPU reads of the EFB wait for the GPU instead of returning the previous frame's contents |
 | `OPENGP_FRAME_LOG=1` | each frame's duration, time in draws and vertex count |
+| `OPENGP_LOG_INTERP=1` | each guest address where code falls back to the interpreter (code the recompiler missed), once |
 | `OPENGP_PROFILE=START,SECONDS` | (Windows) samples every thread for SECONDS seconds, starting START seconds in, then prints each busy thread's hottest functions, self and inclusive |
 
 The status line also shows where time goes: the guest thread's time in draws (pipeline state,

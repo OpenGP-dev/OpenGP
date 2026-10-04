@@ -2,11 +2,15 @@
 
 ## Starting a game
 
-Mario Kart Arcade GP 2 behaves like the arcade cabinet: insert a coin and press start; in the menus,
-steer to choose and step on the gas pedal to decide. Turn on free play in the menu (Esc), or start
-the launcher with `--free-play`, to play without coins ("Step on gas pedal to start").
+Each game has its own launcher: `opengp-mkgp1` for Mario Kart Arcade GP and `opengp-mkgp2` for
+Mario Kart Arcade GP 2. They work the same way, and everything on this page applies to both.
+
+The games behave like the arcade cabinet: insert a coin and press start; in the menus, steer to
+choose and step on the gas pedal to decide. Turn on free play in the menu (Esc), or start the
+launcher with `--free-play`, to play without coins ("Step on gas pedal to start").
 
 ```sh
+build/<preset>/games/mkgp1/opengp-mkgp1 --free-play
 build/<preset>/games/mkgp2/opengp-mkgp2 --free-play
 ```
 
@@ -53,9 +57,9 @@ default) picks the smallest multiple at least as tall as the window: 2x for 720p
 
 ## Mario Cards
 
-Cards are saved in `user/cards/GGPE02/`, one file per card (`Card 1.bin`, ...). In the menu's Game
-tab you choose the card you hold: you insert it when the game asks for your card, and the game
-takes it back at the end. **New card** gives you a blank one (answer **No** to "Do you have Mario
+Cards are saved in `user/cards/GGPE01/` (GP) and `user/cards/GGPE02/` (GP 2), one file per card
+(`Card 1.bin`, ...). In the menu's Game tab you choose the card you hold: you insert it when the
+game asks for your card, and the game takes it back at the end. **New card** gives you a blank one (answer **No** to "Do you have Mario
 Card?", then buy a card, and it is saved under that name); **No card** plays without one. A card the
 game gives you is yours to hold from then on, so you can keep a card per player. Files can be
 renamed (the name is only for the menu) or copied to back them up.

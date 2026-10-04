@@ -39,4 +39,11 @@ function(opengp_generated_code_options target)
   endif()
 endfunction()
 
+# Hand-written code the games share, compiled into each game's executable
+# against that game's generated header.
+set(OPENGP_GAMES_COMMON
+  ${CMAKE_CURRENT_SOURCE_DIR}/common/arcade.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/common/sdk_hle.cpp)
+
+add_subdirectory(mkgp1)
 add_subdirectory(mkgp2)

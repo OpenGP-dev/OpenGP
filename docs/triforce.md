@@ -17,15 +17,15 @@ The Triforce is a stock GameCube main board with two Triforce-specific boards at
 Clocks: the bus runs at 162 MHz, and the time base ticks at bus / 4 = 40.5 MHz, the same as the
 GameCube.
 
-**Open question:** main RAM size. Some sources say 24 MiB (as on the GameCube), others 48 MiB.
-Check Dolphin's `SConfig::GetSimulatedMemorySize()` for Triforce titles before relying on either.
+Main RAM: the machine takes its size from the disc's `bi2.bin`, as Dolphin does. Mario Kart
+Arcade GP 2 asks for 48 MiB, Mario Kart Arcade GP for 24 MiB (the GameCube's).
 
 ## The games
 
 | Game | ID | Media | Notes |
 |------|----|-------|-------|
 | Mario Kart Arcade GP 2 | `GGPE02` | NAND | First target |
-| Mario Kart Arcade GP | `GGPE01` | NAND | Second target; same Namco engine |
+| Mario Kart Arcade GP | `GGPE01` | NAND | Second target (milestone 8); same Namco engine and arcade library |
 
 - Dolphin's media board tells the two games apart by the ID codes inside the image
   (`AMMediaboard.cpp` has a `s_game_map`).
@@ -258,3 +258,48 @@ With a coin, start and the menus, the game goes from attract mode into a race, a
   reboots the same way; on the cabinet these reboots go through SegaBoot's system menu, which
   then starts the game. OpenGP emulates a reboot by restarting the process (`os/reboot.h`); a
   reboot from a boot that kept memory (the test menu) boots afresh.
+
+## Mario Kart Arcade GP (GGPE01): what milestone 8 found
+
+GP 2 is a sequel on the same engine, and most of what it needed carried over unchanged: the
+runtime (Triforce boards, GPU, audio, launcher) has no game-specific code besides the media board
+telling the two apart. The game-specific part is `games/mkgp1/`: the symbol list, four addresses
+in `recomp.toml` and one patched function.
+
+### Executable (`main.dol`, 4.13 MiB)
+
+- Built with the same Dolphin SDK (17 April 2003 release, OS of 21 May 2004), MusyX and HSD as
+  GP 2. decomp-toolkit finds 7,504 functions; `tools/sigmatch.py` names 632 more of them.
+- `__start` at `0x80003154`; `_SDA_BASE_` = `0x805BDE20`, `_SDA2_BASE_` = `0x805C14E0`.
+- 24 MiB of RAM (arena `0x805D1FA0`-`0x817DE380`).
+- Matching functions between the two games by their code (with relocated fields masked, and the
+  same size) pairs up 3,367 of them one to one (`tools/crossmatch.py`). That is how most of the
+  addresses below were found.
+
+### What it needed
+
+| What | GP 2 | GP | Notes |
+|------|------|----|-------|
+| SelectThread's idle loop (hook) | `0x8025BA28` | `0x8021327C` | SDK |
+| Settings block (backup memory) | `0x805986C0` | `0x804B3B40` | Steering centre at `+0x38` (GP 2: `+0x34`), gas and brake rest positions at `+0x44` / `+0x40` (GP 2: `+0x40` / `+0x3C`) |
+| Camera use default (patch) | `0x80073BD8` | `0x800790A0` | Byte `+0x25` of the settings in both; without the patch GP's device check waits at CAMERA |
+| LINK wait of 3600 frames (patch) | `0x80084850` | `0x801B0E28` | Identical code |
+| Coin set-up / coin settings | `0x80289B54` / `0x80690AA0` | `0x8024DEDC` / `0x80577740` | Free play |
+| Restart into the test menu | `0x802878CC` | `0x8024BBC4` | Identical code: 0x100 bytes at `811FFF00`, first word 1 |
+
+- The analog calibration (`clInputJAMMA`: steering centre +/- `0x5000`, pedals `0x800` above rest
+  to `0x4000` further) is the same, so the I/O board's scaling fits both.
+- The wheel's force feedback uses the same protocol. A race ramps centering up to about `0x2D00`
+  and friction to `0x1400` (GP 2: `0x2800` / `0x1E00`), with the same `0x7F00`/`0x8100` roll buzz.
+- The card reader and the Mario Card work as in GP 2 (Dolphin's reader already covers GP's
+  dispense command without options). GP's cards are 69 bytes.
+- The test button reboots into the test menu, and EXIT back into the game, as in GP 2.
+
+### Recompiler fixes found on the way
+
+Both games called the SDK's `_savegpr_N` / `_restgpr_N` (labels inside `__save_gpr` /
+`__restore_gpr`) and tail-called functions through `bctr`, which fell back to the interpreter. The
+recompiler now gives every call or branch target inside another function a function of its own,
+and `ppc::jump` tail-calls a recompiled function when there is one. `OPENGP_LOG_INTERP=1` lists
+anything still interpreted; neither game has any in attract mode or a race.
+

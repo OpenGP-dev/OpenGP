@@ -23,6 +23,10 @@
 # Local reference checkout of naari3/mkgp2-decomp (not part of this repo)
 /gp2decomp/
 
+# Local reference checkouts: sparse Dolphin (Triforce hardware) and the
+# community MKAGP2 skip-checks patch (not part of this repo)
+/ref/
+
 # Build output (recompiled code is derived from the game, so it lives here too)
 build/
 out/

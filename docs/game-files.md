@@ -40,8 +40,8 @@ The recompiled C++ is generated at build time under `build/`, because it is deri
 
 ## Regenerating the symbol list
 
-`games/mkgp2/config/symbols.txt` comes from decomp-toolkit's analysis. To refresh it, run from the
-repository root:
+Each game's `games/<game>/config/symbols.txt` comes from decomp-toolkit's analysis (`mkgp1` is
+`GGPE01`, `mkgp2` is `GGPE02`). To refresh it, run from the repository root:
 
 ```sh
 build/tools/dtk dol split games/mkgp2/config/config.yml build/GGPE02
@@ -58,7 +58,10 @@ python tools/sigmatch.py orig/GGPE02/sys/main.dol games/mkgp2/config/symbols.txt
 python tools/sigmatch.py orig/GGPE02/sys/main.dol games/mkgp2/config/symbols.txt --apply   # rename
 ```
 
-It only renames generated `fn_XXXXXXXX` names, and only when the match is unambiguous.
+It only renames generated `fn_XXXXXXXX` names, and only when the match is unambiguous. A few SDK
+functions the runtime replaces are named by hand afterwards (see [triforce.md](triforce.md)):
+`OSSetSaveRegion`, `OSGetSaveRegion`, `OSGetSavedRegion`, and `OSGetExecParams` (decomp-toolkit
+calls it `__OSGetExecParams`).
 
 ## Working with Claude Code
 

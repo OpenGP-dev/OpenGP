@@ -17,7 +17,8 @@ target_include_directories(mkgp2_recomp PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/gener
 target_link_libraries(mkgp2_recomp PUBLIC ppc_runtime)
 opengp_generated_code_options(mkgp2_recomp)
 
-add_executable(opengp-mkgp2 main.cpp patches.cpp ${PROJECT_SOURCE_DIR}/games/common/sdk_hle.cpp)
+add_executable(opengp-mkgp2 main.cpp patches.cpp ${OPENGP_GAMES_COMMON})
 target_link_libraries(opengp-mkgp2 PRIVATE mkgp2_recomp opengp_app opengp_warnings)
+target_include_directories(opengp-mkgp2 PRIVATE ${PROJECT_SOURCE_DIR}/games/common)
 target_compile_definitions(opengp-mkgp2 PRIVATE
   OPENGP_SYMBOLS="${CMAKE_CURRENT_SOURCE_DIR}/config/symbols.txt")

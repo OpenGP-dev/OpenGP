@@ -4,7 +4,7 @@
 // the options).
 
 #include "app/launcher.h"
-#include "patches.h"
+#include "arcade.h"
 #include "ppc_recomp_shared.h"
 
 int main(int argc, char** argv) {
@@ -13,7 +13,7 @@ int main(int argc, char** argv) {
   game.title = "Mario Kart Arcade GP 2";
   game.module = &guest::g_module;
   game.symbols = OPENGP_SYMBOLS;
-  game.set_free_play = mkgp2::set_free_play;
-  game.test_menu = mkgp2::test_menu_reboot;
+  game.set_free_play = arcade::set_free_play;
+  game.test_menu = arcade::test_menu_reboot;
   return app::run(game, argc, argv);
 }
