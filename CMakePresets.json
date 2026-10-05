@@ -26,16 +26,93 @@
         "CMAKE_C_COMPILER": "clang-cl",
         "CMAKE_CXX_COMPILER": "clang-cl"
       }
+    },
+    {
+      "name": "package-windows",
+      "displayName": "Installer package, Windows (llvm-mingw from OPENGP_LLVM_MINGW)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "installDir": "${sourceDir}/out/OpenGP-windows-x64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "$env{OPENGP_LLVM_MINGW}/bin/x86_64-w64-mingw32-clang.exe",
+        "CMAKE_CXX_COMPILER": "$env{OPENGP_LLVM_MINGW}/bin/x86_64-w64-mingw32-clang++.exe",
+        "CMAKE_RC_COMPILER": "$env{OPENGP_LLVM_MINGW}/bin/x86_64-w64-mingw32-windres.exe",
+        "OPENGP_PACKAGE": "ON",
+        "OPENGP_BUILD_GAMES": "OFF",
+        "CMAKE_EXE_LINKER_FLAGS": "-static"
+      }
+    },
+    {
+      "name": "package-linux",
+      "displayName": "Installer package, Linux",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "installDir": "${sourceDir}/out/OpenGP-linux-x64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "OPENGP_PACKAGE": "ON",
+        "OPENGP_BUILD_GAMES": "OFF"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "default", "configurePreset": "default" },
-    { "name": "debug", "configurePreset": "debug" },
-    { "name": "clang-cl", "configurePreset": "clang-cl" }
+    {
+      "name": "default",
+      "configurePreset": "default"
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "clang-cl",
+      "configurePreset": "clang-cl"
+    },
+    {
+      "name": "package-windows",
+      "configurePreset": "package-windows"
+    },
+    {
+      "name": "package-linux",
+      "configurePreset": "package-linux"
+    }
   ],
   "testPresets": [
-    { "name": "default", "configurePreset": "default", "output": { "outputOnFailure": true } },
-    { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } },
-    { "name": "clang-cl", "configurePreset": "clang-cl", "output": { "outputOnFailure": true } }
+    {
+      "name": "default",
+      "configurePreset": "default",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-cl",
+      "configurePreset": "clang-cl",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "package-windows",
+      "configurePreset": "package-windows",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "package-linux",
+      "configurePreset": "package-linux",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
   ]
 }

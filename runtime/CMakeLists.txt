@@ -108,18 +108,23 @@ if(OPENGP_BUILD_VIDEO)
 endif()
 
 # The player's settings (user/settings.toml).
-add_library(opengp_settings STATIC app/settings.cpp)
+add_library(opengp_settings STATIC app/paths.cpp app/settings.cpp)
 target_link_libraries(opengp_settings
   PUBLIC opengp_machine
   PRIVATE tomlplusplus opengp_warnings)
+# Where user/ and the images are: the source tree, or next to the executable
+# in an installed package (app/paths.h).
+target_compile_definitions(opengp_settings PRIVATE OPENGP_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+if(OPENGP_PACKAGE)
+  target_compile_definitions(opengp_settings PRIVATE OPENGP_PACKAGE)
+endif()
 
 # The launcher the games share: settings, window, sound, controls, menu.
 add_library(opengp_app STATIC app/launcher.cpp)
 target_link_libraries(opengp_app
   PUBLIC opengp_machine opengp_settings
   PRIVATE opengp_warnings)
-target_compile_definitions(opengp_app PRIVATE OPENGP_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
-  OPENGP_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(opengp_app PRIVATE OPENGP_VERSION="${PROJECT_VERSION}")
 if(OPENGP_BUILD_VIDEO)
   target_sources(opengp_app PRIVATE app/menu.cpp)
   target_link_libraries(opengp_app PUBLIC opengp_video opengp_input opengp_audio imgui)

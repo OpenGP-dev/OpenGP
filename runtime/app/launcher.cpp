@@ -17,6 +17,7 @@
 #include <thread>
 #include <vector>
 
+#include "app/paths.h"
 #include "app/settings.h"
 #include "audio/wav.h"
 #include "disc/disc.h"
@@ -206,10 +207,15 @@ os::Reboot next_boot(const os::Reboot& requested) {
   return requested;
 }
 
-// Looks for the game's image in ISO/ and private/.
-std::string find_image(const char* game_id) {
+// The game's image: the one it was installed from (user/images.toml), else
+// the first with its ID in ISO/ or private/.
+std::string find_image(const char* game_id, const fs::path& user_dir) {
+  if (std::string image = remembered_image(user_dir, game_id); !image.empty()) {
+    std::error_code ec;
+    if (fs::is_regular_file(os::utf8_path(image), ec)) return image;
+  }
   for (const char* folder : {"ISO", "private"}) {
-    const fs::path dir = fs::path(OPENGP_SOURCE_DIR) / folder;
+    const fs::path dir = home_dir() / folder;
     std::error_code ec;
     if (!fs::is_directory(dir, ec)) continue;
     for (const auto& entry : fs::recursive_directory_iterator(dir, ec)) {
@@ -300,13 +306,13 @@ int run(const Game& game, int argc, char** argv) {
   // With a window the game runs until it is closed; otherwise for 20 seconds.
   const bool windowed = o.use_video && !o.headless;
   if (o.timeout_s < 0) o.timeout_s = windowed ? 0 : 20;
-  if (o.image.empty()) o.image = find_image(game.id);
+  const fs::path user_dir = o.user_dir.empty() ? home_dir() / "user" : o.user_dir;
+  if (o.image.empty()) o.image = find_image(game.id, user_dir);
   if (o.image.empty()) {
     std::fprintf(stderr, "No %s image found in ISO/ or private/ (see docs/game-files.md), or pass --iso.\n", game.id);
     return 1;
   }
   if (!check_image(game, o.image)) return 1;
-  const fs::path user_dir = o.user_dir.empty() ? fs::path(OPENGP_SOURCE_DIR) / "user" : o.user_dir;
 
   // Settings: the file, then this run's options.
   std::string error;

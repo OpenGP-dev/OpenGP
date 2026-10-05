@@ -1,0 +1,120 @@
+name: Package
+
+# Builds the installer packages (see docs/packaging.md): the runtime, the
+# recompiler and the installer, which builds each game on the player's
+# machine from their own disc image. No game code or data is in them.
+on:
+  push:
+    branches: [main, 'claude/**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows package
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # The compiler the package's runtime is built with must be the one its
+      # installer downloads: the version and hash pinned in cmake/package.cmake.
+      - name: Read the pinned llvm-mingw
+        id: pin
+        shell: pwsh
+        run: |
+          $text = Get-Content cmake/package.cmake -Raw
+          $version = [regex]::Match($text, 'OPENGP_LLVM_MINGW_VERSION (\d+)').Groups[1].Value
+          $sha = [regex]::Match($text, 'OPENGP_LLVM_MINGW_SHA256 ([0-9a-f]+)').Groups[1].Value
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "sha256=$sha" >> $env:GITHUB_OUTPUT
+          "dir=llvm-mingw-$version-ucrt-x86_64" >> $env:GITHUB_OUTPUT
+          $project = [regex]::Match((Get-Content CMakeLists.txt -Raw), 'VERSION ([0-9.]+)').Groups[1].Value
+          "project=$project" >> $env:GITHUB_OUTPUT
+      - name: Cache llvm-mingw
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: C:\llvm-mingw
+          key: ${{ steps.pin.outputs.dir }}
+      - name: Download llvm-mingw
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $dir = "${{ steps.pin.outputs.dir }}"
+          curl.exe -fL --retry 3 -o llvm-mingw.zip "https://github.com/mstorsjo/llvm-mingw/releases/download/${{ steps.pin.outputs.version }}/$dir.zip"
+          if ((Get-FileHash llvm-mingw.zip -Algorithm SHA256).Hash.ToLower() -ne "${{ steps.pin.outputs.sha256 }}") { throw "llvm-mingw SHA-256 mismatch" }
+          New-Item -ItemType Directory -Force C:\llvm-mingw | Out-Null
+          tar.exe -xf llvm-mingw.zip -C C:\llvm-mingw
+      - name: Build, test and lay out the package
+        shell: pwsh
+        env:
+          OPENGP_LLVM_MINGW: C:/llvm-mingw/${{ steps.pin.outputs.dir }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          pip install ninja
+          cmake --preset package-windows
+          cmake --build --preset package-windows
+          ctest --preset package-windows
+          cmake --install build/package-windows
+          python tools/package_probe.py out/OpenGP-windows-x64 build/package-windows --cxx "$env:OPENGP_LLVM_MINGW/bin/x86_64-w64-mingw32-clang++.exe"
+          Compress-Archive -Path out/OpenGP-windows-x64 -DestinationPath "OpenGP-${{ steps.pin.outputs.project }}-windows-x64.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenGP-windows-x64
+          path: OpenGP-*-windows-x64.zip
+
+  linux:
+    name: Linux package
+    # The oldest supported runner, so the package links on older distributions
+    # too (glibc 2.35, libstdc++ from GCC 12).
+    runs-on: ubuntu-22.04
+    env:
+      CC: gcc-12
+      CXX: g++-12
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install GCC 12, Ninja and SDL3's dependencies
+        run: >
+          sudo apt-get update && sudo apt-get install -y g++-12 ninja-build
+          libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev
+          libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev
+          libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev libdbus-1-dev
+      - name: Build, test and lay out the package
+        run: |
+          cmake --preset package-linux
+          cmake --build --preset package-linux
+          ctest --preset package-linux
+          cmake --install build/package-linux
+          python tools/package_probe.py out/OpenGP-linux-x64 build/package-linux --cxx g++-12
+          version=$(sed -n 's/^project(OpenGP VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          tar -czf "OpenGP-$version-linux-x64.tar.gz" -C out OpenGP-linux-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenGP-linux-x64
+          path: OpenGP-*-linux-x64.tar.gz
+
+  release:
+    name: Attach to the release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Upload the packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1 ||
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "OpenGP ${TAG#v}" --notes "See CHANGELOG.md."
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber OpenGP-*

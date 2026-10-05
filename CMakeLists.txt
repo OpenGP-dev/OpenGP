@@ -11,6 +11,7 @@ option(OPENGP_BUILD_GAMES "Build the games whose executables are present in orig
 option(OPENGP_GENERATED_DEBUG_INFO "Emit debug info for recompiled game code (slow, large)" OFF)
 option(OPENGP_TRACE_CALLS "Track guest call stacks in recompiled code (for debugging)" OFF)
 option(OPENGP_BUILD_VIDEO "Build the renderer (fetches SDL3 and glslang if not installed)" ON)
+option(OPENGP_PACKAGE "Build the installer package: the runtime as libraries plus the installer, which builds the games on the player's machine (see docs/packaging.md)" OFF)
 
 if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   message(FATAL_ERROR "OpenGP needs GCC or Clang (use clang-cl on Windows): "
@@ -58,6 +59,14 @@ target_include_directories(doctest SYSTEM INTERFACE thirdparty/doctest)
 add_subdirectory(common/gekko)
 add_subdirectory(runtime)
 add_subdirectory(tools/gekkorecomp)
+add_subdirectory(tools/installer)
+
+if(OPENGP_PACKAGE)
+  if(NOT OPENGP_BUILD_VIDEO)
+    message(FATAL_ERROR "OPENGP_PACKAGE needs OPENGP_BUILD_VIDEO")
+  endif()
+  include(cmake/package.cmake)
+endif()
 
 if(OPENGP_BUILD_GAMES)
   add_subdirectory(games)

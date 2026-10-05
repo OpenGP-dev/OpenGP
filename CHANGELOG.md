@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Installer package** for Windows and Linux ([docs/packaging.md](docs/packaging.md)): the
+  runtime and recompiler prebuilt, and an installer (`OpenGP`) that builds each game on your
+  machine from your own disc image, with a compiler it downloads once (Windows) or the system's
+  (Linux). Either game can be installed on its own. No game code or data is in the package.
+- Packaged games keep `user/` next to them and remember the image they were built from
+  (`user/images.toml`).
+- Both games share one launcher `main()`; each game's ID, title and supported `main.dol` are in
+  its `game.toml`.
+
 ## 0.1.0 (2026-09-26)
 
 The first release: both Mario Kart Arcade GP games are playable from start to finish.
