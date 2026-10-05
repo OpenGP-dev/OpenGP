@@ -9,15 +9,18 @@
 #include <doctest.h>
 
 #include <bit>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <random>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "fixture_layout.h"
+#include "gekko/isa.h"
 #include "ppc/interpreter.h"
 #include "ppc/memory.h"
 #include "ppc/module.h"
@@ -226,6 +229,22 @@ Snapshot run_recompiled(const Case& k, u32 seed) {
   return capture(c, e.base);
 }
 
+// A function's instructions up to its first blr, for failure reports: the
+// random functions differ between standard libraries (their distributions),
+// so a failure elsewhere cannot be reproduced from the name alone.
+std::string listing(const Case& k) {
+  const u8* base = env().base;
+  std::string out;
+  for (u32 pc = k.address, n = 0; n < 512; pc += 4, ++n) {
+    const u32 raw = (u32{base[pc]} << 24) | (u32{base[pc + 1]} << 16) | (u32{base[pc + 2]} << 8) | base[pc + 3];
+    char line[32];
+    std::snprintf(line, sizeof(line), "  %08X  %08X  ", pc, raw);
+    out += line + gekko::disasm(raw, pc) + "\n";
+    if (raw == 0x4E800020) break;  // blr
+  }
+  return out;
+}
+
 }  // namespace
 
 // Mid-function hook used by fn_hooked (see fixture.toml).
@@ -238,6 +257,7 @@ PPC_HOOK(TestHook) {
 
 TEST_CASE("recompiled code matches the interpreter") {
   int compared = 0;
+  std::set<std::string> listed;
   for (const Case& k : kCases) {
     if (k.kind == 2) continue;
     const int iterations = k.kind == 0 ? 24 : 6;
@@ -246,8 +266,9 @@ TEST_CASE("recompiled code matches the interpreter") {
       const Snapshot a = run_interpreter(k, seed);
       const Snapshot b = run_recompiled(k, seed);
       const std::string diff = compare(a, b);
-      INFO(k.name, " iteration ", it, ": ", diff);
+      INFO(std::string(k.name), " iteration ", it, ": ", diff);
       CHECK(diff.empty());
+      if (!diff.empty() && listed.insert(k.name).second) MESSAGE(std::string(k.name), ":\n", listing(k));
       ++compared;
     }
   }
