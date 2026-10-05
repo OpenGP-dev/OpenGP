@@ -72,6 +72,20 @@ inline u32 update_summary(u32 fpscr) {
   return fpscr;
 }
 
+// A float the compiler must treat as an unknown float, so that a rounding to
+// single precision is never folded away when the result is widened back to
+// double: GCC 12 at -O3 dropped the double -> float -> double round trip of
+// paired-single results in recompiled code (unrounded results, no overflow to
+// infinity, NaN payloads not truncated).
+inline float keep_single(float x) {
+#if (defined(__GNUC__) || defined(__clang__)) && (defined(__x86_64__) || defined(__i386__))
+  __asm__("" : "+x"(x));
+#elif (defined(__GNUC__) || defined(__clang__)) && defined(__aarch64__)
+  __asm__("" : "+w"(x));
+#endif
+  return x;
+}
+
 // Rounds to single precision as the Gekko does, honouring FPSCR[NI].
 inline float force_single(u32 fpscr, double value) {
   if (fpscr & FPSCR_NI) {
@@ -84,7 +98,7 @@ inline float force_single(u32 fpscr, double value) {
       return std::bit_cast<float>(flushed);
     }
   }
-  float x = static_cast<float>(value);
+  float x = keep_single(static_cast<float>(value));
   if (fpscr & FPSCR_NI) x = flush_to_zero(x);
   return x;
 }
