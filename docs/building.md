@@ -59,6 +59,12 @@ libxtst-dev libxkbcommon-dev libasound2-dev libpulse-dev`; see SDL's
 [Linux build notes](https://wiki.libsdl.org/SDL3/README-linux#build-dependencies)), and a
 Vulkan driver at run time.
 
+On macOS (Apple Silicon), install the Xcode Command Line Tools (`xcode-select --install`) and
+CMake and Ninja (`brew install cmake ninja`). The renderer uses Metal: the shaders are also
+converted to the Metal Shading Language at build time (with SPIRV-Cross, fetched at a pinned
+version; `OPENGP_METAL_SHADERS`), so MoltenVK is not needed. An SDL3 from Homebrew is used if
+installed, else the pinned release is built.
+
 ## Running
 
 ```sh

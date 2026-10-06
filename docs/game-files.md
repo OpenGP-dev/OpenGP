@@ -22,9 +22,13 @@ them stays on your machine.
    ```sh
    python tools/setup.py
    ```
-   This downloads the pinned [decomp-toolkit](https://github.com/encounter/decomp-toolkit) into
-   `build/tools/`. It then extracts each game's executable to `orig/<ID>/sys/main.dol` (gitignored)
-   and checks it against the table above.
+   This extracts each game's executable to `orig/<ID>/sys/main.dol` (gitignored) and checks it
+   against the table above. It also downloads the pinned
+   [decomp-toolkit](https://github.com/encounter/decomp-toolkit) into `build/tools/`, for
+   regenerating the symbol lists.
+   - Some converted dumps have a placeholder header (ID `RELSAB`, "Sample Game Name"). OpenGP
+     recognises them by their `main.dol` and treats them as the right game, so they need no
+     fixing.
 3. Configure and build as usual (see [building.md](building.md)). CMake builds each game whose
    `main.dol` is present and has the expected hash, and skips the others.
 4. Run the game's launcher. It finds the image in `ISO/` or `private/` (or takes `--iso`), and

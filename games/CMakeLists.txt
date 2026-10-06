@@ -1,5 +1,13 @@
 # Each game is built only when its executable has been extracted into orig/
 # (see docs/game-files.md). Nothing from the games is ever committed.
+#
+# A game is a directory with:
+#   game.toml          id, title, the SHA-1 of the supported main.dol, executable name
+#   recomp.toml        the recompiler's settings, patches and hooks
+#   config/symbols.txt the decomp-toolkit symbol list
+#   patches.cpp        hand-written replacements for recompiled functions
+# The launcher's main() and the code the games share are in common/. The
+# installer (tools/installer) builds a game from the same files.
 
 # opengp_game_dol(<out-var> <game-id> <expected-sha1> <display-name>)
 #
@@ -39,11 +47,59 @@ function(opengp_generated_code_options target)
   endif()
 endfunction()
 
+# opengp_toml_string(<out-var> <toml text> <key>): a top-level `key = "value"`.
+function(opengp_toml_string out_var text key)
+  string(REGEX MATCH "(^|\n)[ \t]*${key}[ \t]*=[ \t]*\"([^\"]*)\"" _ "${text}")
+  set(${out_var} "${CMAKE_MATCH_2}" PARENT_SCOPE)
+endfunction()
+
 # Hand-written code the games share, compiled into each game's executable
 # against that game's generated header.
 set(OPENGP_GAMES_COMMON
+  ${CMAKE_CURRENT_SOURCE_DIR}/common/main.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/common/arcade.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/common/sdk_hle.cpp)
 
-add_subdirectory(mkgp1)
-add_subdirectory(mkgp2)
+# opengp_game(<dir>): builds the game in <dir> if its main.dol is present.
+function(opengp_game dir)
+  set(src ${CMAKE_CURRENT_SOURCE_DIR}/${dir})
+  set(bin ${CMAKE_CURRENT_BINARY_DIR}/${dir})
+  file(READ ${src}/game.toml manifest)
+  opengp_toml_string(id "${manifest}" id)
+  opengp_toml_string(title "${manifest}" title)
+  opengp_toml_string(dol_sha1 "${manifest}" dol_sha1)
+  opengp_toml_string(executable "${manifest}" executable)
+  file(READ ${src}/recomp.toml recomp)
+  string(REGEX MATCH "file_count[ \t]*=[ \t]*([0-9]+)" _ "${recomp}")
+  set(file_count ${CMAKE_MATCH_1})
+
+  opengp_game_dol(dol ${id} ${dol_sha1} "${title}")
+  if(NOT dol)
+    return()
+  endif()
+
+  # The recompiled game code, as a library so the launcher and tools can share it.
+  add_library(${dir}_recomp STATIC)
+  opengp_recompile(${dir}_recomp
+    CONFIG ${src}/recomp.toml
+    FILE_COUNT ${file_count}
+    OUTPUT_DIR ${bin}/generated
+    DOL ${dol}
+    SYMBOLS ${src}/config/symbols.txt)
+  target_include_directories(${dir}_recomp PUBLIC ${bin}/generated)
+  target_link_libraries(${dir}_recomp PUBLIC ppc_runtime)
+  opengp_generated_code_options(${dir}_recomp)
+
+  add_executable(${executable} ${src}/patches.cpp ${OPENGP_GAMES_COMMON})
+  target_link_libraries(${executable} PRIVATE ${dir}_recomp opengp_app opengp_warnings)
+  target_include_directories(${executable} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/common)
+  target_compile_definitions(${executable} PRIVATE
+    OPENGP_GAME_ID="${id}"
+    OPENGP_GAME_TITLE="${title}"
+    OPENGP_DOL_SHA1="${dol_sha1}"
+    OPENGP_SYMBOLS="${src}/config/symbols.txt")
+  set_target_properties(${executable} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${bin})
+endfunction()
+
+opengp_game(mkgp2)  # Mario Kart Arcade GP 2 (USA, GGPE02): the main game
+opengp_game(mkgp1)  # Mario Kart Arcade GP (USA, GGPE01)

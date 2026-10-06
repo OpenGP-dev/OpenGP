@@ -4,6 +4,8 @@
 
 #include <cstring>
 
+#include "disc/sha1.h"
+
 namespace disc {
 
 namespace {
@@ -55,10 +57,20 @@ bool Image::read(u64 offset, void* dst, u64 size) const {
   if (!file_ || offset >= size_) return false;
   const u64 avail = size_ - offset;
   const u64 n = size < avail ? size : avail;
-  std::lock_guard lock(mutex_);
-  if (seek64(file_, offset) != 0) return false;
-  const bool ok = std::fread(dst, 1, n, file_) == n;
+  bool ok;
+  {
+    std::lock_guard lock(mutex_);
+    ok = seek64(file_, offset) == 0 && std::fread(dst, 1, n, file_) == n;
+  }
+  if (id_override_)
+    for (u64 i = offset; i < game_id_.size() && i < offset + n; ++i)
+      static_cast<u8*>(dst)[i - offset] = static_cast<u8>(game_id_[i]);
   return ok && n == size;
+}
+
+void Image::set_game_id(const std::string& id) {
+  game_id_ = id;
+  id_override_ = true;
 }
 
 u32 Image::read_u32(u64 offset) const {
@@ -79,6 +91,11 @@ bool Image::read_dol(std::vector<u8>* out) const {
   }
   out->resize(end);
   return read(dol, out->data(), end);
+}
+
+std::string dol_sha1(const Image& img) {
+  std::vector<u8> dol;
+  return img.read_dol(&dol) ? to_hex(sha1(dol.data(), dol.size())) : std::string();
 }
 
 }  // namespace disc

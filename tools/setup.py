@@ -3,9 +3,11 @@
 """Prepare the game files OpenGP builds from.
 
 For each disc image (default: every *.iso / *.gcm in ISO/ and private/), this
-reads the game ID, extracts sys/main.dol into orig/<ID>/sys/main.dol with
-decomp-toolkit, and checks its SHA-1 against the supported revisions. It
-downloads the pinned decomp-toolkit into build/tools/ if needed.
+reads the game ID, extracts sys/main.dol into orig/<ID>/sys/main.dol, and
+checks its SHA-1 against the supported revisions. An image whose header has a
+placeholder ID (some converted dumps say "RELSAB") is identified by its
+main.dol. It also downloads the pinned decomp-toolkit into build/tools/, for
+regenerating the symbol lists.
 
     python tools/setup.py [IMAGE ...]
 
@@ -17,9 +19,10 @@ from __future__ import annotations
 import hashlib
 import os
 import platform
+import shutil
+import ssl
 import stat
 import struct
-import subprocess
 import sys
 import urllib.request
 from pathlib import Path
@@ -34,6 +37,17 @@ GAMES = {
 }
 
 GC_MAGIC = 0xC2339F3D
+
+
+def download(url: str, dest) -> None:
+    """Downloads `url` to `dest`. Python from python.org on macOS comes without
+    CA certificates (until its "Install Certificates" script is run), so the
+    system's are loaded too."""
+    context = ssl.create_default_context()
+    if sys.platform == "darwin" and os.path.exists("/etc/ssl/cert.pem"):
+        context.load_verify_locations("/etc/ssl/cert.pem")
+    with urllib.request.urlopen(url, context=context) as response, open(dest, "wb") as out:
+        shutil.copyfileobj(response, out)
 
 
 def dtk_path() -> Path:
@@ -60,7 +74,7 @@ def ensure_dtk() -> Path:
     print(f"Downloading decomp-toolkit {DTK_VERSION} from {url}")
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".part")
-    urllib.request.urlretrieve(url, tmp)
+    download(url, tmp)
     tmp.replace(path)
     if os.name != "nt":
         path.chmod(path.stat().st_mode | stat.S_IEXEC)
@@ -75,12 +89,20 @@ def read_game_id(image: Path) -> str | None:
     return header[:6].decode("ascii", errors="replace")
 
 
-def sha1(path: Path) -> str:
-    h = hashlib.sha1()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
+def read_dol(image: Path) -> bytes:
+    """The executable (sys/main.dol): its offset is in the disc header, its size
+    follows from its section table."""
+    with image.open("rb") as f:
+        f.seek(0x420)
+        dol = struct.unpack(">I", f.read(4))[0]
+        f.seek(dol)
+        header = f.read(0x100)
+        offsets = struct.unpack(">18I", header[0:72])
+        sizes = struct.unpack(">18I", header[144:216])
+        end = max([0x100] + [o + s for o, s in zip(offsets, sizes) if s])
+        f.seek(dol)
+        return f.read(end)
+
 
 
 def find_images() -> list[Path]:
@@ -97,22 +119,29 @@ def main(argv: list[str]) -> int:
     if not images:
         print("No disc images found. Put them in ISO/ or private/, or pass paths. See docs/game-files.md.")
         return 1
-    dtk = ensure_dtk()
+    ensure_dtk()  # for regenerating the symbol lists (docs/game-files.md)
     ok = True
     for image in images:
         game_id = read_game_id(image)
         if game_id is None:
             print(f"{image.name}: not a GameCube/Triforce disc image, skipped")
             continue
+        dol = read_dol(image)
+        actual = hashlib.sha1(dol).hexdigest()
         name, expected = GAMES.get(game_id, (None, None))
         if name is None:
-            print(f"{image.name}: {game_id} is not a supported game, skipped")
-            continue
+            # Some converted dumps have a placeholder header ("RELSAB"): go by
+            # the executable instead.
+            found = [gid for gid, (_, sha) in GAMES.items() if sha == actual]
+            if not found:
+                print(f"{image.name}: {game_id} is not a supported game, skipped")
+                continue
+            print(f"{image.name}: its header says {game_id}, but it holds {found[0]}'s main.dol")
+            game_id = found[0]
+            name, expected = GAMES[game_id]
         out = ROOT / "orig" / game_id / "sys" / "main.dol"
         out.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run([str(dtk), "vfs", "cp", f"{image}:sys/main.dol", str(out)], check=True,
-                       stdout=subprocess.DEVNULL)
-        actual = sha1(out)
+        out.write_bytes(dol)
         if actual == expected:
             print(f"{name} [{game_id}]: orig/{game_id}/sys/main.dol OK")
         else:

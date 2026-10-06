@@ -76,6 +76,14 @@ class Overlay {
   virtual void draw(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass) = 0;
 };
 
+// A shader as SPIR-V (Vulkan) and, if built with it, the Metal Shading Language.
+struct ShaderCode {
+  const u32* spirv;
+  std::size_t spirv_size;
+  const unsigned char* msl;
+  std::size_t msl_size;
+};
+
 class Renderer {
  public:
   Renderer();
@@ -120,7 +128,7 @@ class Renderer {
   SDL_GPUGraphicsPipeline* tev_pipeline(gx::PipelineKey key);
   SDL_GPUGraphicsPipeline* clear_pipeline(bool color, bool alpha, bool depth);
   SDL_GPUSampler* sampler(u32 mode0, u32 mode1);
-  SDL_GPUShader* shader(const u32* code, std::size_t size, bool fragment, u32 samplers, u32 uniforms);
+  SDL_GPUShader* shader(const ShaderCode& code, bool fragment, u32 samplers, u32 uniforms);
   bool resize_efb(u32 width);
   bool upload(SDL_GPUCommandBuffer* cmd, const gx::Frame& frame);
   void begin_efb(SDL_GPUCommandBuffer* cmd);
@@ -137,6 +145,7 @@ class Renderer {
 
   SDL_Window* window_ = nullptr;
   SDL_GPUDevice* device_ = nullptr;
+  bool msl_ = false;  // the device takes MSL, not SPIR-V (Metal)
   Overlay* overlay_ = nullptr;
   u32 last_xfb_ = 0;  // texture handle of the last frame presented
   float last_aspect_ = 4.0f / 3.0f;

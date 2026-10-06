@@ -1,5 +1,12 @@
 # Playing
 
+## Installing
+
+- **From the installer package**: unpack it, put your disc images in its `ISO` folder and run
+  `OpenGP` (or drop an image on `OpenGP.exe`). It builds each game you have an image of, once;
+  see [packaging.md](packaging.md). The launchers then sit next to it.
+- **From source**: see [building.md](building.md) and [game-files.md](game-files.md).
+
 ## Starting a game
 
 Each game has its own launcher: `opengp-mkgp1` for Mario Kart Arcade GP and `opengp-mkgp2` for

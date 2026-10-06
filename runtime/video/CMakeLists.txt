@@ -2,8 +2,12 @@
 
 include(FetchContent)
 
-# SDL3: an installed package if there is one, else the pinned release.
-find_package(SDL3 3.2 CONFIG QUIET)
+# SDL3: an installed package if there is one, else the pinned release
+# (always for the installer package, which ships it as a static library).
+# GLOBAL: the input and audio libraries in runtime/ link it too.
+if(NOT OPENGP_PACKAGE)
+  find_package(SDL3 3.2 CONFIG QUIET GLOBAL)
+endif()
 if(NOT SDL3_FOUND)
   set(SDL_SHARED OFF CACHE BOOL "" FORCE)
   set(SDL_STATIC ON CACHE BOOL "" FORCE)
@@ -43,9 +47,29 @@ else()
   set(glslang_depends glslang-standalone)
 endif()
 
+# Metal (macOS): the shaders are also converted to the Metal Shading Language
+# with SPIRV-Cross, using the resource bindings SDL's Metal backend expects
+# (textures, samplers and buffers numbered by their binding).
+option(OPENGP_METAL_SHADERS "Also build the shaders as Metal Shading Language (SDL's Metal backend)" ${APPLE})
+if(OPENGP_METAL_SHADERS)
+  set(SPIRV_CROSS_CLI ON CACHE BOOL "" FORCE)
+  set(SPIRV_CROSS_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+  set(SPIRV_CROSS_SKIP_INSTALL ON CACHE BOOL "" FORCE)
+  set(SPIRV_CROSS_ENABLE_C_API OFF CACHE BOOL "" FORCE)  # the CLI needs the other backends
+  FetchContent_Declare(spirv_cross
+    URL https://github.com/KhronosGroup/SPIRV-Cross/archive/refs/tags/vulkan-sdk-1.4.357.0.tar.gz
+    URL_HASH SHA256=97c910326afdd44d794ce8561326fa675fd1958b27142f03295403044d639639
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+  FetchContent_MakeAvailable(spirv_cross)
+endif()
+
 # opengp_shader(<source> <header name> <array name> [glslang args...])
+#
+# SPIR-V in <header name>.h as `<array name>`; with OPENGP_METAL_SHADERS also
+# MSL in <header name>_msl.cpp as `<array name>Msl` (and `<array name>Msl_size`).
 set(shader_out ${CMAKE_CURRENT_BINARY_DIR}/shaders)
 set(shader_headers)
+set(shader_sources)
 function(opengp_shader source name array)
   set(out ${shader_out}/${name}.h)
   add_custom_command(
@@ -57,6 +81,25 @@ function(opengp_shader source name array)
     COMMENT "Compiling shader ${name}"
     VERBATIM)
   set(shader_headers ${shader_headers} ${out} PARENT_SCOPE)
+  if(OPENGP_METAL_SHADERS)
+    set(spv ${shader_out}/${name}.spv)
+    set(msl ${shader_out}/${name}.metal)
+    set(cpp ${shader_out}/${name}_msl.cpp)
+    add_custom_command(
+      OUTPUT ${cpp}
+      COMMAND ${CMAKE_COMMAND} -E make_directory ${shader_out}
+      COMMAND ${glslang_command} -V --target-env vulkan1.0 ${ARGN} -o ${spv}
+              ${CMAKE_CURRENT_SOURCE_DIR}/shaders/${source}
+      COMMAND $<TARGET_FILE:spirv-cross> ${spv} --msl --msl-version 20100 --msl-decoration-binding
+              --output ${msl}
+      COMMAND ${CMAKE_COMMAND} -DINPUT=${msl} -DOUTPUT=${cpp} -DNAME=${array}Msl
+              -P ${PROJECT_SOURCE_DIR}/cmake/embed.cmake
+      DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/${source} ${glslang_depends} spirv-cross
+              ${PROJECT_SOURCE_DIR}/cmake/embed.cmake
+      COMMENT "Converting shader ${name} to Metal"
+      VERBATIM)
+    set(shader_sources ${shader_sources} ${cpp} PARENT_SCOPE)
+  endif()
 endfunction()
 
 opengp_shader(tev.vert tev_vert kTevVert)
@@ -68,8 +111,11 @@ opengp_shader(color.frag color_frag kColorFrag)
 opengp_shader(blit.frag blit_frag kBlitFrag)
 opengp_shader(sample.frag sample_frag kSampleFrag)
 
-add_library(opengp_video STATIC renderer.cpp png.cpp ${shader_headers})
+add_library(opengp_video STATIC renderer.cpp png.cpp ${shader_headers} ${shader_sources})
 target_include_directories(opengp_video PRIVATE ${shader_out})
+if(OPENGP_METAL_SHADERS)
+  target_compile_definitions(opengp_video PRIVATE OPENGP_METAL_SHADERS)
+endif()
 target_link_libraries(opengp_video
   PUBLIC opengp_machine SDL3::SDL3
   PRIVATE opengp_warnings)

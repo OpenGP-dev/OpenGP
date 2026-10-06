@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.2.0 (2026-09-26)
+
+This release adds installer packages for Windows, Linux and macOS. You download a package and put
+your disc images in it, and its installer builds the games on your computer. The packages contain
+no game code or data.
+
+| Package | Compiler the installer uses |
+|---------|-----------------------------|
+| `OpenGP-0.2.0-windows-x64.zip` | llvm-mingw, downloaded once, about 190 MB |
+| `OpenGP-0.2.0-linux-x64.tar.gz` | the system's `g++` or `clang++`, GCC 12 or Clang 16 or later |
+| `OpenGP-0.2.0-macos-arm64.tar.gz` | Apple's Clang from `xcode-select --install`, on Apple Silicon with macOS 13 or later |
+
+[docs/packaging.md](docs/packaging.md) explains how the packages work. The games have been played
+from the Windows and macOS packages. CI builds and tests the Linux package, but nobody has played
+from it yet.
+
+- The installer package holds the runtime and the recompiler, already built, and an installer
+  named `OpenGP`. The installer builds each game from your own disc image. You can install either
+  game on its own, and running the installer again after an update rebuilds them.
+- OpenGP runs on macOS with Apple Silicon. The renderer uses Metal, so MoltenVK is not needed. The
+  build converts the shaders to the Metal Shading Language, and the game's threads ask macOS for
+  its performance cores.
+- Some converted dumps have a placeholder header with the ID `RELSAB`. OpenGP now recognises
+  these images by their `main.dol`, so they work without being patched.
+- GCC 12 at `-O3` could drop the rounding to single precision from paired-single results in
+  recompiled code. `fp::keep_single` stops it.
+- A packaged game keeps `user/` next to its executable and remembers the image it was built from
+  in `user/images.toml`.
+- Both games share one launcher `main()`. Each game's ID, title and supported `main.dol` are in its
+  `game.toml`.
+- `--version` prints the version. `OPENGP_LOG_INTERP=1` lists code that falls back to the
+  interpreter. Neither game has any now, because the recompiler handles calls into the middle of
+  functions.
+
+Still missing are the NamCam2 camera, linked cabinets, which are next in milestone 10, and signed
+macOS packages. Until the packages are signed, open a macOS package once with right-click and
+Open, as [docs/packaging.md](docs/packaging.md) describes.
+
 ## 0.1.0 (2026-09-26)
 
 The first release: both Mario Kart Arcade GP games are playable from start to finish.

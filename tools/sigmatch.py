@@ -20,12 +20,26 @@ The database is downloaded from Dolphin's repository into build/tools/ if needed
 from __future__ import annotations
 
 import argparse
+import os
 import re
+import shutil
+import ssl
 import struct
 import sys
 import urllib.request
 from collections import defaultdict
 from pathlib import Path
+
+
+def download(url: str, dest) -> None:
+    """Downloads `url` to `dest`. Python from python.org on macOS comes without
+    CA certificates (until its "Install Certificates" script is run), so the
+    system's are loaded too."""
+    context = ssl.create_default_context()
+    if sys.platform == "darwin" and os.path.exists("/etc/ssl/cert.pem"):
+        context.load_verify_locations("/etc/ssl/cert.pem")
+    with urllib.request.urlopen(url, context=context) as response, open(dest, "wb") as out:
+        shutil.copyfileobj(response, out)
 
 ROOT = Path(__file__).resolve().parent.parent
 DSY_URL = "https://raw.githubusercontent.com/dolphin-emu/dolphin/master/Data/Sys/totaldb.dsy"
@@ -104,7 +118,7 @@ def main() -> int:
     if not args.dsy.exists():
         args.dsy.parent.mkdir(parents=True, exist_ok=True)
         print(f"Downloading {DSY_URL}")
-        urllib.request.urlretrieve(DSY_URL, args.dsy)
+        download(DSY_URL, args.dsy)
     db = load_dsy(args.dsy)
     dol = Dol(args.dol)
 

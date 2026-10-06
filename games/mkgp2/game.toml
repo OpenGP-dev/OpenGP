@@ -1,0 +1,6 @@
+# Mario Kart Arcade GP 2: what the build and the installer need to know about
+# the game. The SHA-1 is of main.dol in the supported release's disc image.
+id = "GGPE02"
+title = "Mario Kart Arcade GP 2"
+dol_sha1 = "2969c177219dda71ad36b41575bede7ad4637f96"
+executable = "opengp-mkgp2"
