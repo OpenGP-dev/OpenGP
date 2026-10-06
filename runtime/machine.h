@@ -60,6 +60,9 @@ class Machine {
   // Opens the disc image, sizes RAM from its bi2.bin, maps the hardware and
   // runs the boot ROM emulation (apploader). Fills `boot` on success.
   bool boot(const std::string& image_path, os::BootResult* boot, std::string* error);
+  // The game's ID, when the image's header does not have it (see
+  // disc::Image::set_game_id). Before boot().
+  void set_game_id(const std::string& id) { game_id_ = id; }
 
   // Registers the recompiled code (and its instruction patches).
   void install(const ppc::RecompiledModule& module);
@@ -88,6 +91,7 @@ class Machine {
   std::unique_ptr<os::ThreadManager> threads_;
   ppc::Context ctx_{};
   u32 entry_ = 0;
+  std::string game_id_;
   std::string user_dir_ = "user";
   std::shared_ptr<triforce::CardFolder> cards_;
   mutable std::mutex controls_mutex_;

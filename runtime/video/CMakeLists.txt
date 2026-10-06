@@ -4,8 +4,9 @@ include(FetchContent)
 
 # SDL3: an installed package if there is one, else the pinned release
 # (always for the installer package, which ships it as a static library).
+# GLOBAL: the input and audio libraries in runtime/ link it too.
 if(NOT OPENGP_PACKAGE)
-  find_package(SDL3 3.2 CONFIG QUIET)
+  find_package(SDL3 3.2 CONFIG QUIET GLOBAL)
 endif()
 if(NOT SDL3_FOUND)
   set(SDL_SHARED OFF CACHE BOOL "" FORCE)

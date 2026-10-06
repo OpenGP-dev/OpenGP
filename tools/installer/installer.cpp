@@ -171,6 +171,12 @@ const GameInfo* identify_image(const Package& package, const std::string& image)
   if (!img.open(image, nullptr)) return nullptr;
   for (const GameInfo& g : package.games)
     if (g.id == img.game_id()) return &g;
+  // A placeholder header (some converted dumps say "RELSAB"): go by the executable.
+  std::vector<gekko::u8> dol;
+  if (!img.read_dol(&dol)) return nullptr;
+  const std::string sha1 = disc::to_hex(disc::sha1(dol.data(), dol.size()));
+  for (const GameInfo& g : package.games)
+    if (g.dol_sha1 == sha1) return &g;
   return nullptr;
 }
 
@@ -237,13 +243,14 @@ bool install_game(const Package& package, const GameInfo& game, const std::strin
   disc::Image img;
   std::string err;
   if (!img.open(image, &err)) return fail(err);
-  if (img.game_id() != game.id) return fail(image + " is " + img.game_id() + ", not " + game.id);
   std::vector<gekko::u8> dol;
   if (!img.read_dol(&dol)) return fail(image + ": cannot read its main.dol");
   const std::string sha1 = disc::to_hex(disc::sha1(dol.data(), dol.size()));
   if (sha1 != game.dol_sha1)
     return fail(image + ": its main.dol (SHA-1 " + sha1 + ") is not the supported release of " + game.title +
                 " (SHA-1 " + game.dol_sha1 + ")");
+  if (img.game_id() != game.id)
+    report.line("Its header says " + img.game_id() + ", but it holds " + game.id + "'s executable: fine.");
   const fs::path dol_path = work / "main.dol";
   if (!os::write_file_atomically(utf8(dol_path), dol.data(), dol.size())) return fail("cannot write " + utf8(dol_path));
 
