@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <thread>
 
+#include "os/thread_priority.h"
 #include "ppc/dispatch.h"
 #include "ppc/hooks.h"
 #include "ppc/memory.h"
@@ -204,6 +205,7 @@ HostThread* ThreadManager::spawn(ppc::Context& from, u32 context) {
 }
 
 void ThreadManager::thread_main(HostThread* t, u32 entry) {
+  set_interactive_thread();
   t_self = t;
   {
     std::unique_lock lock(mutex_);

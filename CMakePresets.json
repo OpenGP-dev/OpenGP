@@ -54,6 +54,20 @@
         "OPENGP_PACKAGE": "ON",
         "OPENGP_BUILD_GAMES": "OFF"
       }
+    },
+    {
+      "name": "package-macos",
+      "displayName": "Installer package, macOS (Apple Silicon)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "installDir": "${sourceDir}/out/OpenGP-macos-arm64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "13.0",
+        "OPENGP_PACKAGE": "ON",
+        "OPENGP_BUILD_GAMES": "OFF"
+      }
     }
   ],
   "buildPresets": [
@@ -76,6 +90,10 @@
     {
       "name": "package-linux",
       "configurePreset": "package-linux"
+    },
+    {
+      "name": "package-macos",
+      "configurePreset": "package-macos"
     }
   ],
   "testPresets": [
@@ -110,6 +128,13 @@
     {
       "name": "package-linux",
       "configurePreset": "package-linux",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "package-macos",
+      "configurePreset": "package-macos",
       "output": {
         "outputOnFailure": true
       }

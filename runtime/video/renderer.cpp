@@ -21,6 +21,29 @@
 #include "tev_frag_early.h"
 #include "tev_vert.h"
 
+// The same shaders in the Metal Shading Language (see OPENGP_METAL_SHADERS).
+#ifdef OPENGP_METAL_SHADERS
+extern const unsigned char kTevVertMsl[];
+extern const std::size_t kTevVertMsl_size;
+extern const unsigned char kTevFragMsl[];
+extern const std::size_t kTevFragMsl_size;
+extern const unsigned char kTevFragEarlyMsl[];
+extern const std::size_t kTevFragEarlyMsl_size;
+extern const unsigned char kFullscreenVertMsl[];
+extern const std::size_t kFullscreenVertMsl_size;
+extern const unsigned char kCopyFragMsl[];
+extern const std::size_t kCopyFragMsl_size;
+extern const unsigned char kColorFragMsl[];
+extern const std::size_t kColorFragMsl_size;
+extern const unsigned char kBlitFragMsl[];
+extern const std::size_t kBlitFragMsl_size;
+extern const unsigned char kSampleFragMsl[];
+extern const std::size_t kSampleFragMsl_size;
+#define OPENGP_SHADER(name) ShaderCode{name, sizeof(name), name##Msl, name##Msl_size}
+#else
+#define OPENGP_SHADER(name) ShaderCode{name, sizeof(name), nullptr, 0}
+#endif
+
 namespace video {
 
 namespace {
@@ -113,12 +136,19 @@ Renderer::~Renderer() {
 
 const char* Renderer::driver() const { return device_ ? SDL_GetGPUDeviceDriver(device_) : "none"; }
 
-SDL_GPUShader* Renderer::shader(const u32* code, std::size_t size, bool fragment, u32 samplers, u32 uniforms) {
+SDL_GPUShader* Renderer::shader(const ShaderCode& code, bool fragment, u32 samplers, u32 uniforms) {
   SDL_GPUShaderCreateInfo info{};
-  info.code = reinterpret_cast<const Uint8*>(code);
-  info.code_size = size;
-  info.entrypoint = "main";
-  info.format = SDL_GPU_SHADERFORMAT_SPIRV;
+  if (msl_) {
+    info.code = code.msl;
+    info.code_size = code.msl_size;
+    info.entrypoint = "main0";  // SPIRV-Cross's name for main
+    info.format = SDL_GPU_SHADERFORMAT_MSL;
+  } else {
+    info.code = reinterpret_cast<const Uint8*>(code.spirv);
+    info.code_size = code.spirv_size;
+    info.entrypoint = "main";
+    info.format = SDL_GPU_SHADERFORMAT_SPIRV;
+  }
   info.stage = fragment ? SDL_GPU_SHADERSTAGE_FRAGMENT : SDL_GPU_SHADERSTAGE_VERTEX;
   info.num_samplers = samplers;
   info.num_uniform_buffers = uniforms;
@@ -128,11 +158,18 @@ SDL_GPUShader* Renderer::shader(const u32* code, std::size_t size, bool fragment
 bool Renderer::init(SDL_Window* window, u32 scale, std::string* error) {
   const char* debug_env = std::getenv("OPENGP_GPU_DEBUG");
   const bool debug = debug_env && *debug_env && *debug_env != '0';
-  device_ = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, debug, nullptr);
+  // Vulkan (SPIR-V), or Metal (MSL) on macOS: SDL picks the first backend
+  // that takes one of the formats (Metal before Vulkan).
+  SDL_GPUShaderFormat formats = SDL_GPU_SHADERFORMAT_SPIRV;
+#ifdef OPENGP_METAL_SHADERS
+  formats |= SDL_GPU_SHADERFORMAT_MSL;
+#endif
+  device_ = SDL_CreateGPUDevice(formats, debug, nullptr);
   if (!device_) {
-    *error = std::string("could not create a GPU device (Vulkan is required): ") + SDL_GetError();
+    *error = std::string("could not create a GPU device (Vulkan or Metal is required): ") + SDL_GetError();
     return false;
   }
+  msl_ = !(SDL_GetGPUShaderFormats(device_) & SDL_GPU_SHADERFORMAT_SPIRV);
   if (window) {
     if (!SDL_ClaimWindowForGPUDevice(device_, window)) {
       *error = std::string("could not use the window for rendering: ") + SDL_GetError();
@@ -159,14 +196,14 @@ bool Renderer::init(SDL_Window* window, u32 scale, std::string* error) {
     return false;
   }
 
-  tev_vs_ = shader(kTevVert, sizeof(kTevVert), false, 0, 0);
-  tev_fs_ = shader(kTevFrag, sizeof(kTevFrag), true, 8, 2);
-  tev_fs_early_ = shader(kTevFragEarly, sizeof(kTevFragEarly), true, 8, 2);
-  fullscreen_vs_ = shader(kFullscreenVert, sizeof(kFullscreenVert), false, 0, 1);
-  copy_fs_ = shader(kCopyFrag, sizeof(kCopyFrag), true, 1, 1);
-  color_fs_ = shader(kColorFrag, sizeof(kColorFrag), true, 0, 1);
-  blit_fs_ = shader(kBlitFrag, sizeof(kBlitFrag), true, 1, 0);
-  sample_fs_ = shader(kSampleFrag, sizeof(kSampleFrag), true, 1, 0);
+  tev_vs_ = shader(OPENGP_SHADER(kTevVert), false, 0, 0);
+  tev_fs_ = shader(OPENGP_SHADER(kTevFrag), true, 8, 2);
+  tev_fs_early_ = shader(OPENGP_SHADER(kTevFragEarly), true, 8, 2);
+  fullscreen_vs_ = shader(OPENGP_SHADER(kFullscreenVert), false, 0, 1);
+  copy_fs_ = shader(OPENGP_SHADER(kCopyFrag), true, 1, 1);
+  color_fs_ = shader(OPENGP_SHADER(kColorFrag), true, 0, 1);
+  blit_fs_ = shader(OPENGP_SHADER(kBlitFrag), true, 1, 0);
+  sample_fs_ = shader(OPENGP_SHADER(kSampleFrag), true, 1, 0);
   if (!tev_vs_ || !tev_fs_ || !tev_fs_early_ || !fullscreen_vs_ || !copy_fs_ || !color_fs_ || !blit_fs_ || !sample_fs_) {
     *error = std::string("could not create shaders: ") + SDL_GetError();
     return false;

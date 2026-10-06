@@ -90,6 +90,7 @@ bool load_package(const fs::path& home, Package* package, std::string* error) {
   p.libs = strings(build["libs"].node());
   p.system_libs = strings(build["system_libs"].node());
   p.executable_suffix = build["executable_suffix"].value_or(std::string());
+  p.link_group = build["link_group"].value_or(true);
   for (const std::string& dir : strings(t["games"].node())) {
     GameInfo g;
     g.dir = p.sdk / "games" / dir;
@@ -161,7 +162,11 @@ bool find_compiler(const Package& package, const std::string& requested, const R
   if (error) {
     *error = "no C++ compiler found (tried";
     for (const std::string& c : package.cxx_candidates) *error += " " + c;
+#ifdef __APPLE__
+    *error += "). Install Apple's command line tools: xcode-select --install";
+#else
     *error += "). Install GCC 12 or later, or Clang 16 or later (e.g. sudo apt install g++).";
+#endif
   }
   return false;
 }
@@ -322,9 +327,9 @@ bool install_game(const Package& package, const GameInfo& game, const std::strin
   std::vector<std::string> link = {cxx};
   link.insert(link.end(), objects.begin(), objects.end());
   link.insert(link.end(), package.link_flags.begin(), package.link_flags.end());
-  link.push_back("-Wl,--start-group");
+  if (package.link_group) link.push_back("-Wl,--start-group");
   for (const std::string& lib : package.libs) link.push_back(utf8(package.sdk / lib));
-  link.push_back("-Wl,--end-group");
+  if (package.link_group) link.push_back("-Wl,--end-group");
   link.insert(link.end(), package.system_libs.begin(), package.system_libs.end());
   link.insert(link.end(), {"-o", utf8(tmp)});
   if (const ProcessResult r = run_process(link); r.exit_code != 0) return fail("linking failed:\n" + r.output);

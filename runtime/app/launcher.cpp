@@ -30,6 +30,7 @@
 #include "os/crash.h"
 #include "os/profiler.h"
 #include "os/reboot.h"
+#include "os/thread_priority.h"
 #include "ppc/hooks.h"
 #include "ppc/trace.h"
 
@@ -527,6 +528,7 @@ int run(const Game& game, int argc, char** argv) {
     static video::FrameQueue queue;
     machine.gpu().set_output(&queue);
     std::thread([] {
+      os::set_interactive_thread();
       machine.run();
       std::fprintf(stderr, "[opengp] entry point returned\n");
     }).detach();

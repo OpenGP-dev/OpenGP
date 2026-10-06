@@ -6,7 +6,8 @@ the games is ever distributed (see [game-files.md](game-files.md) for why).
 
 ## Using it
 
-1. Unpack `OpenGP-<version>-windows-x64.zip` or `OpenGP-<version>-linux-x64.tar.gz` anywhere.
+1. Unpack `OpenGP-<version>-windows-x64.zip`, `OpenGP-<version>-linux-x64.tar.gz` or
+   `OpenGP-<version>-macos-arm64.tar.gz` anywhere.
 2. Put your images in its `ISO` folder (or anywhere, and give their paths to the installer).
 3. Run `OpenGP` (on Windows, double-click `OpenGP.exe`, or drop an image on it).
 
@@ -43,6 +44,15 @@ saves and screenshots in the package's `user/` folder.
   come with Windows 10 and later.
 - **Linux**: the system's C++ compiler (`c++`, `g++` or `clang++`): GCC 12 or later, or Clang 16
   or later (for example `sudo apt install g++`).
+- **macOS** (Apple Silicon, macOS 13 or later): Apple's Clang from the Xcode Command Line Tools
+  (`xcode-select --install`).
+
+### macOS: the first start
+
+The package is not signed by Apple (that needs a paid developer account), so macOS refuses to
+open the downloaded `OpenGP` until you allow it once: right-click it in Finder and choose
+**Open**, or run `xattr -dr com.apple.quarantine <package folder>` in Terminal. The games the
+installer builds on your Mac are yours and open normally.
 
 The runtime in the package is built with the same compiler and flags that the installer uses, so
 the two link together.
@@ -76,6 +86,14 @@ export OPENGP_LLVM_MINGW=/path/to/llvm-mingw-20260922-ucrt-x86_64   # PowerShell
 cmake --preset package-windows
 cmake --build --preset package-windows
 cmake --install build/package-windows        # -> out/OpenGP-windows-x64
+```
+
+**macOS** (Apple Silicon), with Apple's Clang:
+
+```sh
+cmake --preset package-macos
+cmake --build --preset package-macos
+cmake --install build/package-macos          # -> out/OpenGP-macos-arm64
 ```
 
 **Linux**, with GCC 12 (built on the oldest distribution to support, since the games are linked

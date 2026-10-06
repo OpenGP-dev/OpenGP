@@ -6,6 +6,13 @@
   runtime and recompiler prebuilt, and an installer (`OpenGP`) that builds each game on your
   machine from your own disc image, with a compiler it downloads once (Windows) or the system's
   (Linux). Either game can be installed on its own. No game code or data is in the package.
+- **macOS** (Apple Silicon): the renderer uses Metal (the shaders are converted to the Metal
+  Shading Language at build time, so MoltenVK is not needed), the game's threads ask for
+  performance cores, and there is an installer package for it.
+- Images with a placeholder header (ID `RELSAB`, from some converted dumps) are recognised by their
+  `main.dol` and work as they are.
+- Fixed: with GCC 12 at `-O3`, paired-single results in recompiled code could miss their rounding
+  to single precision.
 - Packaged games keep `user/` next to them and remember the image they were built from
   (`user/images.toml`).
 - Both games share one launcher `main()`; each game's ID, title and supported `main.dol` are in

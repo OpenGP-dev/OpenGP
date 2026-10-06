@@ -53,7 +53,7 @@ Details are in [docs/architecture.md](docs/architecture.md). Notes on the arcade
 
 ## Playing
 
-Download the installer package for Windows or Linux from the releases, unpack it, put your disc
+Download the installer package for Windows, Linux or macOS (Apple Silicon) from the releases, unpack it, put your disc
 images in its `ISO` folder and run `OpenGP`: it builds the games on your machine from your images
 (see [docs/packaging.md](docs/packaging.md)), then play with `opengp-mkgp2` or `opengp-mkgp1`
 ([docs/playing.md](docs/playing.md)).

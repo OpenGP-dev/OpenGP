@@ -42,6 +42,7 @@ add_library(opengp_machine STATIC
   os/printf.cpp
   os/profiler.cpp
   os/reboot.cpp
+  os/thread_priority.cpp
   os/threads.cpp
   triforce/baseboard.cpp
   triforce/card_folder.cpp

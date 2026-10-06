@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "os/thread_priority.h"
 #include "ppc/hooks.h"
 #include "ppc/memory.h"
 #include "ppc/trace.h"
@@ -244,6 +245,7 @@ void Hardware::cancel(EventId id) {
 }
 
 void Hardware::timer_loop() {
+  os::set_interactive_thread();
   std::unique_lock lock(mutex_);
   while (running_) {
     if (events_.empty()) {

@@ -42,6 +42,7 @@ struct Package {
   std::vector<std::string> cxx_candidates;
   std::vector<std::string> cxx_flags, link_flags, libs, system_libs;
   std::string executable_suffix;  // ".exe" on Windows
+  bool link_group = true;         // wrap the libraries in --start-group/--end-group (not Apple's linker)
   std::vector<GameInfo> games;    // the main game (GP 2) first
 };
 

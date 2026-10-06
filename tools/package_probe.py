@@ -72,8 +72,10 @@ def main() -> int:
             objects.append(str(obj))
         exe = work / ("probe" + build["executable_suffix"])
         libs = [str(sdk / lib) for lib in build["libs"]]
-        subprocess.run([cxx, *objects, *build["link_flags"], "-Wl,--start-group", *libs, "-Wl,--end-group",
-                        *build["system_libs"], "-o", str(exe)], check=True)
+        if build.get("link_group", True):
+            libs = ["-Wl,--start-group", *libs, "-Wl,--end-group"]
+        subprocess.run([cxx, *objects, *build["link_flags"], *libs, *build["system_libs"], "-o", str(exe)],
+                       check=True)
         out = subprocess.run([str(exe), "--version"], capture_output=True, text=True, check=True).stdout
         print(out.strip())
         if not out.startswith(f"OpenGP {config['version']}: Package probe"):

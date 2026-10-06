@@ -44,6 +44,20 @@ jobs:
       - name: Test
         run: ctest --preset default
 
+  macos:
+    name: macOS (Apple Clang)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Ninja
+        run: brew install ninja
+      - name: Configure
+        run: cmake --preset default
+      - name: Build
+        run: cmake --build --preset default
+      - name: Test
+        run: ctest --preset default
+
   windows:
     name: Windows (clang-cl)
     runs-on: windows-latest

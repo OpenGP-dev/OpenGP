@@ -38,12 +38,29 @@ exclude = [\"*/aarch64-w64-mingw32/*\", \"*/armv7-w64-mingw32/*\", \"*/i686-w64-
   set(system_libs -ldbghelp -lkernel32 -luser32 -lgdi32 -lwinmm -limm32 -lole32 -loleaut32 -lversion
                   -luuid -ladvapi32 -lsetupapi -lshell32 -ldinput8)
   set(executable_suffix .exe)
+  set(link_group true)
+elseif(APPLE)
+  # Apple's Clang, from the Xcode Command Line Tools; Apple Silicon only.
+  set(toolchain_section "")
+  set(cxx_candidates clang++ c++)
+  set(apple_flags -arch arm64 -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET})
+  list(APPEND cxx_flags ${apple_flags})
+  set(link_flags ${apple_flags})
+  set(system_libs)
+  foreach(framework Cocoa Carbon CoreFoundation Foundation CoreVideo CoreMedia IOKit ForceFeedback CoreAudio
+                    AudioToolbox AVFoundation GameController CoreHaptics Metal QuartzCore UniformTypeIdentifiers)
+    list(APPEND system_libs -framework ${framework})
+  endforeach()
+  list(APPEND system_libs -liconv)
+  set(executable_suffix "")
+  set(link_group false)  # Apple's linker finds symbols in any library order
 else()
   set(toolchain_section "")
   set(cxx_candidates c++ g++ clang++)
   set(link_flags -pthread)
   set(system_libs -ldl -lm -lrt)
   set(executable_suffix "")
+  set(link_group true)
 endif()
 
 function(toml_array out_var)
@@ -78,6 +95,7 @@ link_flags = ${link_flags_toml}
 libs = ${libs_toml}
 system_libs = ${system_libs_toml}
 executable_suffix = \"${executable_suffix}\"
+link_group = ${link_group}
 ")
 install(FILES ${CMAKE_BINARY_DIR}/package/package.toml DESTINATION sdk)
 

@@ -99,10 +99,34 @@ jobs:
           name: OpenGP-linux-x64
           path: OpenGP-*-linux-x64.tar.gz
 
+  macos:
+    name: macOS package
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Ninja
+        run: brew install ninja
+      - name: Build, test and lay out the package
+        run: |
+          cmake --preset package-macos
+          cmake --build --preset package-macos
+          ctest --preset package-macos
+          cmake --install build/package-macos
+          python tools/package_probe.py out/OpenGP-macos-arm64 build/package-macos --cxx clang++
+          version=$(sed -n 's/^project(OpenGP VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          tar -czf "OpenGP-$version-macos-arm64.tar.gz" -C out OpenGP-macos-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenGP-macos-arm64
+          path: OpenGP-*-macos-arm64.tar.gz
+
   release:
     name: Attach to the release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, linux]
+    needs: [windows, linux, macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
