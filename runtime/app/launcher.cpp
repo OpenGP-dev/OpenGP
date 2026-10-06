@@ -21,7 +21,6 @@
 #include "app/settings.h"
 #include "audio/wav.h"
 #include "disc/disc.h"
-#include "disc/sha1.h"
 #include "hw/dsp.h"
 #include "hw/vi.h"
 #include "input/script.h"
@@ -208,18 +207,11 @@ os::Reboot next_boot(const os::Reboot& requested) {
   return requested;
 }
 
-// The SHA-1 of an image's main.dol ("" if it cannot be read).
-std::string dol_sha1(const disc::Image& img) {
-  std::vector<u8> dol;
-  return img.read_dol(&dol) ? disc::to_hex(disc::sha1(dol.data(), dol.size())) : std::string();
-}
-
 // The game's image: the one it was installed from (user/images.toml), else
 // the first in ISO/ or private/ with its ID, else one holding its main.dol
 // under another ID (a placeholder header).
 std::string find_image(const Game& game, const fs::path& user_dir) {
-  const char* game_id = game.id;
-  if (std::string image = remembered_image(user_dir, game_id); !image.empty()) {
+  if (std::string image = remembered_image(user_dir, game.id); !image.empty()) {
     std::error_code ec;
     if (fs::is_regular_file(os::utf8_path(image), ec)) return image;
   }
@@ -233,14 +225,14 @@ std::string find_image(const Game& game, const fs::path& user_dir) {
       if (ext != ".iso" && ext != ".gcm" && ext != ".ISO" && ext != ".GCM") continue;
       disc::Image img;
       if (!img.open(entry.path().string(), nullptr)) continue;
-      if (img.game_id() == game_id) return entry.path().string();
+      if (img.game_id() == game.id) return entry.path().string();
       others.push_back(entry.path().string());
     }
   }
   if (game.dol_sha1) {
     for (const std::string& path : others) {
       disc::Image img;
-      if (img.open(path, nullptr) && dol_sha1(img) == game.dol_sha1) return path;
+      if (img.open(path, nullptr) && disc::dol_sha1(img) == game.dol_sha1) return path;
     }
   }
   return {};
@@ -256,13 +248,8 @@ bool check_image(const Game& game, const std::string& path) {
     std::fprintf(stderr, "%s\n", error.c_str());
     return false;
   }
-  if (!game.dol_sha1) {
-    if (img.game_id() == game.id) return true;
-    std::fprintf(stderr, "%s is %s, not %s (%s).\n", path.c_str(), img.game_id().c_str(), game.title, game.id);
-    return false;
-  }
-  std::string actual = dol_sha1(img);
-  if (actual == game.dol_sha1) {
+  const std::string actual = game.dol_sha1 ? disc::dol_sha1(img) : std::string();
+  if (game.dol_sha1 && actual == game.dol_sha1) {
     if (img.game_id() != game.id)
       std::fprintf(stderr, "[opengp] %s says it is %s, but holds %s's main.dol: using it as %s\n", path.c_str(),
                    img.game_id().c_str(), game.id, game.id);
@@ -272,11 +259,11 @@ bool check_image(const Game& game, const std::string& path) {
     std::fprintf(stderr, "%s is %s, not %s (%s).\n", path.c_str(), img.game_id().c_str(), game.title, game.id);
     return false;
   }
-  if (actual.empty()) actual = "unreadable";
+  if (!game.dol_sha1) return true;
   std::fprintf(stderr,
                "%s: its main.dol (SHA-1 %s) is not the release of %s this build supports (SHA-1 %s). "
                "See docs/game-files.md.\n",
-               path.c_str(), actual.c_str(), game.title, game.dol_sha1);
+               path.c_str(), actual.empty() ? "unreadable" : actual.c_str(), game.title, game.dol_sha1);
   return false;
 }
 

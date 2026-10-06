@@ -177,11 +177,9 @@ const GameInfo* identify_image(const Package& package, const std::string& image)
   for (const GameInfo& g : package.games)
     if (g.id == img.game_id()) return &g;
   // A placeholder header (some converted dumps say "RELSAB"): go by the executable.
-  std::vector<gekko::u8> dol;
-  if (!img.read_dol(&dol)) return nullptr;
-  const std::string sha1 = disc::to_hex(disc::sha1(dol.data(), dol.size()));
+  const std::string sha1 = disc::dol_sha1(img);
   for (const GameInfo& g : package.games)
-    if (g.dol_sha1 == sha1) return &g;
+    if (!sha1.empty() && g.dol_sha1 == sha1) return &g;
   return nullptr;
 }
 
@@ -271,9 +269,8 @@ bool install_game(const Package& package, const GameInfo& game, const std::strin
   if (!rdol.load(config.dol_path, &err) || !symbols.load(config.symbols_path, &err)) return fail(err);
   recomp::Program program;
   if (!program.build(rdol, &symbols, config, &err)) return fail(err);
-  recomp::GenerateStats stats;
-  if (!recomp::generate(program, config.output_directory, &stats, &err)) return fail(err);
-  fs::remove(dol_path, ec);  // not needed any more
+  if (!recomp::generate(program, config.output_directory, nullptr, &err)) return fail(err);
+  fs::remove(dol_path, ec);
 
   // 3. Compile: the hand-written sources first (quick, so problems show at once),
   // then the generated ones.

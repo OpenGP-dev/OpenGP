@@ -55,4 +55,7 @@ class Image {
   mutable std::mutex mutex_;
 };
 
+// The SHA-1 of the image's main.dol, in hex ("" if it cannot be read).
+std::string dol_sha1(const Image& img);
+
 }  // namespace disc

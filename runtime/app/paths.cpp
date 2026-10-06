@@ -17,8 +17,6 @@
 #include <windows.h>
 #elif defined(__APPLE__)
 #include <mach-o/dyld.h>
-#else
-#include <unistd.h>
 #endif
 
 namespace app {
