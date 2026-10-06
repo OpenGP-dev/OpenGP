@@ -1,61 +1,65 @@
 # The installer package
 
-OpenGP is distributed as an **installer package**: everything except the games. On the player's
-machine, the installer builds each game from the player's own disc image, so no code or data from
-the games is ever distributed (see [game-files.md](game-files.md) for why).
+OpenGP releases are installer packages. A package has everything except the games. Its installer
+builds each game on the player's computer from the player's own disc image, so no code or data
+from the games is ever distributed. [game-files.md](game-files.md) explains why that matters.
 
 ## Using it
 
 1. Unpack `OpenGP-<version>-windows-x64.zip`, `OpenGP-<version>-linux-x64.tar.gz` or
    `OpenGP-<version>-macos-arm64.tar.gz` anywhere.
-2. Put your images in its `ISO` folder (or anywhere, and give their paths to the installer).
-3. Run `OpenGP` (on Windows, double-click `OpenGP.exe`, or drop an image on it).
+2. Put your images in its `ISO` folder. Images elsewhere work too if you give their paths to the
+   installer.
+3. Run `OpenGP`. On Windows you can double-click `OpenGP.exe` or drop an image on it.
 
-For each game it finds an image of, the installer:
+For each game it finds an image of, the installer does four things:
 
-1. checks the image: the game ID, and the SHA-1 of its `main.dol` against the supported release;
-2. recompiles `main.dol` into C++ with the same recompiler the source build uses;
-3. compiles that and the game's hand-written code, and links it with the prebuilt runtime into
-   `opengp-mkgp2` / `opengp-mkgp1` next to it;
-4. remembers the image's path in `user/images.toml`, so the game finds it later.
+1. It checks the image's game ID, and the SHA-1 of its `main.dol` against the supported release.
+2. It recompiles `main.dol` into C++ with the same recompiler the source build uses.
+3. It compiles that C++ and the game's hand-written code, and links them with the prebuilt runtime
+   into `opengp-mkgp2` or `opengp-mkgp1` in the package folder.
+4. It records the image's path in `user/images.toml`, so the game finds the image later.
 
-This takes one to three minutes per game, once. Either game can be installed on its own: a
-missing image only skips that game. Running the installer again rebuilds only games that an
-earlier version of the package built (`--force` rebuilds them anyway), so after updating the
-package, run it again.
+Building a game takes one to three minutes, once. You can install either game on its own. If the
+installer finds no image for a game, it skips that game and builds the other.
+
+When you run the installer again, it rebuilds only the games that an earlier version of the
+package built. After updating the package, run it again. `--force` rebuilds every game.
 
 ```
 OpenGP [IMAGE...] [--force] [--jobs N] [--cxx COMPILER] [--keep-build]
 ```
 
-- `--jobs N`: compile N files at a time (default: one per CPU thread).
-- `--cxx COMPILER`: use this C++ compiler instead of the package's.
-- `--keep-build`: keep the generated C++ and objects in `build/<game ID>/` (by default they are
-  deleted once the game is built).
+- `--jobs N` compiles N files at a time. The default is one per CPU thread.
+- `--cxx COMPILER` uses this C++ compiler instead of the package's.
+- `--keep-build` keeps the generated C++ and the object files in `build/<game ID>/`. The installer
+  deletes them once the game is built otherwise.
 
-The games then run like a source build's (see [playing.md](playing.md)), with their settings,
-saves and screenshots in the package's `user/` folder.
+The games then run like a source build's games, which [playing.md](playing.md) describes. Their
+settings, saves and screenshots go in the package's `user/` folder.
 
 ## The compiler
 
-- **Windows**: the installer downloads [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) (Clang
-  for Windows, free to redistribute) on first use, about 190 MB, checks its SHA-256 and unpacks
-  the x86-64 part (about 480 MB) into `toolchain/`. It uses the copies of `curl` and `tar` that
-  come with Windows 10 and later.
-- **Linux**: the system's C++ compiler (`c++`, `g++` or `clang++`): GCC 12 or later, or Clang 16
-  or later (for example `sudo apt install g++`).
-- **macOS** (Apple Silicon, macOS 13 or later): Apple's Clang from the Xcode Command Line Tools
-  (`xcode-select --install`).
+**Windows.** On first use the installer downloads [llvm-mingw](https://github.com/mstorsjo/llvm-mingw),
+a build of Clang for Windows that anyone may redistribute. The download is about 190 MB. The
+installer checks its SHA-256 and unpacks the x86-64 part, about 480 MB, into `toolchain/`. It uses
+the `curl` and `tar` that come with Windows 10 and later.
 
-### macOS: the first start
+**Linux.** The installer uses the system's C++ compiler, `c++`, `g++` or `clang++`. It needs GCC 12
+or later, or Clang 16 or later. On Debian or Ubuntu, `sudo apt install g++` installs one.
 
-The package is not signed by Apple (that needs a paid developer account), so macOS refuses to
-open the downloaded `OpenGP` until you allow it once: right-click it in Finder and choose
-**Open**, or run `xattr -dr com.apple.quarantine <package folder>` in Terminal. The games the
-installer builds on your Mac are yours and open normally.
+**macOS.** The installer uses Apple's Clang from the Xcode Command Line Tools, which
+`xcode-select --install` installs. The package needs Apple Silicon and macOS 13 or later.
 
-The runtime in the package is built with the same compiler and flags that the installer uses, so
-the two link together.
+CI builds the runtime in each package with the same compiler and flags that the installer uses, so
+the game and the runtime link together.
+
+### Opening the package on macOS the first time
+
+Apple has not signed the package, because signing needs a paid Apple developer account. macOS
+refuses to open the downloaded `OpenGP` until you allow it once. Right-click it in Finder and
+choose **Open**, or run `xattr -dr com.apple.quarantine <package folder>` in Terminal. The games
+the installer builds on your Mac open normally.
 
 ## What is in it
 
@@ -63,23 +67,25 @@ the two link together.
 OpenGP[.exe]            the installer
 sdk/package.toml        the version, the pinned compiler, compile and link settings
 sdk/include/            the runtime's headers
-sdk/lib/                the runtime as static libraries (with SDL3 and Dear ImGui)
+sdk/lib/                the runtime as static libraries, with SDL3 and Dear ImGui
 sdk/games/<game>/       game.toml, recomp.toml, config/symbols.txt, patches.cpp
 sdk/games/common/       the launcher's main() and the code the games share
 ISO/                    for your images
 docs/, README.md, LICENSE, CHANGELOG.md
 ```
 
-After installing: `toolchain/` (Windows), `opengp-<game>[.exe]`, `user/`.
+After installing, the folder also holds the games, `opengp-<game>[.exe]`, and `user/`. On Windows
+it holds `toolchain/` too.
 
 ## Building the package
 
-The package is a CMake install of a build with `OPENGP_PACKAGE=ON` (see `cmake/package.cmake`).
-CI builds both (`.github/workflows/package.yml`), runs the tests, checks each package with
-`tools/package_probe.py` (which builds the test suite's recompiled fixture the way the installer
-builds a game), and attaches them to releases.
+A package is a CMake install of a build configured with `OPENGP_PACKAGE=ON`. `cmake/package.cmake`
+lays it out. The package workflow in `.github/workflows/package.yml` builds all three packages,
+runs the tests, and checks each package with `tools/package_probe.py`. The probe builds the test
+suite's recompiled fixture the way the installer builds a game. For a version tag, the workflow
+attaches the packages to the release.
 
-**Windows**, with the llvm-mingw release pinned in `cmake/package.cmake` unpacked somewhere:
+**Windows.** Unpack the llvm-mingw release that `cmake/package.cmake` pins, then run:
 
 ```sh
 export OPENGP_LLVM_MINGW=/path/to/llvm-mingw-20260922-ucrt-x86_64   # PowerShell: $env:OPENGP_LLVM_MINGW = ...
@@ -88,7 +94,7 @@ cmake --build --preset package-windows
 cmake --install build/package-windows        # -> out/OpenGP-windows-x64
 ```
 
-**macOS** (Apple Silicon), with Apple's Clang:
+**macOS.** On Apple Silicon, with Apple's Clang:
 
 ```sh
 cmake --preset package-macos
@@ -96,8 +102,8 @@ cmake --build --preset package-macos
 cmake --install build/package-macos          # -> out/OpenGP-macos-arm64
 ```
 
-**Linux**, with GCC 12 (built on the oldest distribution to support, since the games are linked
-against the player's system libraries):
+**Linux.** Build with GCC 12 on the oldest distribution the package supports. The installer links
+the games against the player's system libraries, so the runtime must not need newer ones.
 
 ```sh
 CC=gcc-12 CXX=g++-12 cmake --preset package-linux
@@ -105,12 +111,13 @@ cmake --build --preset package-linux
 cmake --install build/package-linux          # -> out/OpenGP-linux-x64
 ```
 
-A package build can be tried out directly: run `out/OpenGP-windows-x64/OpenGP.exe` with an image.
+To try a package build, run its installer, for example `out/OpenGP-windows-x64/OpenGP.exe`, with
+an image.
 
-Things to keep in step:
-- The llvm-mingw version and SHA-256 in `cmake/package.cmake` are both what the package's runtime
-  is built with and what its installer downloads.
-- `cxx_flags` in `cmake/package.cmake` must match the flags the generated code needs
-  (`opengp_guest_flags` in `CMakeLists.txt`).
-- The link libraries in `cmake/package.cmake` must cover what the runtime and SDL3 need; the
-  probe catches a missing one.
+Some settings must change together:
+- CI builds the runtime with the llvm-mingw release that `cmake/package.cmake` pins, and the
+  Windows installer downloads that same release. Change its version and SHA-256 together.
+- `cxx_flags` in `cmake/package.cmake` must match the flags the generated code needs, which
+  `opengp_guest_flags` in `CMakeLists.txt` sets.
+- The link libraries in `cmake/package.cmake` must cover what the runtime and SDL3 need. The
+  probe fails if one is missing.

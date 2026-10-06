@@ -2,37 +2,41 @@
 
 ## 0.2.0 (2026-09-26)
 
-Installer packages for Windows, Linux and macOS: download, add your disc images, and the
-installer builds the games on your machine. No game code or data is in the packages.
+This release adds installer packages for Windows, Linux and macOS. You download a package and put
+your disc images in it, and its installer builds the games on your computer. The packages contain
+no game code or data.
 
 | Package | Compiler the installer uses |
 |---------|-----------------------------|
-| `OpenGP-0.2.0-windows-x64.zip` | llvm-mingw, downloaded once (about 190 MB) |
-| `OpenGP-0.2.0-linux-x64.tar.gz` | the system's `g++` or `clang++` (GCC 12+ or Clang 16+) |
-| `OpenGP-0.2.0-macos-arm64.tar.gz` | Apple's Clang (`xcode-select --install`); Apple Silicon, macOS 13+ |
+| `OpenGP-0.2.0-windows-x64.zip` | llvm-mingw, downloaded once, about 190 MB |
+| `OpenGP-0.2.0-linux-x64.tar.gz` | the system's `g++` or `clang++`, GCC 12 or Clang 16 or later |
+| `OpenGP-0.2.0-macos-arm64.tar.gz` | Apple's Clang from `xcode-select --install`, on Apple Silicon with macOS 13 or later |
 
-See [docs/packaging.md](docs/packaging.md). Played on Windows and macOS; the Linux package is
-built and tested in CI.
+[docs/packaging.md](docs/packaging.md) explains how the packages work. The games have been played
+from the Windows and macOS packages. CI builds and tests the Linux package, but nobody has played
+from it yet.
 
-- **Installer package** ([docs/packaging.md](docs/packaging.md)): the runtime and recompiler
-  prebuilt, and an installer (`OpenGP`) that builds each game on your machine from your own disc
-  image. Either game can be installed on its own; running it again after an update rebuilds them.
-- **macOS** (Apple Silicon): the renderer uses Metal (the shaders are converted to the Metal
-  Shading Language at build time, so MoltenVK is not needed), the game's threads ask for
-  performance cores, and there is an installer package for it.
-- Images with a placeholder header (ID `RELSAB`, from some converted dumps) are recognised by their
-  `main.dol` and work as they are.
-- Fixed: with GCC 12 at `-O3`, paired-single results in recompiled code could miss their rounding
-  to single precision.
-- Packaged games keep `user/` next to them and remember the image they were built from
-  (`user/images.toml`).
-- Both games share one launcher `main()`; each game's ID, title and supported `main.dol` are in
-  its `game.toml`.
-- `--version`, and `OPENGP_LOG_INTERP=1` (code that falls back to the interpreter: none in either
-  game any more, after the recompiler learned calls into the middle of functions).
+- The installer package holds the runtime and the recompiler, already built, and an installer
+  named `OpenGP`. The installer builds each game from your own disc image. You can install either
+  game on its own, and running the installer again after an update rebuilds them.
+- OpenGP runs on macOS with Apple Silicon. The renderer uses Metal, so MoltenVK is not needed. The
+  build converts the shaders to the Metal Shading Language, and the game's threads ask macOS for
+  its performance cores.
+- Some converted dumps have a placeholder header with the ID `RELSAB`. OpenGP now recognises
+  these images by their `main.dol`, so they work without being patched.
+- GCC 12 at `-O3` could drop the rounding to single precision from paired-single results in
+  recompiled code. `fp::keep_single` stops it.
+- A packaged game keeps `user/` next to its executable and remembers the image it was built from
+  in `user/images.toml`.
+- Both games share one launcher `main()`. Each game's ID, title and supported `main.dol` are in its
+  `game.toml`.
+- `--version` prints the version. `OPENGP_LOG_INTERP=1` lists code that falls back to the
+  interpreter. Neither game has any now, because the recompiler handles calls into the middle of
+  functions.
 
-Not yet: the NamCam2 camera, linked cabinets (next: milestone 10), and signed macOS packages
-(open the package once with right-click, Open; see [docs/packaging.md](docs/packaging.md)).
+Still missing are the NamCam2 camera, linked cabinets, which are next in milestone 10, and signed
+macOS packages. Until the packages are signed, open a macOS package once with right-click and
+Open, as [docs/packaging.md](docs/packaging.md) describes.
 
 ## 0.1.0 (2026-09-26)
 
