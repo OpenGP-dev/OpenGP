@@ -1,11 +1,22 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-09-26)
 
-- **Installer package** for Windows and Linux ([docs/packaging.md](docs/packaging.md)): the
-  runtime and recompiler prebuilt, and an installer (`OpenGP`) that builds each game on your
-  machine from your own disc image, with a compiler it downloads once (Windows) or the system's
-  (Linux). Either game can be installed on its own. No game code or data is in the package.
+Installer packages for Windows, Linux and macOS: download, add your disc images, and the
+installer builds the games on your machine. No game code or data is in the packages.
+
+| Package | Compiler the installer uses |
+|---------|-----------------------------|
+| `OpenGP-0.2.0-windows-x64.zip` | llvm-mingw, downloaded once (about 190 MB) |
+| `OpenGP-0.2.0-linux-x64.tar.gz` | the system's `g++` or `clang++` (GCC 12+ or Clang 16+) |
+| `OpenGP-0.2.0-macos-arm64.tar.gz` | Apple's Clang (`xcode-select --install`); Apple Silicon, macOS 13+ |
+
+See [docs/packaging.md](docs/packaging.md). Played on Windows and macOS; the Linux package is
+built and tested in CI.
+
+- **Installer package** ([docs/packaging.md](docs/packaging.md)): the runtime and recompiler
+  prebuilt, and an installer (`OpenGP`) that builds each game on your machine from your own disc
+  image. Either game can be installed on its own; running it again after an update rebuilds them.
 - **macOS** (Apple Silicon): the renderer uses Metal (the shaders are converted to the Metal
   Shading Language at build time, so MoltenVK is not needed), the game's threads ask for
   performance cores, and there is an installer package for it.
@@ -17,6 +28,11 @@
   (`user/images.toml`).
 - Both games share one launcher `main()`; each game's ID, title and supported `main.dol` are in
   its `game.toml`.
+- `--version`, and `OPENGP_LOG_INTERP=1` (code that falls back to the interpreter: none in either
+  game any more, after the recompiler learned calls into the middle of functions).
+
+Not yet: the NamCam2 camera, linked cabinets (next: milestone 10), and signed macOS packages
+(open the package once with right-click, Open; see [docs/packaging.md](docs/packaging.md)).
 
 ## 0.1.0 (2026-09-26)
 

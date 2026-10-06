@@ -10,17 +10,18 @@ compiled together with a runtime that stands in for the Triforce hardware (GameC
 DSP, AM-Baseboard, AM-Mediaboard), so the game runs as a normal native program, with room for
 modern features such as higher resolutions, widescreen and remappable controls.
 
-> **Status: playable.** Milestones 1 to 8 are done. Mario Kart Arcade GP 2 (7,612 functions) and
+> **Status: playable.** Milestones 1 to 9 are done. Mario Kart Arcade GP 2 (7,612 functions) and
 > Mario Kart Arcade GP (7,504 functions) recompile, boot from their disc images through the
 > emulated Triforce hardware (media board, baseboard, JVS I/O, card reader) and play in a window or
-> fullscreen (Vulkan), in 4:3 or widescreen and at up to 8 times their resolution: insert a coin (or
+> fullscreen (Vulkan, or Metal on macOS), in 4:3 or widescreen and at up to 8 times their resolution: insert a coin (or
 > turn on free play), make a Mario Card, pick a character and cup, and race at 60 fps with the
 > keyboard, a gamepad or a steering wheel with force feedback, with the games' music and sound
 > effects (their DSP audio microcode is emulated). A menu (Esc) has the settings, the controls and
 > the Mario Cards; the games' own test menus work too. See [docs/playing.md](docs/playing.md) and
 > the [roadmap](#roadmap).
 
-The latest release is **0.1.0** (source only, see [CHANGELOG.md](CHANGELOG.md)).
+The latest release is **0.2.0**, with installer packages for Windows, Linux and macOS (see
+[CHANGELOG.md](CHANGELOG.md)).
 
 ## How it works
 
@@ -104,12 +105,12 @@ marked as such in the source. Vendored third-party code in `thirdparty/` keeps i
 | M6 | Audio: the DSP's AX microcode (driven by MusyX) at a high level, sound output (**done**) | yes |
 | M7 | Card saves, settings menu, resolution scaling, widescreen, fullscreen; the game's test menu (**done**) | yes |
 | M8 | Mario Kart Arcade GP (GGPE01): symbol map, the same runtime, free play, test menu (**done**) | yes |
-| M9 | Installer package for Windows and Linux: the prebuilt runtime and recompiler; on first launch it recompiles and builds the game from the player's own image with a redistributable compiler, so no game code is ever distributed | yes |
+| M9 | Installer packages for Windows, Linux and macOS (Apple Silicon, Metal renderer): the prebuilt runtime and recompiler; the installer recompiles and builds the games from the player's own images, so no game code is ever distributed (**done**, 0.2.0) | yes |
 | M10 | Linked cabinets: the media board's network (socket API on host sockets), several instances racing each other on one PC or a LAN | yes |
 | M11 | The NamCam2 camera from a webcam: player photos, on the media board's network from M10 | yes |
 | 1.0 | Release: the installer package with linked cabinets and the camera | yes |
 
-Until the installer package exists, releases are source only (see [CHANGELOG.md](CHANGELOG.md)).
+Releases from 0.2.0 on come with the installer packages (see [CHANGELOG.md](CHANGELOG.md)).
 
 ## Acknowledgements
 

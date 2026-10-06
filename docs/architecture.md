@@ -283,9 +283,10 @@ Rendering is split in two, with plain data (`gx::Frame`, `runtime/gx/frame.h`) i
     a later texture read there uses it for as long as the memory there is unchanged (copies never
     write guest memory). A copy to the XFB ends the frame.
 - **Renderer** (`video::Renderer`, on the main thread, which owns the window). It runs the
-  frames through SDL3's GPU API (Vulkan). The EFB is a colour and depth render target (640x528
-  times the internal resolution scale). `shaders/tev.frag` is the TEV ubershader, ported from
-  Dolphin's, with its integer arithmetic. The shaders are GLSL, compiled to SPIR-V at build time.
+  frames through SDL3's GPU API: Vulkan, or Metal on macOS. The EFB is a colour and depth render
+  target (640x528 times the internal resolution scale). `shaders/tev.frag` is the TEV ubershader,
+  ported from Dolphin's, with its integer arithmetic. The shaders are GLSL, compiled to SPIR-V at
+  build time and, for Metal, converted to the Metal Shading Language with SPIRV-Cross.
 
 A queue of at most two frames between the two paces the game if rendering falls behind.
 
@@ -339,6 +340,13 @@ turn free play on); `app::run` does the rest:
   apply at once; they are saved when the menu closes and at exit, except those set on the command
   line.
 
+### The installer package (`tools/installer/`)
+
+Releases ship everything but the games: the runtime as static libraries with its headers, the
+recompiler (inside the installer) and the games' own files. The installer checks the player's image,
+recompiles its `main.dol`, compiles the result with a C++ compiler (llvm-mingw on Windows, the
+system's on Linux and macOS) and links it with the runtime. See [packaging.md](packaging.md).
+
 ### Reboots (`runtime/os/reboot.h`)
 
 Games restart themselves with `OSResetSystem`, keeping a region of memory for the next boot (the
@@ -364,7 +372,6 @@ The main thread reads the player's devices once a frame and hands the result to 
 
 | Area | Plan |
 |------|------|
-| GPU | Remaining GX features as games need them (depth textures, z-freeze, destination alpha with blending, logic ops); Metal |
-| Packaging | A package that builds the game on the player's machine (M9): the runtime and recompiler prebuilt, plus a redistributable compiler (LLVM); first launch recompiles and links the game from the player's image. Nothing derived from the game is distributed |
+| GPU | Remaining GX features as games need them (depth textures, z-freeze, destination alpha with blending, logic ops) |
 | Network | The media board's socket API on host sockets, for linking cabinets (M10) |
 | Camera | The NamCam2 from a webcam (SDL3's camera API), served on the media board's network (M11) |
