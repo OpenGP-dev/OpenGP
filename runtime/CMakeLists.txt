@@ -72,6 +72,14 @@ target_link_libraries(opengp_machine
   PRIVATE opengp_warnings)
 if(WIN32)
   target_link_libraries(opengp_machine PRIVATE winmm dbghelp)
+else()
+  # Shift JIS text from the games (os/printf.h); iconv is part of glibc, and
+  # its own library on macOS.
+  find_package(Iconv)
+  if(Iconv_FOUND)
+    target_link_libraries(opengp_machine PRIVATE Iconv::Iconv)
+    target_compile_definitions(opengp_machine PRIVATE OPENGP_HAVE_ICONV)
+  endif()
 endif()
 
 if(OPENGP_BUILD_VIDEO)

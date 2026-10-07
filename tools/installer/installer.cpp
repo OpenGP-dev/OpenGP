@@ -275,8 +275,8 @@ bool install_game(const Package& package, const GameInfo& game, const std::strin
   // 3. Compile: the hand-written sources first (quick, so problems show at once),
   // then the generated ones.
   const fs::path common = package.sdk / "games" / "common";
-  std::vector<fs::path> sources = {common / "main.cpp", common / "arcade.cpp", common / "sdk_hle.cpp",
-                                   game.dir / "patches.cpp"};
+  std::vector<fs::path> sources = {common / "main.cpp", common / "arcade.cpp", common / "game_log.cpp",
+                                   common / "sdk_hle.cpp", game.dir / "patches.cpp"};
   std::vector<fs::path> generated;
   for (const auto& entry : fs::directory_iterator(work / "generated"))
     if (entry.path().extension() == ".cpp") generated.push_back(entry.path());

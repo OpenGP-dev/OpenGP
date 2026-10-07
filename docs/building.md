@@ -72,7 +72,7 @@ build/<preset>/games/mkgp2/opengp-mkgp2 [--iso PATH] [--user-dir PATH] [--timeou
                                         [--fullscreen | --windowed] [--aspect RATIO] [--scale N]
                                         [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]
                                         [--input SCRIPT] [--input-file PATH] [--free-play] [--test-menu]
-                                        [--no-audio] [--volume PERCENT] [--audio-dump PATH]
+                                        [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--game-log]
 ```
 
 `opengp-mkgp1` (Mario Kart Arcade GP, in `build/<preset>/games/mkgp1/`) takes the same options. `--version` prints the
@@ -107,6 +107,7 @@ options that change them do so for that run only.
 | `--no-audio` | No sound (there is none with `--headless` or `--no-video` either) |
 | `--volume PERCENT` | Sound volume, 0-100 (default 100) |
 | `--audio-dump PATH` | Also write the sound to a WAV file (works headless too) |
+| `--game-log` | Print the game's own debug messages (see [triforce.md](triforce.md#the-games-debug-messages-milestone-10)) |
 
 Files the machine writes (baseboard backup memory, media board settings, Mario Cards, the
 settings and controls, screenshots) go in `user/`, which is gitignored.

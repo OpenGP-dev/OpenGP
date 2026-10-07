@@ -53,8 +53,38 @@ Status replies the game expects:
 - Board serial
 - A "test hardware" command that answers in two phases
 
-Network sockets (`Socket`, `Bind`, `Connect`, ...) are used for linked cabinets. They will be
-stubbed first and connected to host sockets later.
+Network sockets (`Socket`, `Bind`, `Connect`, ...) are used by the camera and for linked
+cabinets. They are to be connected to host sockets (milestones 11 and 12). What the games do with
+them, from the mkgp2-decomp's names, checked against GGPE02 (GP 2's addresses):
+- The game's side is `ac*` (`acSocket`, `acConnect`, `acSend`, `acRecv`, `acSelect`,
+  `acSetTimeOuts`, ... at `0x80291xxx`), which sends the socket commands to the media board.
+- A cabinet's own address is `192.168.29.150` + (PCB ID - 1), set at start-up with
+  `acModifyMyIPaddr` and netmask `255.255.255.0` (`PcbIdToIpAndModify`, `0x80073954`). The PCB
+  ID is byte `0x21` of the settings block (`0x805986C0`). The other cabinets are at the same
+  addresses for their IDs.
+- A cabinet's camera is at `192.168.29.104` + (PCB ID - 1) (`PcbIdToIpString`, `0x80073B24`;
+  both lists are at `0x8040D910`).
+- The link between cabinets is `TCPConn_*`, `PcbConn_*`, `PCBComm_*`, `PcbSync_*` and
+  `CommBroadcast_*` (each kart's lap and position); the test menu's network pages are
+  `NetDiag_*`.
+- The game gives each connection attempt a timeout (6 seconds in GP 2, per the decomp's author).
+  Dolphin's media board blocks for that long, which freezes the whole game; naari3's Dolphin
+  branch `feature/ammb-async-connect` (not merged) makes connect, send, receive and accept
+  non-blocking.
+
+With `--game-log`, the games print their network library's messages, which name each media
+board result (`AC_MEDIACMD_ERR_CANNOT_OPEN`, ...) and describe it in Japanese.
+
+## NamCam2 camera
+
+- Takes the player's photo, which is shown on their character.
+- An HTTP server on the media board's network, at the camera address above. For a photo
+  `NamCam_GetImageHandle` (`0x800487F4`) connects to its port 80, sends `GET /img.jpg HTTP/1.0`
+  and reads the reply into a 512 KiB buffer. The game has its own JPEG decoder (code around
+  `0x80298578` uses JPEG's zigzag table at `0x803F2290`). So a webcam can stand in for the
+  camera by answering that request with a JPEG (milestone 11).
+- `CameraChecker_*` (from `0x8008B990`) is the start-up check. For now it is disabled (see
+  "What it shows" below).
 
 ## AM-Baseboard
 
@@ -94,12 +124,6 @@ See `Triforce/MarioKartGP.cpp` in Dolphin.
 
 - Stores player progress.
 - Emulated as one save file per card (Dolphin: `HW/MagCard/`).
-
-### NamCam2 camera
-
-- Takes the player's photo, which is shown on their character.
-- It hangs off the Namco JVS I/O board.
-- First version: the check is disabled. Later: a webcam feed.
 
 ## Known game-side checks (GGPE02)
 
@@ -260,6 +284,19 @@ With a coin, start and the menus, the game goes from attract mode into a race, a
   reboots the same way; on the cabinet these reboots go through SegaBoot's system menu, which
   then starts the game. OpenGP emulates a reboot by restarting the process (`os/reboot.h`); a
   reboot from a boot that kept memory (the test menu) boots afresh.
+
+### The games' debug messages (milestone 10)
+
+- `DebugPrintf` (`0x8002CE8C`; GP `0x80030760`) has about 570 calls in GP 2: scene changes, the
+  start-up checks, the camera, the link, the card reader and printer, memory use. It prints
+  through `OSReport` only when byte `0x2A` of the settings block is set, which start-up clears.
+- The SDK's `OSPanic`, which reports failed checks (`DVDRead`, `VIConfigure`, `__assert`, ...),
+  is an empty function in both games (`OSPanic_Stub`, `0x8002CDEC`; GP `0x800306C0`), so they
+  carry on after one.
+- `--game-log` (`games/common/game_log.cpp`) replaces both to print `[game]` lines, converted
+  from Shift JIS. GP 2's start-up prints about 40 lines (the cabinet's address, the wheel's
+  calibration, the sound and card printer set-up); its attract mode and menus print almost
+  nothing. GP prints its memory use at each scene change.
 
 ## Mario Kart Arcade GP (GGPE01): what milestone 8 found
 

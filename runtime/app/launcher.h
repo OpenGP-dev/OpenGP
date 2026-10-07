@@ -10,7 +10,7 @@
 //                 [--fullscreen | --windowed] [--aspect RATIO] [--scale N]
 //                 [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]
 //                 [--input SCRIPT] [--input-file PATH] [--free-play] [--test-menu]
-//                 [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--version]
+//                 [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--game-log] [--version]
 //
 // Options override user/settings.toml for one run (see docs/building.md).
 #pragma once
@@ -39,6 +39,8 @@ struct Game {
   // The reboot into the game's test menu (the operator's settings), if the
   // menu offers it.
   std::function<os::Reboot()> test_menu;
+  // Prints the game's own debug messages (--game-log), before the game runs.
+  std::function<void(bool on)> set_game_log;
 };
 
 // Runs the game; returns the process exit code.

@@ -27,6 +27,7 @@
 #include "machine.h"
 #include "os/atomic_file.h"
 #include "os/crash.h"
+#include "os/printf.h"
 #include "os/profiler.h"
 #include "os/reboot.h"
 #include "os/thread_priority.h"
@@ -55,7 +56,7 @@ constexpr const char* kUsage =
     "          [--fullscreen | --windowed] [--aspect auto|4:3|16:9|16:10|21:9] [--scale N]\n"
     "          [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]\n"
     "          [--input SCRIPT] [--input-file PATH] [--free-play] [--test-menu]\n"
-    "          [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--version]\n";
+    "          [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--game-log] [--version]\n";
 
 struct Options {
   std::vector<std::string> args;  // as given, for restarts (without --reboot and --frame-offset)
@@ -66,6 +67,7 @@ struct Options {
   fs::path user_dir;
   int timeout_s = -1, status_s = 5;
   bool headless = false, use_video = true, use_audio = true;
+  bool game_log = false;  // print the game's debug messages
   std::set<u64> screenshots;
   u64 screenshot_every = 0;
   input::Script script;
@@ -111,6 +113,7 @@ int parse_options(int argc, char** argv, Options& o) {
     else if (a == "--free-play") o.free_play = true;
     else if (a == "--audio-dump" && has_value) o.audio_dump = argv[++i];
     else if (a == "--no-audio") o.use_audio = false;
+    else if (a == "--game-log") o.game_log = true;
     else if (a == "--volume" && has_value) o.volume = std::clamp(std::atoi(argv[++i]), 0, 100);
     else if (a == "--aspect" && has_value) {
       AspectRatio aspect;
@@ -312,6 +315,7 @@ int run(const Game& game, int argc, char** argv) {
       return 0;
     }
   }
+  os::use_utf8_console();
   Options o;
   if (const int code = parse_options(argc, argv, o)) return code;
 #ifndef OPENGP_VIDEO
@@ -378,6 +382,7 @@ int run(const Game& game, int argc, char** argv) {
   machine.install(*game.module);
   machine.cards().hold(settings.card);
   if (game.set_free_play) game.set_free_play(machine.base(), settings.free_play);
+  if (game.set_game_log) game.set_game_log(o.game_log);
   machine.gpu().frontend().set_widescreen(widescreen_side(settings.aspect, 0, 0));
 
   static audio::WavWriter wav;

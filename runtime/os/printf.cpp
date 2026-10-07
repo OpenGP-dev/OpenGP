@@ -2,11 +2,20 @@
 
 #include "os/printf.h"
 
+#include <algorithm>
 #include <bit>
 #include <cstdio>
 #include <cstring>
 
 #include "ppc/memory.h"
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#elif defined(OPENGP_HAVE_ICONV)
+#include <iconv.h>
+#endif
 
 namespace os {
 
@@ -106,6 +115,45 @@ std::string format_guest(const ppc::Context& ctx, const u8* base, u32 fmt_addr, 
     out += buf;
   }
   return out;
+}
+
+std::string sjis_to_utf8(const std::string& text) {
+  if (std::all_of(text.begin(), text.end(), [](char ch) { return static_cast<unsigned char>(ch) < 0x80; }))
+    return text;
+#ifdef _WIN32
+  // Code page 932 is Microsoft's Shift JIS.
+  const int size = static_cast<int>(text.size());
+  const int wide = MultiByteToWideChar(932, MB_ERR_INVALID_CHARS, text.data(), size, nullptr, 0);
+  if (wide <= 0) return text;
+  std::wstring w(static_cast<std::size_t>(wide), L'\0');
+  MultiByteToWideChar(932, MB_ERR_INVALID_CHARS, text.data(), size, w.data(), wide);
+  const int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), wide, nullptr, 0, nullptr, nullptr);
+  std::string out(static_cast<std::size_t>(n), '\0');
+  WideCharToMultiByte(CP_UTF8, 0, w.data(), wide, out.data(), n, nullptr, nullptr);
+  return out;
+#elif defined(OPENGP_HAVE_ICONV)
+  iconv_t cd = iconv_open("UTF-8", "CP932");
+  if (cd == reinterpret_cast<iconv_t>(-1)) return text;
+  std::string in = text;
+  // A byte of Shift JIS (half-width katakana) is 3 bytes of UTF-8.
+  std::string out(text.size() * 3, '\0');
+  char* src = in.data();
+  char* dst = out.data();
+  std::size_t src_left = in.size(), dst_left = out.size();
+  const bool ok = iconv(cd, &src, &src_left, &dst, &dst_left) != static_cast<std::size_t>(-1);
+  iconv_close(cd);
+  if (!ok) return text;
+  out.resize(out.size() - dst_left);
+  return out;
+#else
+  return text;
+#endif
+}
+
+void use_utf8_console() {
+#ifdef _WIN32
+  SetConsoleOutputCP(CP_UTF8);
+#endif
 }
 
 }  // namespace os

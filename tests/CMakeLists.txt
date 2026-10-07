@@ -50,6 +50,10 @@ add_executable(test_disc test_disc.cpp)
 target_link_libraries(test_disc PRIVATE opengp_machine doctest opengp_warnings)
 add_test(NAME disc COMMAND test_disc)
 
+add_executable(test_text test_text.cpp)
+target_link_libraries(test_text PRIVATE opengp_machine doctest opengp_warnings)
+add_test(NAME text COMMAND test_text)
+
 add_executable(test_settings test_settings.cpp)
 target_link_libraries(test_settings PRIVATE opengp_settings doctest opengp_warnings)
 add_test(NAME settings COMMAND test_settings)
