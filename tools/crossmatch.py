@@ -12,7 +12,10 @@ functions of the first game are in the second.
     python tools/crossmatch.py A.dol A_symbols.txt B.dol B_symbols.txt [ADDRESS ...]
 
 With addresses (functions of A, in hex), prints each one's matches in B.
-Without, prints how many functions match one to one.
+Without, prints how many functions match one to one. With --apply, gives
+A's names to B's functions that match one to one and still have generated
+names (fn_XXXXXXXX, dtor_XXXXXXXX), when B has no symbol of that name yet. An
+address of A at the end of a name becomes B's (or is dropped).
 
     python tools/crossmatch.py orig/GGPE02/sys/main.dol games/mkgp2/config/symbols.txt \\
                                orig/GGPE01/sys/main.dol games/mkgp1/config/symbols.txt 80289B54
@@ -26,6 +29,9 @@ import sys
 from collections import defaultdict
 
 SYMBOL = re.compile(r"^(\S+) = \.\w+:0x([0-9A-Fa-f]+); // type:function size:0x([0-9A-Fa-f]+)")
+SYMBOL_LINE = re.compile(r'^(?P<name>"[^"]*"|\S+) = (?P<sec>[^:;\s]+):0x(?P<addr>[0-9A-Fa-f]+);(?P<rest>.*)$')
+GENERATED = re.compile(r"^(fn|dtor)_[0-9A-F]{8}$")
+ADDRESS_SUFFIX = re.compile(r"^(?P<base>\w+?)_(?P<hex>[0-9A-F]{8})$")
 
 
 class Dol:
@@ -78,7 +84,40 @@ def index(dol: Dol, functions: list[tuple[int, int, str]]):
     return by_key, key_of
 
 
+def apply_names(by_key_a, by_key_b, symbols_b: str) -> None:
+    pairs = [(v[0], by_key_b[k][0]) for k, v in by_key_a.items() if len(v) == 1 and len(by_key_b.get(k, [])) == 1]
+    address_map = {a: b for (a, _), (b, _) in pairs}
+    lines = open(symbols_b, encoding="utf-8").read().splitlines()
+    used, line_of = set(), {}
+    for i, line in enumerate(lines):
+        m = SYMBOL_LINE.match(line)
+        if m:
+            used.add(m["name"].strip('"'))
+            line_of[int(m["addr"], 16)] = i
+    renamed = 0
+    for (_, name), (address, name_b) in pairs:
+        if GENERATED.match(name) or not GENERATED.match(name_b):
+            continue
+        m = ADDRESS_SUFFIX.match(name)
+        if m and int(m["hex"], 16) in address_map:  # names ending in an address of A (Stub_NoOp_8012161C)
+            name = f"{m['base']}_{address_map[int(m['hex'], 16)]:08X}"
+        elif m:
+            name = f"{m['base']}_{address:08X}"
+        if name in used:
+            continue
+        m = SYMBOL_LINE.match(lines[line_of[address]])
+        lines[line_of[address]] = f"{name} = {m['sec']}:0x{m['addr']};{m['rest']}"
+        used.add(name)
+        renamed += 1
+    # newline="\n": keep LF line endings on Windows (decomp-toolkit writes LF).
+    with open(symbols_b, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(lines) + "\n")
+    print(f"named {renamed} functions in {symbols_b}")
+
+
 def main(argv: list[str]) -> int:
+    apply = "--apply" in argv
+    argv = [a for a in argv if a != "--apply"]
     if len(argv) < 4:
         print(__doc__)
         return 2
@@ -86,6 +125,9 @@ def main(argv: list[str]) -> int:
     functions_b = load_functions(argv[3])
     by_key_a, key_of_a = index(Dol(argv[0]), functions_a)
     by_key_b, _ = index(Dol(argv[2]), functions_b)
+    if apply:
+        apply_names(by_key_a, by_key_b, argv[3])
+        return 0
     if len(argv) > 4:
         names = {address: name for address, _, name in functions_a}
         for text in argv[4:]:

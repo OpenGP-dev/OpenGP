@@ -46,7 +46,7 @@ your GGPE02.iso ─extract─> main.dol ─decomp-toolkit─> symbols.txt
 | Launcher | `runtime/app/` | Command line, settings, window, the in-game menu (Dear ImGui) |
 | Games | `games/` | Per-game symbol maps, recompiler config, patches and launcher (`mkgp1`, `mkgp2`); what both share in `common/` (SDK replacements, the arcade library's free play and test-menu restart) |
 | Installer | `tools/installer/` | Builds the games on the player's machine from the installer package (see [docs/packaging.md](docs/packaging.md)) |
-| Scripts | `tools/*.py`, `tools/devshell.ps1` | Game setup (extract and verify `main.dol`), SDK signature matching, matching functions between the games, Windows build shell |
+| Scripts | `tools/*.py`, `tools/devshell.ps1` | Game setup (extract and verify `main.dol`), naming functions (SDK signatures, the GP 2 decomp, matching functions between the games), Windows build shell |
 | Tests | `tests/` | Decoder tests, known-answer semantics tests, and differential tests (interpreter vs recompiled code) |
 
 Details are in [docs/architecture.md](docs/architecture.md). Notes on the arcade hardware are in

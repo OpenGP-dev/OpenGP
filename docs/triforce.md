@@ -148,9 +148,11 @@ readable with decomp-toolkit's `vfs` commands.
 | `.bss` | `0x804FDCC0` | `0x1D0CB8` | |
 | `.sdata` / `.sdata2` | `0x806CE980` / `0x806D1EC0` | | `_SDA_BASE_` (r13) = `0x806D6980`, `_SDA2_BASE_` (r2) = `0x806D9EC0` |
 
-decomp-toolkit finds 7,612 functions covering all of `.text`. About 900 are named:
+decomp-toolkit finds 7,612 functions covering all of `.text`. 3,427 are named:
 - about 280 by decomp-toolkit's own signatures;
-- 632 by `tools/sigmatch.py`, which uses Dolphin's signature database.
+- 632 by `tools/sigmatch.py`, which uses Dolphin's signature database;
+- 2,512 by `tools/decompnames.py`, from the mkgp2-decomp project (see
+  [game-files.md](game-files.md#regenerating-the-symbol-list)).
 
 The game's `main` is at `0x800AC27C`.
 
@@ -274,7 +276,7 @@ in `recomp.toml` and one patched function.
 - 24 MiB of RAM (arena `0x805D1FA0`-`0x817DE380`).
 - Matching functions between the two games by their code (with relocated fields masked, and the
   same size) pairs up 3,367 of them one to one (`tools/crossmatch.py`). That is how most of the
-  addresses below were found.
+  addresses below were found, and how 1,021 functions got GP 2's names from the decomp.
 
 ### What it needed
 
