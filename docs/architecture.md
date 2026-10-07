@@ -373,5 +373,5 @@ The main thread reads the player's devices once a frame and hands the result to 
 | Area | Plan |
 |------|------|
 | GPU | Remaining GX features as games need them (depth textures, z-freeze, destination alpha with blending, logic ops) |
-| Network | The media board's socket API on host sockets, for linking cabinets (M10) |
-| Camera | The NamCam2 from a webcam (SDL3's camera API), served on the media board's network (M11) |
+| Camera | The NamCam2 from a webcam (SDL3's camera API): the game fetches `/img.jpg` over HTTP from the camera's address on the media board's network (M11) |
+| Network | The media board's socket API on host sockets, for linking cabinets (M12) |
