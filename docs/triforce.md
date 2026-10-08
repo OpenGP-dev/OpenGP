@@ -178,6 +178,8 @@ decomp-toolkit finds 7,612 functions covering all of `.text`. 3,427 are named:
 - 2,512 by `tools/decompnames.py`, from the mkgp2-decomp project (see
   [game-files.md](game-files.md#regenerating-the-symbol-list)).
 
+Of the data, 488 objects are named, 372 of them from the decomp.
+
 The game's `main` is at `0x800AC27C`.
 
 ### Libraries
@@ -313,7 +315,8 @@ in `recomp.toml` and one patched function.
 - 24 MiB of RAM (arena `0x805D1FA0`-`0x817DE380`).
 - Matching functions between the two games by their code (with relocated fields masked, and the
   same size) pairs up 3,367 of them one to one (`tools/crossmatch.py`). That is how most of the
-  addresses below were found, and how 1,021 functions got GP 2's names from the decomp.
+  addresses below were found, and how 1,021 functions and 77 objects got GP 2's names from
+  the decomp.
 
 ### What it needed
 
