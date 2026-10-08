@@ -52,6 +52,21 @@ your GGPE02.iso ─extract─> main.dol ─decomp-toolkit─> symbols.txt
 Details are in [docs/architecture.md](docs/architecture.md). Notes on the arcade hardware are in
 [docs/triforce.md](docs/triforce.md).
 
+## Made with AI
+
+OpenGP is developed with AI. The maintainer decides what gets built and plays the results; most
+of the code and documentation is written by Claude (Anthropic's model) through
+[Claude Code](https://claude.com/claude-code). Commits made that way end with a
+`Co-Authored-By: Claude` line, so the history shows which ones.
+
+The code is held to the same checks as any other:
+- The test suite (decoder tests, known-answer semantics tests, and differential tests that run the
+  same guest code through the interpreter and the recompiled code) runs in CI on every push, on
+  Linux, Windows and macOS.
+- The hardware follows Dolphin's behaviour, and code ported from Dolphin is marked as such.
+- What OpenGP learned from other projects is credited below and in the docs. Nothing is copied
+  from projects that have no license, only facts such as addresses.
+
 ## Playing
 
 Download the installer package for Windows, Linux or macOS (Apple Silicon) from the releases, unpack it, put your disc
@@ -115,6 +130,14 @@ Releases from 0.2.0 on come with the installer packages (see [CHANGELOG.md](CHAN
 
 ## Acknowledgements
 
-- **Dolphin**: the reference for Gekko, GameCube and Triforce behaviour.
-- **decomp-toolkit**: GameCube binary analysis.
+- **[Dolphin](https://github.com/dolphin-emu/dolphin)**: the reference for Gekko, GameCube and
+  Triforce behaviour, and the source of the runtime's ported parts.
+- **[mkgp2-decomp](https://github.com/naari3/mkgp2-decomp)** by naari3: the names of GP 2's
+  functions and globals (and through them GP's), and notes on the games' network code.
+- **[mkgp2-patch](https://github.com/naari3/mkgp2-patch)** by naari3: the Ghidra analysis of GP 2
+  that the decomp's names grew out of.
+- **[Skip-checks patch](https://github.com/coremaven/Mario-Kart-Arcade-GP-2---Skip-Checks-Patch)**
+  by coremaven: where GP 2's hardware checks are, which OpenGP's camera and cabinet-link patches
+  are based on.
+- **[decomp-toolkit](https://github.com/encounter/decomp-toolkit)**: GameCube binary analysis.
 - **N64Recomp / Zelda64Recomp** and **XenonRecomp / UnleashedRecomp**: the overall design.
