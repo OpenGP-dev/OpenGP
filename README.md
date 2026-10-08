@@ -125,6 +125,8 @@ marked as such in the source. Vendored third-party code in `thirdparty/` keeps i
 | M11 | The NamCam2 camera from a webcam: player photos. The camera is an HTTP server on the media board's network, so this starts the network (the socket API on host sockets) | yes |
 | M12 | Linked cabinets: the rest of the media board's network, several instances racing each other on one PC or a LAN | yes |
 | 1.0 | Release: the installer package with linked cabinets and the camera | yes |
+| M14 | Pause: freeze the game (its threads, sound and timers) from the menu or a button; the arcade games have no pause of their own | yes |
+| M15 | Discord Rich Presence: the character, course and race position, read from the game's state (the decomp's names) and sent over Discord's local connection, without Discord's SDK | yes |
 
 Releases from 0.2.0 on come with the installer packages (see [CHANGELOG.md](CHANGELOG.md)).
 
