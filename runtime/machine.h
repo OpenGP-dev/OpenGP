@@ -21,6 +21,10 @@
 #include "triforce/card_folder.h"
 #include "triforce/io_ports.h"
 
+namespace triforce {
+class Network;
+}
+
 namespace opengp {
 
 using namespace gekko;
@@ -80,6 +84,8 @@ class Machine {
   u64 exceptions_delivered() const { return threads_ ? threads_->exceptions_delivered() : 0; }
   u64 exception_returns() const { return threads_ ? threads_->exception_returns() : 0; }
   const disc::Image& disc() const { return disc_; }
+  // The media board's network (after boot()).
+  triforce::Network& network() { return *network_; }
   ppc::Context& main_context() { return ctx_; }
   u32 entry_point() const { return entry_; }
 
@@ -94,6 +100,7 @@ class Machine {
   std::string game_id_;
   std::string user_dir_ = "user";
   std::shared_ptr<triforce::CardFolder> cards_;
+  triforce::Network* network_ = nullptr;
   mutable std::mutex controls_mutex_;
   triforce::Controls controls_{};
   triforce::Outputs outputs_{};

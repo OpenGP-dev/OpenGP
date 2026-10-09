@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### The camera (milestone 11)
+
+- The cabinet's camera, the NamCam2, can use a webcam: both games take the player's photo when a
+  game starts and show it on their character in the race. It is off by default; turn it on in
+  the menu's Game tab (**Photos from**), in `user/settings.toml` (`[camera] source`) or with
+  `--camera webcam`. A test pattern (`--camera test`) stands in without a webcam. See
+  [docs/playing.md](docs/playing.md#the-camera).
+- The media board's network works: the games' sockets run on host sockets, or on services OpenGP
+  answers itself. The camera is one, an HTTP server that sends a JPEG, so it needs no network
+  settings and opens no ports. Connections to other cabinets are refused until linked cabinets
+  (milestone 12); `OPENGP_LOG_NETWORK=1` shows what the games try.
+- With the camera on, the start-up device check finds it in about a second. On a cabinet it waits
+  40 seconds for the camera to power up.
+
+### The GP 2 decomp's findings (milestone 10)
+
+- Both games' symbol maps have the names of functions and globals from
+  [mkgp2-decomp](https://github.com/naari3/mkgp2-decomp): 3,427 functions and 488 objects in
+  GP 2, about 1,000 functions in GP. Backtraces and profiles show them.
+- `--game-log` prints the games' own debug messages, converted from Shift JIS.
+
 ## 0.2.0 (2026-09-26)
 
 This release adds installer packages for Windows, Linux and macOS. You download a package and put

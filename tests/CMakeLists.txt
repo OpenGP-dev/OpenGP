@@ -63,3 +63,7 @@ if(TARGET opengp_input)
   target_link_libraries(test_controls PRIVATE opengp_input doctest opengp_warnings)
   add_test(NAME controls COMMAND test_controls)
 endif()
+
+add_executable(test_camera test_camera.cpp)
+target_link_libraries(test_camera PRIVATE opengp_machine doctest opengp_warnings)
+add_test(NAME camera COMMAND test_camera)

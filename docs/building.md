@@ -73,6 +73,7 @@ build/<preset>/games/mkgp2/opengp-mkgp2 [--iso PATH] [--user-dir PATH] [--timeou
                                         [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]
                                         [--input SCRIPT] [--input-file PATH] [--free-play] [--test-menu]
                                         [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--game-log]
+                                        [--camera off|webcam|test]
 ```
 
 `opengp-mkgp1` (Mario Kart Arcade GP, in `build/<preset>/games/mkgp1/`) takes the same options. `--version` prints the
@@ -108,6 +109,7 @@ options that change them do so for that run only.
 | `--volume PERCENT` | Sound volume, 0-100 (default 100) |
 | `--audio-dump PATH` | Also write the sound to a WAV file (works headless too) |
 | `--game-log` | Print the game's own debug messages (see [triforce.md](triforce.md#the-games-debug-messages-milestone-10)) |
+| `--camera SOURCE` | The camera's pictures: `off`, `webcam` or `test` (colour bars; see [playing.md](playing.md#the-camera)) |
 
 Files the machine writes (baseboard backup memory, media board settings, Mario Cards, the
 settings and controls, screenshots) go in `user/`, which is gitignored.
@@ -118,6 +120,7 @@ Environment variables for debugging:
 |----------|------|
 | `OPENGP_LOG_DI=<n>` | the first *n* disc interface commands |
 | `OPENGP_LOG_MEDIABOARD=1` | media board commands |
+| `OPENGP_LOG_NETWORK=1` | the games' sockets on the media board's network (connections, binds, options) |
 | `OPENGP_LOG_EXI=<n>` / `OPENGP_LOG_SI=<n>` | the first *n* EXI / SI transfers |
 | `OPENGP_LOG_JVS=1` | the JVS I/O protocol |
 | `OPENGP_LOG_FFB=1` | the forces the game sends to the steering wheel |

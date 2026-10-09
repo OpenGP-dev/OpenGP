@@ -121,8 +121,8 @@ marked as such in the source. Vendored third-party code in `thirdparty/` keeps i
 | M7 | Card saves, settings menu, resolution scaling, widescreen, fullscreen; the game's test menu (**done**) | yes |
 | M8 | Mario Kart Arcade GP (GGPE01): symbol map, the same runtime, free play, test menu (**done**) | yes |
 | M9 | Installer packages for Windows, Linux and macOS (Apple Silicon, Metal renderer): the prebuilt runtime and recompiler; the installer recompiles and builds the games from the player's own images, so no game code is ever distributed (**done**, 0.2.0) | yes |
-| M10 | What the GP 2 decomp ([mkgp2-decomp](https://github.com/naari3/mkgp2-decomp)) knows: its function names in both games' symbol maps, and the games' own debug messages (`--game-log`), for working on M11 and M12 | yes |
-| M11 | The NamCam2 camera from a webcam: player photos. The camera is an HTTP server on the media board's network, so this starts the network (the socket API on host sockets) | yes |
+| M10 | What the GP 2 decomp ([mkgp2-decomp](https://github.com/naari3/mkgp2-decomp)) knows: its function names in both games' symbol maps, and the games' own debug messages (`--game-log`), for working on M11 and M12 (**done**) | yes |
+| M11 | The NamCam2 camera from a webcam: player photos. The camera is an HTTP server on the media board's network, so this starts the network (the socket API on host sockets) (**done**) | yes |
 | M12 | Linked cabinets: the rest of the media board's network, several instances racing each other on one PC or a LAN | yes |
 | 1.0 | Release: the installer package with linked cabinets and the camera | yes |
 | M14 | Pause: freeze the game (its threads, sound and timers) from the menu or a button; the arcade games have no pause of their own | yes |

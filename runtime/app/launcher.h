@@ -10,7 +10,8 @@
 //                 [--fullscreen | --windowed] [--aspect RATIO] [--scale N]
 //                 [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]
 //                 [--input SCRIPT] [--input-file PATH] [--free-play] [--test-menu]
-//                 [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--game-log] [--version]
+//                 [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--game-log]
+//                 [--camera off|webcam|test] [--version]
 //
 // Options override user/settings.toml for one run (see docs/building.md).
 #pragma once
@@ -41,6 +42,8 @@ struct Game {
   std::function<os::Reboot()> test_menu;
   // Prints the game's own debug messages (--game-log), before the game runs.
   std::function<void(bool on)> set_game_log;
+  // Whether the game uses its camera (OpenGP plays it), before the game runs.
+  std::function<void(bool on)> set_camera;
 };
 
 // Runs the game; returns the process exit code.

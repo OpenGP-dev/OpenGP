@@ -3,10 +3,9 @@
 // The Triforce media board (DIMM board), which sits where the GameCube's
 // disc drive would be. Games talk to it with obfuscated DI commands: reads
 // from the game image (held in DIMM memory on real hardware), board status
-// and configuration, and a command interface (Execute) that includes a
-// socket API used for linking cabinets.
-//
-// Networking is not emulated yet: socket commands fail.
+// and configuration, and a command interface (Execute) that includes the
+// socket API the games use for the camera and for linking cabinets (see
+// triforce/network.h).
 //
 // Based on Dolphin's DVD/AMMediaboard.cpp (Copyright Dolphin Emulator
 // Project, GPL-2.0-or-later).
@@ -20,6 +19,7 @@
 
 #include "disc/disc.h"
 #include "hw/di.h"
+#include "triforce/network.h"
 
 namespace hw {
 class ExiBus;
@@ -38,6 +38,9 @@ class MediaBoard final : public hw::DiBackend {
   // Sets the command obfuscation keys. The boot ROM leaves them in low
   // memory (the first 12 bytes of the disc header) after the apploader.
   void init_keys(u32 a, u32 b, u32 c) { key_a_ = a, key_b_ = b, key_c_ = c; }
+
+  // The board's network (the camera and linked cabinets).
+  Network& network() { return network_; }
 
  private:
   enum class Game { MarioKartGP, MarioKartGP2, Other };
@@ -91,9 +94,9 @@ class MediaBoard final : public hw::DiBackend {
 
   u32 board_status_;
   u32 load_progress_ = 80;
-  u32 last_error_;
   bool netconfig_read_pending_ = false;
   hw::Hardware::EventId test_event_ = 0;
+  Network network_;
 };
 
 }  // namespace triforce

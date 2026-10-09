@@ -258,7 +258,8 @@ guest code (N64Recomp's "ultramodern" pattern):
 ### Triforce boards (`runtime/triforce/`)
 
 Ported from Dolphin; see [triforce.md](triforce.md):
-- the media board, which serves the game image and answers board commands;
+- the media board, which serves the game image and answers board commands, including the socket
+  API of its network (`network.cpp`, below);
 - the baseboard on SI: JVS I/O board, steering wheel, magnetic card reader;
 - the I/O ports that map player controls onto cabinet inputs.
 
@@ -368,10 +369,26 @@ The main thread reads the player's devices once a frame and hands the result to 
 - `input::Script` plays controls by frame number, for runs without a player. Its events are
   applied on top of the player's controls, keyed to the frame the GPU has reached.
 
+### The network and the camera (`runtime/triforce/network.h`, `runtime/camera/`)
+
+The games reach the media board's network through board commands (socket, connect, select,
+send, recv...). `triforce::Network` numbers the sockets 1-63 as the board does and backs each with
+a host socket, or with a `Service` that OpenGP plays itself: a connection to a service's address
+runs in-process, with no host network. Host sockets are non-blocking; the games poll them once a
+frame. For now only services are reachable: other connections are refused, and binds go to the
+loopback interface (linked cabinets will route the cabinets' addresses, M12).
+
+The camera is such a service (`camera::NamCam`, at 192.168.29.104-107 port 80): it answers the
+game's `GET /img.jpg` with a 320x240 JPEG from its `camera::Source`, encoded by `camera/jpeg.cpp`
+(baseline 4:2:0, which the games' own decoder reads). The sources are a test pattern and
+`camera::Webcam` (SDL3's camera API), whose thread keeps the newest frame cropped to 4:3 and
+scaled. The launcher starts the source the settings ask for and tells the game whether it has a
+camera (`app::Game::set_camera`), which sets the game's own "camera use" setting at start-up
+(`games/common/camera_use.cpp`).
+
 ## What comes next
 
 | Area | Plan |
 |------|------|
 | GPU | Remaining GX features as games need them (depth textures, z-freeze, destination alpha with blending, logic ops) |
-| Camera | The NamCam2 from a webcam (SDL3's camera API): the game fetches `/img.jpg` over HTTP from the camera's address on the media board's network (M11) |
-| Network | The media board's socket API on host sockets, for linking cabinets (M12) |
+| Network | Routes for the cabinets' addresses on the socket API's host sockets, for linking cabinets (M12) |

@@ -1,0 +1,202 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// The camera (camera/namcam.h, camera/jpeg.h) and the media board's network
+// it answers on (triforce/network.h).
+
+#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include <doctest.h>
+
+#include <array>
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <string>
+#include <vector>
+
+#include "camera/jpeg.h"
+#include "camera/namcam.h"
+#include "triforce/network.h"
+
+using namespace gekko;
+
+namespace {
+
+u16 be16(const u8* p) { return static_cast<u16>((p[0] << 8) | p[1]); }
+
+// The JPEG's segments in order (marker bytes), up to the scan.
+std::vector<u8> segments(const std::vector<u8>& jpeg, u16* width, u16* height) {
+  std::vector<u8> markers;
+  std::size_t i = 2;
+  while (i + 4 <= jpeg.size() && jpeg[i] == 0xFF) {
+    const u8 m = jpeg[i + 1];
+    markers.push_back(m);
+    if (m == 0xC0) *height = be16(&jpeg[i + 5]), *width = be16(&jpeg[i + 7]);
+    if (m == 0xDA) break;
+    i += 2 + be16(&jpeg[i + 2]);
+  }
+  return markers;
+}
+
+// Media board memory for the network: one buffer at 0x1000.
+struct Board {
+  std::vector<u8> memory = std::vector<u8>(0x10000);
+  triforce::Network net{[this](u32 a) {
+    return a >= 0x1000 && a < 0x1000 + memory.size() ? std::span<u8>(memory).subspan(a - 0x1000) : std::span<u8>();
+  }};
+  u8* at(u32 a) { return &memory[a - 0x1000]; }
+  u32 run(u16 command, std::initializer_list<u32> params) {
+    const std::vector<u32> p(params);
+    return net.execute(command, p);
+  }
+  void put_address(u32 a, u32 ip, u16 port) {
+    u8* p = at(a);
+    std::memset(p, 0, 16);
+    p[1] = 2, p[2] = static_cast<u8>(port >> 8), p[3] = static_cast<u8>(port);
+    p[4] = static_cast<u8>(ip >> 24), p[5] = static_cast<u8>(ip >> 16), p[6] = static_cast<u8>(ip >> 8), p[7] = static_cast<u8>(ip);
+  }
+};
+
+constexpr u32 kError = 0xFFFFFFFF;
+
+}  // namespace
+
+TEST_CASE("the JPEG is baseline 4:2:0 with one table per segment") {
+  std::vector<u8> rgb(camera::kPictureSize);
+  camera::TestPattern().picture(rgb.data());
+  const std::vector<u8> jpeg = camera::encode_jpeg(rgb.data(), camera::kWidth, camera::kHeight);
+  REQUIRE(jpeg.size() > 1000);
+  CHECK(jpeg.size() < 0x80000);  // the game's buffer
+  CHECK(jpeg[0] == 0xFF);
+  CHECK(jpeg[1] == 0xD8);
+  CHECK(jpeg[jpeg.size() - 2] == 0xFF);  // the game checks the last two bytes
+  CHECK(jpeg[jpeg.size() - 1] == 0xD9);
+  u16 w = 0, h = 0;
+  const std::vector<u8> expected = {0xE0, 0xDB, 0xDB, 0xC0, 0xC4, 0xC4, 0xC4, 0xC4, 0xDA};
+  CHECK(segments(jpeg, &w, &h) == expected);
+  CHECK(w == 320);
+  CHECK(h == 240);
+  if (const char* out = std::getenv("OPENGP_TEST_JPEG")) {  // for checking with another decoder
+    std::ofstream(out, std::ios::binary).write(reinterpret_cast<const char*>(jpeg.data()), static_cast<std::streamsize>(jpeg.size()));
+  }
+}
+
+TEST_CASE("ipv4 addresses") {
+  u32 ip = 0;
+  CHECK(triforce::parse_ipv4("192.168.29.104", &ip));
+  CHECK(ip == 0xC0A81D68);
+  CHECK(triforce::ipv4_string(ip) == "192.168.29.104");
+  CHECK_FALSE(triforce::parse_ipv4("192.168.29", &ip));
+  CHECK_FALSE(triforce::parse_ipv4("192.168.29.256", &ip));
+  CHECK_FALSE(triforce::parse_ipv4("192.168.29.1x", &ip));
+}
+
+TEST_CASE("the game fetches a photo from the camera") {
+  Board b;
+  camera::attach(b.net, std::make_shared<camera::TestPattern>());
+
+  const u32 fd = b.run(triforce::NET_SOCKET, {2, 1, 0});
+  REQUIRE(fd >= 1);
+  REQUIRE(fd < 64);
+  b.put_address(0x1000, 0xC0A81D69, 80);  // PCB ID 2's camera
+  CHECK(b.run(triforce::NET_CONNECT, {fd, 0x1000, 16}) == 0);
+
+  // Nothing to read before the request.
+  u8* set = b.at(0x1100);
+  std::memset(set, 0, 32);
+  set[fd / 8] = static_cast<u8>(1 << (fd % 8));
+  CHECK(b.run(triforce::NET_SELECT, {256, 0x1100, 0, 0, 0x1200}) == 0);
+  CHECK(set[fd / 8] == 0);
+
+  const char request[] = "GET /img.jpg HTTP/1.0\r\n\r\n";
+  std::memcpy(b.at(0x2000), request, sizeof(request) - 1);
+  CHECK(b.run(triforce::NET_SEND, {fd, 0x2000, sizeof(request) - 1}) == sizeof(request) - 1);
+
+  std::string reply;
+  for (int reads = 0; reads < 100; ++reads) {
+    set[fd / 8] = static_cast<u8>(1 << (fd % 8));
+    REQUIRE(b.run(triforce::NET_SELECT, {256, 0x1100, 0, 0, 0x1200}) == 1);
+    const u32 n = b.run(triforce::NET_RECV, {fd, 0x3000, 0x1000});
+    REQUIRE(n != kError);
+    if (n == 0) break;
+    reply.append(reinterpret_cast<const char*>(b.at(0x3000)), n);
+  }
+  CHECK(reply.starts_with("HTTP/1.0 200 OK\r\n"));
+  const std::size_t body = reply.find("\r\n\r\n");
+  REQUIRE(body != std::string::npos);
+  CHECK(static_cast<u8>(reply[body + 4]) == 0xFF);
+  CHECK(static_cast<u8>(reply[body + 5]) == 0xD8);
+  CHECK(static_cast<u8>(reply[reply.size() - 2]) == 0xFF);
+  CHECK(static_cast<u8>(reply[reply.size() - 1]) == 0xD9);
+  CHECK(b.run(triforce::NET_CLOSESOCKET, {fd}) == 0);
+}
+
+TEST_CASE("connections without a route are refused") {
+  Board b;
+  const u32 fd = b.run(triforce::NET_SOCKET, {2, 1, 0});
+  b.put_address(0x1000, 0xC0A81D97, 5008);  // another cabinet
+  CHECK(b.run(triforce::NET_CONNECT, {fd, 0x1000, 16}) == kError);
+  CHECK(b.run(triforce::NET_GET_LAST_ERROR, {fd}) == triforce::SSC_ECONNREFUSED);
+  CHECK(b.run(triforce::NET_CLOSESOCKET, {fd}) == 0);
+  CHECK(b.run(triforce::NET_CLOSESOCKET, {fd}) == kError);
+}
+
+TEST_CASE("host sockets: a routed connection to a listening socket") {
+  Board b;
+  // A server socket, bound on the loopback interface.
+  const u32 server = b.run(triforce::NET_SOCKET, {2, 1, 0});
+  u16 port = 0;
+  for (u16 p = 47100; p < 47200 && !port; ++p) {
+    b.put_address(0x1000, 0, p);
+    if (b.run(triforce::NET_BIND, {server, 0x1000, 16}) == 0) port = p;
+  }
+  REQUIRE(port != 0);
+  CHECK(b.run(triforce::NET_LISTEN, {server, 5}) == 0);
+  CHECK(b.run(triforce::NET_ACCEPT, {server, 0x1400, 0x1410}) == kError);  // nobody yet
+  CHECK(b.run(triforce::NET_GET_LAST_ERROR, {server}) == triforce::SSC_EWOULDBLOCK);
+
+  // A client connecting to another cabinet's address, routed to the server.
+  b.net.add_route({0xC0A81D97, 5000}, {0x7F000001, port});
+  const u32 client = b.run(triforce::NET_SOCKET, {2, 1, 0});
+  b.run(triforce::NET_SET_TIMEOUTS, {client, 2000, 2000, 2000});
+  b.put_address(0x1000, 0xC0A81D97, 5000);
+  REQUIRE(b.run(triforce::NET_CONNECT, {client, 0x1000, 16}) == 0);
+
+  u32 accepted = kError;
+  for (int tries = 0; tries < 200 && accepted == kError; ++tries) {
+    std::memset(b.at(0x1410), 0, 4);
+    b.at(0x1410)[0] = 16;
+    accepted = b.run(triforce::NET_ACCEPT, {server, 0x1400, 0x1410});
+  }
+  REQUIRE(accepted != kError);
+  CHECK(b.at(0x1400)[1] == 2);  // AF_INET
+  CHECK(b.at(0x1404)[0] == 127);
+
+  std::memcpy(b.at(0x2000), "hello", 5);
+  CHECK(b.run(triforce::NET_SEND, {client, 0x2000, 5}) == 5);
+  u32 n = kError;
+  for (int tries = 0; tries < 200 && n == kError; ++tries) {
+    std::memset(b.at(0x1100), 0, 32);
+    b.at(0x1100)[accepted / 8] = static_cast<u8>(1 << (accepted % 8));
+    struct Timeout {
+      u8 bytes[8] = {0, 0, 0, 0, 0x10, 0x27, 0, 0};  // 10 ms (little endian)
+    } t;
+    std::memcpy(b.at(0x1200), t.bytes, 8);
+    if (b.run(triforce::NET_SELECT, {64, 0x1100, 0, 0, 0x1200}) == 1) n = b.run(triforce::NET_RECV, {accepted, 0x3000, 64});
+  }
+  REQUIRE(n == 5);
+  CHECK(std::memcmp(b.at(0x3000), "hello", 5) == 0);
+  for (u32 fd : {client, accepted, server}) CHECK(b.run(triforce::NET_CLOSESOCKET, {fd}) == 0);
+}
+
+TEST_CASE("InetAddr answers in network byte order") {
+  Board b;
+  std::memcpy(b.at(0x1000), "192.168.29.104", 15);
+  const u32 r = b.run(triforce::NET_INET_ADDR, {0x1000, 14});
+  u8 bytes[4];
+  bytes[0] = static_cast<u8>(r), bytes[1] = static_cast<u8>(r >> 8), bytes[2] = static_cast<u8>(r >> 16), bytes[3] = static_cast<u8>(r >> 24);
+  // Stored little endian in the reply, the bytes are the address in order.
+  CHECK(bytes[0] == 192);
+  CHECK(bytes[1] == 168);
+  CHECK(bytes[2] == 29);
+  CHECK(bytes[3] == 104);
+}

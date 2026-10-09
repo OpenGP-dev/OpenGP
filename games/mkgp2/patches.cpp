@@ -3,6 +3,7 @@
 // Mario Kart Arcade GP 2 (GGPE02): replacements for recompiled functions.
 
 #include "arcade.h"
+#include "camera_use.h"
 #include "ppc_recomp_shared.h"
 
 namespace guest {
@@ -14,6 +15,20 @@ namespace guest {
 PPC_FUNC(fn_80289B54) {
   __imp__fn_80289B54(ctx, base);
   arcade::on_coin_setup(base, 0x80690AA0u);
+}
+
+// Start-up: reads the settings (805986C0) from the backup, or sets their
+// defaults, before the device check.
+PPC_FUNC(GameBoot_Init) {
+  __imp__GameBoot_Init(ctx, base);
+  camera_use::on_settings_loaded(base, 0x805986C0u);
+}
+
+// The wheel board's state, each frame: the camera's power.
+PPC_FUNC(StrPcb_StateTick) {
+  const gekko::u32 board = ctx.gpr[3];
+  __imp__StrPcb_StateTick(ctx, base);
+  camera_use::on_power_tick(base, board);
 }
 
 }  // namespace guest

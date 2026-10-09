@@ -20,6 +20,7 @@
 #include "app/paths.h"
 #include "app/settings.h"
 #include "audio/wav.h"
+#include "camera/namcam.h"
 #include "disc/disc.h"
 #include "hw/dsp.h"
 #include "hw/vi.h"
@@ -41,6 +42,7 @@
 
 #include "app/menu.h"
 #include "audio/host.h"
+#include "camera/webcam.h"
 #include "input/host.h"
 #include "video/renderer.h"
 #endif
@@ -56,7 +58,8 @@ constexpr const char* kUsage =
     "          [--fullscreen | --windowed] [--aspect auto|4:3|16:9|16:10|21:9] [--scale N]\n"
     "          [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]\n"
     "          [--input SCRIPT] [--input-file PATH] [--free-play] [--test-menu]\n"
-    "          [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--game-log] [--version]\n";
+    "          [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--game-log]\n"
+    "          [--camera off|webcam|test] [--version]\n";
 
 struct Options {
   std::vector<std::string> args;  // as given, for restarts (without --reboot and --frame-offset)
@@ -77,6 +80,7 @@ struct Options {
   std::optional<AspectRatio> aspect;
   std::optional<u32> scale;
   std::optional<int> volume;
+  std::optional<CameraSource> camera;
 };
 
 // Returns 0 to go on, or an exit code.
@@ -122,6 +126,13 @@ int parse_options(int argc, char** argv, Options& o) {
         return 2;
       }
       o.aspect = aspect;
+    } else if (a == "--camera" && has_value) {
+      CameraSource camera;
+      if (!parse_camera(argv[++i], &camera)) {
+        std::fprintf(stderr, "unknown camera %s (off, webcam or test)\n", argv[i]);
+        return 2;
+      }
+      o.camera = camera;
     } else if ((a == "--input" || a == "--input-file") && has_value) {
       std::string text = argv[++i];
       if (a == "--input-file") {
@@ -150,6 +161,7 @@ void apply_options(const Options& o, Settings& s) {
   if (o.aspect) s.aspect = *o.aspect;
   if (o.scale) s.internal_resolution = *o.scale;
   if (o.volume) s.volume = *o.volume;
+  if (o.camera) s.camera = *o.camera;
 }
 
 // What to save: the settings file's values, except those changed (in the
@@ -168,6 +180,8 @@ Settings settings_to_save(const Settings& file, const Settings& start, const Set
   OPENGP_KEEP_CHANGE(volume);
   OPENGP_KEEP_CHANGE(free_play);
   OPENGP_KEEP_CHANGE(card);
+  OPENGP_KEEP_CHANGE(camera);
+  OPENGP_KEEP_CHANGE(webcam);
 #undef OPENGP_KEEP_CHANGE
   return s;
 }
@@ -301,6 +315,31 @@ audio::WavWriter* g_audio_dump = nullptr;
 std::atomic<unsigned long long> g_rendered{0};
 std::atomic<unsigned long long> g_render_ns{0}, g_wait_ns{0};  // render thread: rendering, idle
 
+// The camera's pictures for this run, or null for no camera: a webcam (with
+// SDL; on the main thread) or the test pattern. `description` says which.
+std::shared_ptr<camera::Source> start_camera(const Settings& s, std::string* description) {
+  switch (s.camera) {
+    case CameraSource::Off: break;
+    case CameraSource::TestPattern: *description = "test pattern"; return std::make_shared<camera::TestPattern>();
+    case CameraSource::Webcam: {
+#ifdef OPENGP_VIDEO
+      auto webcam = std::make_shared<camera::Webcam>();
+      std::string error;
+      if (webcam->open(s.webcam, &error)) {
+        *description = "webcam, " + webcam->name();
+        return webcam;
+      }
+      std::fprintf(stderr, "[camera] %s: the game runs without its camera\n", error.c_str());
+#else
+      std::fprintf(stderr, "[camera] this build has no webcam support: the game runs without its camera\n");
+#endif
+      break;
+    }
+  }
+  *description = "off";
+  return nullptr;
+}
+
 unsigned long long elapsed_ns(std::chrono::steady_clock::time_point since) {
   return static_cast<unsigned long long>(
       std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - since).count());
@@ -383,6 +422,10 @@ int run(const Game& game, int argc, char** argv) {
   machine.cards().hold(settings.card);
   if (game.set_free_play) game.set_free_play(machine.base(), settings.free_play);
   if (game.set_game_log) game.set_game_log(o.game_log);
+  static std::string camera_info;
+  static std::shared_ptr<camera::Source> camera_source = start_camera(settings, &camera_info);
+  if (camera_source) camera::attach(machine.network(), camera_source);
+  if (game.set_camera) game.set_camera(camera_source != nullptr);
   machine.gpu().frontend().set_widescreen(widescreen_side(settings.aspect, 0, 0));
 
   static audio::WavWriter wav;
@@ -403,6 +446,7 @@ int run(const Game& game, int argc, char** argv) {
   std::printf("  image:  %s\n", o.image.c_str());
   std::printf("  memory: %u MiB, entry %08X, FST %08X, arena %08X-%08X\n", machine.mem1_size() >> 20,
               boot.entry_point, boot.fst_address, boot.arena_lo, boot.arena_hi);
+  std::printf("  camera: %s\n", camera_info.c_str());
   std::fflush(stdout);
 
   static const auto names = load_function_names(game.symbols);
@@ -572,6 +616,8 @@ int run(const Game& game, int argc, char** argv) {
     model.settings = &settings;
     model.cards = &machine.cards();
     model.input = use_input ? &host_input : nullptr;
+    model.camera_info = camera_info;
+    model.webcams = [] { return camera::Webcam::names(); };
     model.quit = [&quit] { quit("quit from the menu"); };
     if (game.test_menu) {
       model.test_menu = [&save, &o, &user_dir, &game, argv] {

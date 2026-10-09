@@ -2,6 +2,7 @@
 
 #include "app/menu.h"
 
+#include <utility>
 #include <SDL3/SDL.h>
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
@@ -234,6 +235,32 @@ void Menu::game_tab(MenuModel& m) {
     ImGui::TextWrapped("You play without a card (the game can still sell you one).");
   }
   hint("Cards are saved in %s", cards.dir().c_str());
+
+  ImGui::SeparatorText("Camera");
+  ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
+  static constexpr std::pair<CameraSource, const char*> kSources[] = {
+      {CameraSource::Off, "Off"}, {CameraSource::Webcam, "Webcam"}, {CameraSource::TestPattern, "Test pattern"}};
+  const char* source_label = "Off";
+  for (const auto& [source, text] : kSources)
+    if (source == s.camera) source_label = text;
+  if (ImGui::BeginCombo("Photos from", source_label)) {
+    for (const auto& [source, text] : kSources)
+      if (ImGui::Selectable(text, source == s.camera)) s.camera = source;
+    ImGui::EndCombo();
+  }
+  if (s.camera == CameraSource::Webcam) {
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
+    const std::string current = s.webcam.empty() ? std::string("The first one") : s.webcam;
+    if (ImGui::BeginCombo("Webcam", current.c_str())) {
+      if (ImGui::IsWindowAppearing()) webcams_ = m.webcams ? m.webcams() : std::vector<std::string>{};
+      if (ImGui::Selectable("The first one", s.webcam.empty())) s.webcam.clear();
+      for (const std::string& name : webcams_)
+        if (ImGui::Selectable(name.c_str(), name == s.webcam)) s.webcam = name;
+      ImGui::EndCombo();
+    }
+  }
+  ImGui::TextWrapped("The game takes your photo for your character. Now: %s.", m.camera_info.c_str());
+  hint("Changes take effect when the game restarts.");
 
   ImGui::SeparatorText("Arcade");
   ImGui::Checkbox("Free play (no coins needed)", &s.free_play);

@@ -63,6 +63,7 @@ bool Machine::boot(const std::string& image_path, os::BootResult* boot, std::str
   auto di = std::make_unique<hw::DiDevice>(h, disc_, true);
   auto mediaboard = std::make_unique<triforce::MediaBoard>(h, disc_, user_dir_);
   triforce::MediaBoard* mb = mediaboard.get();
+  network_ = &mb->network();
   di->set_backend(std::move(mediaboard));
   h.map(0x6000, 0x0400, std::move(di));
   // Save cards. Before cards had a folder, the one card was tricard_<ID>.bin.

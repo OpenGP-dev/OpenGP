@@ -6,6 +6,7 @@
 #include <cmath>
 #include <fstream>
 #include <sstream>
+#include <utility>
 
 #include "os/atomic_file.h"
 
@@ -38,7 +39,26 @@ std::string quoted(const std::string& s) {
   return out + "\"";
 }
 
+constexpr std::pair<CameraSource, const char*> kCameras[] = {
+    {CameraSource::Off, "off"}, {CameraSource::Webcam, "webcam"}, {CameraSource::TestPattern, "test"}};
+
 }  // namespace
+
+const char* camera_name(CameraSource camera) {
+  for (const auto& [c, name] : kCameras)
+    if (c == camera) return name;
+  return "off";
+}
+
+bool parse_camera(const std::string& name, CameraSource* camera) {
+  for (const auto& [c, n] : kCameras) {
+    if (name == n) {
+      *camera = c;
+      return true;
+    }
+  }
+  return false;
+}
 
 const char* aspect_name(AspectRatio aspect) {
   for (const AspectInfo& a : kAspects)
@@ -102,6 +122,12 @@ bool load_settings(const std::string& path, Settings* settings, std::string* err
   const auto game = root["game"];
   s.free_play = game["free_play"].value_or(s.free_play);
   s.card = game["card"].value_or(s.card);
+  const auto camera = root["camera"];
+  if (const auto source = camera["source"].value<std::string>(); source && !parse_camera(*source, &s.camera)) {
+    if (error) *error = path + ": unknown camera source \"" + *source + "\"";
+    return false;
+  }
+  s.webcam = camera["webcam"].value_or(s.webcam);
   *settings = std::move(s);
   return true;
 }
@@ -139,7 +165,17 @@ bool save_settings(const std::string& path, const Settings& s, std::string* erro
       << "\n"
          "# The Mario Card you hold (user/cards/<game>/<name>.bin), or \"\" for none.\n"
          "card = "
-      << quoted(s.card) << "\n";
+      << quoted(s.card)
+      << "\n"
+         "\n"
+         "[camera]\n"
+         "# The cabinet's camera, for the players' photos: \"off\", \"webcam\" or \"test\" (colour bars).\n"
+         "source = \""
+      << camera_name(s.camera)
+      << "\"\n"
+         "# The webcam's name, or \"\" for the first one.\n"
+         "webcam = "
+      << quoted(s.webcam) << "\n";
   const std::string text = out.str();
   if (!os::write_file_atomically(path, text.data(), text.size())) {
     if (error) *error = "cannot write " + path;

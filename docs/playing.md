@@ -31,7 +31,7 @@ keeps running behind it but gets no controls while it is open.
 
 | Tab | Settings |
 |-----|----------|
-| Game | The Mario Card you hold; free play |
+| Game | The Mario Card you hold; the camera; free play |
 | Video | Fullscreen, aspect ratio, internal resolution, VSync |
 | Sound | Volume |
 | Controls | The keys, buttons and axes for each control; force feedback, steering speed, dead zones |
@@ -72,6 +72,23 @@ game gives you is yours to hold from then on, so you can keep a card per player.
 renamed (the name is only for the menu) or copied to back them up.
 
 A card saved by an earlier version as `user/tricard_GGPE02.bin` is moved to `Card 1.bin`.
+
+## The camera
+
+The cabinet has a camera (the NamCam2) that takes your photo when you start a game: "Please align
+your face within the frame", then the item button. The photo is shown on your character in the
+race. OpenGP can use a webcam for it. In the menu's Game tab, **Photos from** is:
+
+- **Off** (the default): the game takes no photos, as a cabinet without its camera.
+- **Webcam**: the webcam chosen below it (or the first one). Its picture is cropped to 4:3 around
+  the middle. On macOS, the system asks once whether OpenGP may use the camera.
+- **Test pattern**: colour bars, for trying it without a webcam.
+
+The camera is set up when the game starts, so a change takes effect when the game restarts. If the
+webcam cannot be opened, the game runs without its camera and says why on the console. In
+`user/settings.toml` the setting is `[camera] source` (`"off"`, `"webcam"` or `"test"`) with
+`webcam` (the webcam's name, `""` for the first), and `--camera off|webcam|test` sets it for one
+run. The webcam's light stays on while the game runs with it.
 
 ## Controls
 
@@ -166,5 +183,5 @@ calibration and a switch test); hold F1 and press F2 again to leave it.
 
 ## Not done yet
 
-- The NamCam2 camera is disabled, and cabinets cannot be linked.
+- Cabinets cannot be linked (milestone 12).
 

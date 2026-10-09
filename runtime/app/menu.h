@@ -29,6 +29,8 @@ struct MenuModel {
   triforce::CardFolder* cards = nullptr;
   input::HostInput* input = nullptr;  // null without controls (their tab is hidden)
   std::string video_info;          // renderer, internal resolution
+  std::function<std::vector<std::string>()> webcams;  // lists the webcams' names
+  std::string camera_info;           // the camera this run uses
   std::function<void()> quit;
   std::function<void()> test_menu;  // restarts into the game's test menu (if it has one)
 };
@@ -76,6 +78,8 @@ class Menu final : public video::Overlay {
   void sound_tab(MenuModel& m);
   void controls_tab(MenuModel& m);
   void draw_notices();
+
+  std::vector<std::string> webcams_;  // listed when the webcam list opens
 
   SDL_Window* window_ = nullptr;
   bool initialised_ = false;

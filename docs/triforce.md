@@ -54,8 +54,20 @@ Status replies the game expects:
 - A "test hardware" command that answers in two phases
 
 Network sockets (`Socket`, `Bind`, `Connect`, ...) are used by the camera and for linked
-cabinets. They are to be connected to host sockets (milestones 11 and 12). What the games do with
-them, from the mkgp2-decomp's names, checked against GGPE02 (GP 2's addresses):
+cabinets. `triforce/network.cpp` runs them (milestone 11, from Dolphin's media board): each game
+socket is a host socket, or a connection to a service OpenGP answers itself (the camera). Host
+sockets are non-blocking, since the games poll them once a frame (`select` with a zero timeout);
+only connecting waits, up to the game's timeout. Until linked cabinets (milestone 12), connections
+to other addresses are refused and binds go to the loopback interface. Details the games rely on:
+- A reply's second word is the result, stored little endian, except `InetAddr`'s, which the game
+  reads without swapping: the address in network byte order.
+- Addresses are VxWorks' `sockaddr_in` (length, family, port and address in network byte order,
+  8 bytes of padding); `fd_set`s are 256 bits, socket *n* at bit *n* % 8 of byte *n* / 8; a
+  `timeval` is two little-endian words (seconds, microseconds).
+- Timeouts (`SetTimeOuts`) are in milliseconds: 2000 for the camera, 6000 and 10000 for the link.
+
+What the games do with the network, from the mkgp2-decomp's names, checked against GGPE02 (GP 2's
+addresses):
 - The game's side is `ac*` (`acSocket`, `acConnect`, `acSend`, `acRecv`, `acSelect`,
   `acSetTimeOuts`, ... at `0x80291xxx`), which sends the socket commands to the media board.
 - A cabinet's own address is `192.168.29.150` + (PCB ID - 1), set at start-up with
@@ -71,20 +83,40 @@ them, from the mkgp2-decomp's names, checked against GGPE02 (GP 2's addresses):
   Dolphin's media board blocks for that long, which freezes the whole game; naari3's Dolphin
   branch `feature/ammb-async-connect` (not merged) makes connect, send, receive and accept
   non-blocking.
+- With sockets working, GP 2's link starts after the device check even on a lone cabinet: it
+  listens on port 5000 and tries each other cabinet's ports 5008 down to 5000 (refused for now).
 
 With `--game-log`, the games print their network library's messages, which name each media
 board result (`AC_MEDIACMD_ERR_CANNOT_OPEN`, ...) and describe it in Japanese.
 
 ## NamCam2 camera
 
-- Takes the player's photo, which is shown on their character.
+- Takes the player's photo when a game starts ("Please align your face within the frame"), which
+  is shown on their character in the race. GP asks first ("Take your picture for solo play?").
 - An HTTP server on the media board's network, at the camera address above. For a photo
-  `NamCam_GetImageHandle` (`0x800487F4`) connects to its port 80, sends `GET /img.jpg HTTP/1.0`
-  and reads the reply into a 512 KiB buffer. The game has its own JPEG decoder (code around
-  `0x80298578` uses JPEG's zigzag table at `0x803F2290`). So a webcam can stand in for the
-  camera by answering that request with a JPEG (milestone 11).
-- `CameraChecker_*` (from `0x8008B990`) is the start-up check. For now it is disabled (see
-  "What it shows" below).
+  `NamCam_GetImageHandle` (`0x800487F4`, a state machine run once a frame) connects to its port
+  80 with a 2-second timeout, sends `GET /img.jpg HTTP/1.0` (26 bytes), then `select`s and
+  `recv`s up to 64 KiB a frame into a 512 KiB buffer (giving up after 60 empty polls) until the
+  camera closes the connection. The reply must end with JPEG's `FF D9`; the picture starts after
+  the headers' blank line.
+- The picture is a **320x240 JPEG**: the game decodes it itself (`Asset_LoadAndDecompressByType`,
+  `0x8004861C`, decoder type 3) into a 320x240 RGBA8 texture it allocates (`0x4B000` bytes). Its
+  decoder (from `0x8029A944`) takes baseline JPEG only (`SOF0`, 8 bits, 1 or 3 components with
+  4:4:4, 4:2:2 or 4:2:0 sampling), and skips `APPn` and `COM` segments.
+- The camera is powered through the wheel's force feedback board (`StrPcb`): at start-up
+  `BootDispatcher` calls `StrPcb_BeginEffect` (`0x80037BCC`, with the PCB ID - 1), which starts a
+  sequence of states 1-4 at `+0x60`, counted down in seconds at `+0x64` by `StrPcb_StateTick`
+  (`0x80036864`): 20 seconds in state 2, the power bit set, 20 more in state 3. The start-up check
+  waits for state 4 (`StrPcb_IsInErrorState`, in fact "powered") or 3000 frames.
+- `CameraChecker_*` (from `0x8008B918`) is the start-up check: it waits for the power, calls
+  `NamCam_Init`, and downloads a picture (3 tries of 300 frames). The test menu's camera page
+  (`CameraTest_Page`) shows the camera's pictures live.
+- OpenGP answers as the camera (`camera/namcam.cpp`) with its own JPEG encoder
+  (`camera/jpeg.cpp`, baseline 4:2:0) and pictures from a webcam (`camera/webcam.cpp`, SDL3's
+  camera API) or a test pattern. With the camera on, `games/common/camera_use.cpp` sets the
+  settings' "camera use" byte after start-up reads them (`GameBoot_Init`, `0x80075324`; GP
+  `0x8007A5CC`) and cuts the power sequence's waits to half a second; with it off, it clears the
+  byte, so the check is skipped. GP's camera code is the same as GP 2's.
 
 ## AM-Baseboard
 
@@ -213,12 +245,11 @@ With frames rendered, the start-up sequence is:
 
 What it needed:
 - **Camera**: the NamCam2 is an IP camera on the media board's network ("CAMERA IP INITIALIZE
-  WAIT"). Sockets are not emulated, so the check ends in "CAMERA ERROR / Please call an
-  attendant". The game can run without a camera: byte `0x25` of its settings block
-  (`0x805986C0`) is "camera use", and when it is 0 the check is skipped. `recomp.toml` patches
-  the settings defaults (`0x80073BD8`) to 0. Settings live in the baseboard's backup memory
-  (`user/tribackup_GGPE02.bin`): a backup written with the camera on keeps it on, so delete that
-  file once to get the new default.
+  WAIT"). Without sockets the check ended in "CAMERA ERROR / Please call an attendant". The
+  game can run without a camera: byte `0x25` of its settings block (`0x805986C0`) is "camera
+  use", and when it is 0 the check is skipped. `recomp.toml` patches the settings defaults
+  (`0x80073BD8`) to 0; since milestone 11 the launcher sets the byte at every start-up (see
+  "NamCam2 camera" above).
 - **Fonts**: the LINK screen's text uses the SDK's `OSInitFont`, which reads the system font
   from the boot ROM over EXI. Without it the game crashes on a null font. The IPL device serves
   free replacement fonts (`thirdparty/gc-fonts`), or the fonts from a boot ROM dump in
