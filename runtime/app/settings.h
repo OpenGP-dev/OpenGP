@@ -41,6 +41,7 @@ struct Settings {
 
   // [game]
   bool free_play = false;
+  bool attract_sound_every_loop = false;  // otherwise the first pass is quiet, as on a cabinet
   std::string card = "Card 1";  // the Mario Card the player holds (a file in user/cards/); "" for none
 
   // [camera] (read at start-up: changes take effect when the game restarts)

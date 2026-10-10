@@ -7,6 +7,7 @@
 
 #include "app/launcher.h"
 #include "arcade.h"
+#include "attract_sound.h"
 #include "camera_use.h"
 #include "game_log.h"
 #include "ppc_recomp_shared.h"
@@ -20,6 +21,7 @@ int main(int argc, char** argv) {
   game.dol_sha1 = OPENGP_DOL_SHA1;
   // Both games are built on the same arcade library.
   game.set_free_play = arcade::set_free_play;
+  if (attract_sound::hooked()) game.set_attract_sound = attract_sound::set_every_loop;
   game.test_menu = arcade::test_menu_reboot;
   game.set_game_log = game_log::enable;
   game.set_camera = camera_use::set;

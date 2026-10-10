@@ -264,6 +264,10 @@ void Menu::game_tab(MenuModel& m) {
 
   ImGui::SeparatorText("Arcade");
   ImGui::Checkbox("Free play (no coins needed)", &s.free_play);
+  if (m.attract_sound) {
+    ImGui::Checkbox("Attract mode sound every time round", &s.attract_sound_every_loop);
+    hint("A cabinet's demo plays its first time round without sound.");
+  }
   if (m.test_menu) {
     if (ImGui::Button("Test menu")) m.test_menu();
     ImGui::SameLine();

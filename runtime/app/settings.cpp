@@ -121,6 +121,7 @@ bool load_settings(const std::string& path, Settings* settings, std::string* err
   s.volume = std::clamp(root["audio"]["volume"].value_or(s.volume), 0, 100);
   const auto game = root["game"];
   s.free_play = game["free_play"].value_or(s.free_play);
+  s.attract_sound_every_loop = game["attract_sound_every_loop"].value_or(s.attract_sound_every_loop);
   s.card = game["card"].value_or(s.card);
   const auto camera = root["camera"];
   if (const auto source = camera["source"].value<std::string>(); source && !parse_camera(*source, &s.camera)) {
@@ -162,6 +163,11 @@ bool save_settings(const std::string& path, const Settings& s, std::string* erro
          "# Play without coins.\n"
          "free_play = "
       << (s.free_play ? "true" : "false")
+      << "\n"
+         "# Sound every time round the attract mode (the demo before a coin goes in); a cabinet\n"
+         "# plays the first time round without.\n"
+         "attract_sound_every_loop = "
+      << (s.attract_sound_every_loop ? "true" : "false")
       << "\n"
          "# The Mario Card you hold (user/cards/<game>/<name>.bin), or \"\" for none.\n"
          "card = "

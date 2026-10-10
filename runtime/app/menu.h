@@ -27,6 +27,7 @@ struct MenuModel {
   const char* title = "";          // the game's
   Settings* settings = nullptr;    // edited in place
   triforce::CardFolder* cards = nullptr;
+  bool attract_sound = false;      // the game offers sound every time round its attract mode
   input::HostInput* input = nullptr;  // null without controls (their tab is hidden)
   std::string video_info;          // renderer, internal resolution
   std::function<std::vector<std::string>()> webcams;  // lists the webcams' names

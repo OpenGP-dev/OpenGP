@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Smaller changes
+
+- The attract mode's first time round is silent on purpose: GP 2 starts it quiet and turns the
+  sound on for the rounds after, as on a cabinet. **Attract mode sound every time round** in the
+  menu's Game tab plays the first round with sound too.
+
 ### The camera (milestone 11)
 
 - The cabinet's camera, the NamCam2, can use a webcam: both games take the player's photo when a

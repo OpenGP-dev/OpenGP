@@ -3,10 +3,23 @@
 // Mario Kart Arcade GP 2 (GGPE02): replacements for recompiled functions.
 
 #include "arcade.h"
+#include "attract_sound.h"
 #include "camera_use.h"
 #include "ppc_recomp_shared.h"
 
 namespace guest {
+
+[[maybe_unused]] static const bool kAttractHooked = attract_sound::declare_hook();
+
+// The attract mode's constructor: its "quiet" flag is at +0x18. The demo
+// scenes (80150C1C, the demo race, starts its music only when made with
+// sound) are made from it at 8014E53C and 8014E998, and the flag is cleared
+// when a pass ends (8014E368).
+PPC_FUNC(fn_8014EDC0) {
+  const gekko::u32 attract = ctx.gpr[3];
+  __imp__fn_8014EDC0(ctx, base);
+  attract_sound::on_attract_created(base, attract + 0x18);
+}
 
 // The arcade library's coin set-up: copies the coin settings from the system
 // backup (SegaBoot's, normally set in its test menu) to 80690AA0. Its restart

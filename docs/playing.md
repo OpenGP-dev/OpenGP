@@ -31,7 +31,7 @@ keeps running behind it but gets no controls while it is open.
 
 | Tab | Settings |
 |-----|----------|
-| Game | The Mario Card you hold; the camera; free play |
+| Game | The Mario Card you hold; the camera; free play; attract mode sound (GP 2) |
 | Video | Fullscreen, aspect ratio, internal resolution, VSync |
 | Sound | Volume |
 | Controls | The keys, buttons and axes for each control; force feedback, steering speed, dead zones |
@@ -146,8 +146,14 @@ off).
 ## Sound
 
 Sound plays on the system's default output device. The menu's volume (or `--volume PERCENT`)
-turns it down, and `--no-audio` turns it off. The attract mode (the demo that loops before a coin goes in) is
-silent, which looks like the game's own setting: the sound starts with the first coin.
+turns it down, and `--no-audio` turns it off.
+
+The attract mode (the demo that loops before a coin goes in) plays its first time round without
+sound, as on a cabinet: GP 2 starts it quiet and turns the sound on for the rounds after. Turn on
+**Attract mode sound every time round** in the menu's Game tab (`attract_sound_every_loop` in
+`user/settings.toml`) to hear the first round too. Its volume is the game's own ATTRACT setting,
+in the test menu's SOUND SETTING (8 of 15 by default). The demo race in each round is silent
+either way; whether it is on a cabinet is not known yet.
 
 ## Scripted input
 
