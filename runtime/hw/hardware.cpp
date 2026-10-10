@@ -2,6 +2,7 @@
 
 #include "hw/hardware.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -166,11 +167,36 @@ u64 Hardware::host_ticks() const {
   return ns_to_ticks(static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now).count()));
 }
 
-u64 Hardware::timebase() const { return host_ticks() - tb_origin_; }
+u64 Hardware::clock_ticks() const {
+  const u64 paused = paused_at_.load(std::memory_order_acquire);
+  return paused ? paused : host_ticks();
+}
+
+u64 Hardware::timebase() const { return clock_ticks() - tb_origin_; }
 
 void Hardware::set_timebase(u64 value) {
   std::lock_guard lock(mutex_);
-  tb_origin_ = host_ticks() - value;
+  tb_origin_ = clock_ticks() - value;
+}
+
+void Hardware::set_paused(bool paused) {
+  std::lock_guard lock(mutex_);
+  if (paused == this->paused()) return;
+  if (paused) {
+    paused_at_.store(std::max<u64>(host_ticks(), 1), std::memory_order_release);
+  } else {
+    tb_origin_ += host_ticks() - paused_at_.load(std::memory_order_relaxed);
+    paused_at_.store(0, std::memory_order_release);
+    pause_cv_.notify_all();
+  }
+  update_pending();  // while paused, guest code goes to its next safe point
+  timer_cv_.notify_all();
+}
+
+void Hardware::wait_while_paused() {
+  if (!paused()) return;
+  std::unique_lock lock(mutex_);
+  pause_cv_.wait(lock, [this] { return !paused(); });
 }
 
 u32 Hardware::decrementer() const {
@@ -202,7 +228,7 @@ void Hardware::set_interrupt(u32 cause, bool asserted) {
 }
 
 void Hardware::update_pending() {
-  const bool pending = dec_pending_ || (pi_cause_ & pi_mask_) != 0;
+  const bool pending = paused() || dec_pending_ || (pi_cause_ & pi_mask_) != 0;
   ppc::g_interrupt_pending.store(pending, std::memory_order_release);
   if (pending) idle_cv_.notify_all();
 }
@@ -248,7 +274,7 @@ void Hardware::timer_loop() {
   os::set_interactive_thread();
   std::unique_lock lock(mutex_);
   while (running_) {
-    if (events_.empty()) {
+    if (events_.empty() || paused()) {
       timer_cv_.wait(lock);
       continue;
     }

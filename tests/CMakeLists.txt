@@ -46,6 +46,10 @@ add_executable(test_dsp test_dsp.cpp)
 target_link_libraries(test_dsp PRIVATE opengp_machine doctest opengp_warnings)
 add_test(NAME dsp COMMAND test_dsp)
 
+add_executable(test_pause test_pause.cpp)
+target_link_libraries(test_pause PRIVATE opengp_machine doctest opengp_warnings)
+add_test(NAME pause COMMAND test_pause)
+
 add_executable(test_disc test_disc.cpp)
 target_link_libraries(test_disc PRIVATE opengp_machine doctest opengp_warnings)
 add_test(NAME disc COMMAND test_disc)
