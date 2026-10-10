@@ -58,7 +58,6 @@ endfunction()
 set(OPENGP_GAMES_COMMON
   ${CMAKE_CURRENT_SOURCE_DIR}/common/main.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/common/arcade.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/common/attract_sound.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/common/camera_use.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/common/game_log.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/common/sdk_hle.cpp)

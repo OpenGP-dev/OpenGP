@@ -37,9 +37,6 @@ struct Game {
   // Turns free play on or off: at start-up (before the game runs) and from
   // the menu (while it runs). `base` is guest memory.
   std::function<void(u8* base, bool on)> set_free_play;
-  // Whether the attract mode has sound every time round (if the game offers
-  // it): at start-up and from the menu.
-  std::function<void(bool on)> set_attract_sound;
   // The reboot into the game's test menu (the operator's settings), if the
   // menu offers it.
   std::function<os::Reboot()> test_menu;

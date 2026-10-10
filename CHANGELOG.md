@@ -11,9 +11,9 @@
 
 ### Smaller changes
 
-- The attract mode's first time round is silent on purpose: GP 2 starts it quiet and turns the
-  sound on for the rounds after, as on a cabinet. **Attract mode sound every time round** in the
-  menu's Game tab plays the first round with sound too.
+- GP 2's attract mode has sound every time round. The game plays its first time round without
+  sound on purpose (it starts quiet and turns the sound on for the rounds after), which made it
+  seem broken.
 
 ### The camera (milestone 11)
 

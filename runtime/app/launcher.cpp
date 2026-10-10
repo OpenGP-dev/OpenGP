@@ -179,7 +179,6 @@ Settings settings_to_save(const Settings& file, const Settings& start, const Set
   OPENGP_KEEP_CHANGE(vsync);
   OPENGP_KEEP_CHANGE(volume);
   OPENGP_KEEP_CHANGE(free_play);
-  OPENGP_KEEP_CHANGE(attract_sound_every_loop);
   OPENGP_KEEP_CHANGE(pause_in_menu);
   OPENGP_KEEP_CHANGE(pause_in_background);
   OPENGP_KEEP_CHANGE(card);
@@ -424,7 +423,6 @@ int run(const Game& game, int argc, char** argv) {
   machine.install(*game.module);
   machine.cards().hold(settings.card);
   if (game.set_free_play) game.set_free_play(machine.base(), settings.free_play);
-  if (game.set_attract_sound) game.set_attract_sound(settings.attract_sound_every_loop);
   if (game.set_game_log) game.set_game_log(o.game_log);
   static std::string camera_info;
   static std::shared_ptr<camera::Source> camera_source = start_camera(settings, &camera_info);
@@ -603,8 +601,6 @@ int run(const Game& game, int argc, char** argv) {
       if (settings.vsync != applied.vsync || applied_width < 0) renderer.set_vsync(settings.vsync);
       if (g_audio_out && settings.volume != applied.volume) g_audio_out->set_volume(static_cast<float>(settings.volume) / 100.0f);
       if (game.set_free_play && settings.free_play != applied.free_play) game.set_free_play(machine.base(), settings.free_play);
-      if (game.set_attract_sound && settings.attract_sound_every_loop != applied.attract_sound_every_loop)
-        game.set_attract_sound(settings.attract_sound_every_loop);
       if (settings.card != applied.card) machine.cards().hold(settings.card);
       machine.gpu().frontend().set_widescreen(widescreen_side(settings.aspect, pw, ph));
       renderer.set_scale(internal_scale(settings.internal_resolution, ph));
@@ -622,7 +618,6 @@ int run(const Game& game, int argc, char** argv) {
     model.title = game.title;
     model.settings = &settings;
     model.cards = &machine.cards();
-    model.attract_sound = static_cast<bool>(game.set_attract_sound);
     model.input = use_input ? &host_input : nullptr;
     model.camera_info = camera_info;
     model.webcams = [] { return camera::Webcam::names(); };
