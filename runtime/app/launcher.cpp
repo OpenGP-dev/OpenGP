@@ -180,6 +180,8 @@ Settings settings_to_save(const Settings& file, const Settings& start, const Set
   OPENGP_KEEP_CHANGE(volume);
   OPENGP_KEEP_CHANGE(free_play);
   OPENGP_KEEP_CHANGE(attract_sound_every_loop);
+  OPENGP_KEEP_CHANGE(pause_in_menu);
+  OPENGP_KEEP_CHANGE(pause_in_background);
   OPENGP_KEEP_CHANGE(card);
   OPENGP_KEEP_CHANGE(camera);
   OPENGP_KEEP_CHANGE(webcam);
@@ -615,6 +617,7 @@ int run(const Game& game, int argc, char** argv) {
     bool shot_requested = false;
     bool cursor_hidden = false;
     auto last_present = std::chrono::steady_clock::now();
+    bool pause_pressed = false;  // paused with the pause control
     MenuModel model;
     model.title = game.title;
     model.settings = &settings;
@@ -670,10 +673,23 @@ int run(const Game& game, int argc, char** argv) {
         }
         if (use_input) host_input.handle_event(e);
       }
+      // Pausing: with the pause control, while the menu is open, or while the
+      // window is in the background (as the player chose).
+      if (use_input && host_input.take_pause_press() && !menu.is_open()) pause_pressed = !pause_pressed;
+      const SDL_WindowFlags window_flags = window ? SDL_GetWindowFlags(window) : 0;
+      const bool background = window && ((window_flags & SDL_WINDOW_MINIMIZED) || !(window_flags & SDL_WINDOW_INPUT_FOCUS));
+      const bool paused = pause_pressed || (menu.is_open() && settings.pause_in_menu) ||
+                          (background && settings.pause_in_background);
+      if (paused != machine.hardware().paused()) {
+        machine.hardware().set_paused(paused);
+        if (g_audio_out) g_audio_out->set_paused(paused);
+      }
+      menu.set_paused(paused);
       if (use_input) {
         // While the menu is open the game gets nothing (the menu has the keys).
         machine.set_controls(menu.is_open() ? triforce::Controls{} : host_input.poll());
-        host_input.set_outputs(machine.outputs());
+        // A paused game's wheel forces stop too.
+        host_input.set_outputs(paused ? triforce::Outputs{} : machine.outputs());
       }
       settings.card = applied.card = machine.cards().held();  // the game may have given the player a new card
       apply_settings();
@@ -690,9 +706,10 @@ int run(const Game& game, int argc, char** argv) {
       auto frame = queue.pop(8);
       g_wait_ns.fetch_add(elapsed_ns(wait_start));
       if (!frame) {
-        // The game has shown nothing new for a while (loading, or stuck):
-        // keep the menu alive.
-        if (use_menu && menu.visible() && std::chrono::steady_clock::now() - last_present > std::chrono::milliseconds(100)) {
+        // The game has shown nothing new for a while (paused, loading, or
+        // stuck): keep the menu alive.
+        const auto redraw_after = std::chrono::milliseconds(paused ? 16 : 100);
+        if (use_menu && menu.visible() && std::chrono::steady_clock::now() - last_present > redraw_after) {
           menu.update(model);
           renderer.redraw();
           last_present = std::chrono::steady_clock::now();

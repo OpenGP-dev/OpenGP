@@ -34,6 +34,10 @@ class HostOutput {
   // 0 to 1. Thread-safe.
   void set_volume(float volume);
 
+  // Stops playing, keeping what is queued for when it resumes (while the
+  // game is paused). Thread-safe.
+  void set_paused(bool paused);
+
   // Interleaved left/right samples at `rate` Hz. Thread-safe.
   void push(const s16* samples, u32 frames, u32 rate);
 

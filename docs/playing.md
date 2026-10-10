@@ -27,17 +27,27 @@ the card keeps your progress (Mario Coins, titles, unlocked characters). See [Ma
 ## The menu
 
 **Esc** (or a gamepad's guide button) opens the menu over the game; Esc again closes it. The game
-keeps running behind it but gets no controls while it is open.
+pauses while it is open and gets no controls (turn off **Pause while this menu is open** in the
+Game tab to keep it running).
 
 | Tab | Settings |
 |-----|----------|
-| Game | The Mario Card you hold; the camera; free play; attract mode sound (GP 2) |
+| Game | The Mario Card you hold; the camera; pausing; free play; attract mode sound (GP 2) |
 | Video | Fullscreen, aspect ratio, internal resolution, VSync |
 | Sound | Volume |
 | Controls | The keys, buttons and axes for each control; force feedback, steering speed, dead zones |
 
 **F11** (or Alt+Enter) switches between a window and fullscreen, and **F12** saves a screenshot to
 `user/screenshots/`.
+
+### Pausing
+
+**P** (or the Pause key) pauses the game and shows "Paused"; press it again to carry on. The arcade
+games have no pause of their own, so OpenGP freezes the whole machine: the game, its timers and
+its sound stop where they are, and carry on as if no time had passed. The menu pauses the game
+too, and **Pause when the window is in the background** (Game tab) pauses it while you are in
+another window. The pause control can be changed like the others (Controls tab, or `pause` in
+`controls.toml`). The game's clock falls behind by the time spent paused, until it next starts.
 
 ## Settings
 
@@ -103,6 +113,7 @@ run. The webcam's light stays on while the game runs with it.
 | Coin | 5, C | Back |
 | Service / test | F1 / F2 | |
 | Menu | Esc | Guide |
+| Pause | P, Pause | |
 | Fullscreen | F11, Alt+Enter | |
 | Screenshot | F12 | |
 

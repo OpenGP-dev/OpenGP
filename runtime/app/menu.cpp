@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdarg>
+#include <string_view>
 
 namespace app {
 
@@ -70,6 +71,23 @@ bool Menu::init(SDL_Window* window, SDL_GPUDevice* device, u32 format, std::stri
   return true;
 }
 
+namespace {
+
+// The keyboard keys bound to pause ("P / Pause"; with `first`, "P"), or ""
+// if none.
+std::string pause_keys(const MenuModel& m, bool first = false) {
+  if (!m.input) return "";
+  std::string keys;
+  for (std::size_t c = 0; c < input::HostInput::kControlCount; ++c) {
+    if (std::string_view(input::HostInput::control_name(c)) != "pause") continue;
+    for (const std::string& key : m.input->bindings(input::HostInput::DeviceKind::Keyboard, c))
+      if (keys.empty() || !first) keys += (keys.empty() ? "" : " / ") + key;
+  }
+  return keys;
+}
+
+}  // namespace
+
 void Menu::set_open(bool open) {
   if (open == open_) return;
   open_ = open;
@@ -110,7 +128,7 @@ void Menu::notify(std::string message) {
   if (notices_.size() > 4) notices_.erase(notices_.begin());
 }
 
-bool Menu::visible() const { return open_ || !notices_.empty(); }
+bool Menu::visible() const { return open_ || paused_ || !notices_.empty(); }
 
 void Menu::apply_scale(float scale) {
   // Sizes are scaled from the defaults each time (ScaleAllSizes multiplies).
@@ -183,9 +201,12 @@ void Menu::update(MenuModel& m) {
       if (ImGui::Button("Resume")) set_open(false);
       ImGui::SameLine();
       if (ImGui::Button("Quit") && m.quit) m.quit();
-      hint("Esc: menu    F11: fullscreen    F12: screenshot");
+      const std::string pause = pause_keys(m, true);
+      hint("Esc: menu    %s%sF11: fullscreen    F12: screenshot", pause.c_str(), pause.empty() ? "" : ": pause    ");
     }
     ImGui::End();
+  } else if (paused_) {
+    draw_paused(m);
   }
   draw_notices();
   ImGui::Render();
@@ -261,6 +282,11 @@ void Menu::game_tab(MenuModel& m) {
   }
   ImGui::TextWrapped("The game takes your photo for your character. Now: %s.", m.camera_info.c_str());
   hint("Changes take effect when the game restarts.");
+
+  ImGui::SeparatorText("Pause");
+  ImGui::Checkbox("Pause while this menu is open", &s.pause_in_menu);
+  ImGui::Checkbox("Pause when the window is in the background", &s.pause_in_background);
+  if (const std::string keys = pause_keys(m); !keys.empty()) hint("%s pauses and resumes the game.", keys.c_str());
 
   ImGui::SeparatorText("Arcade");
   ImGui::Checkbox("Free play (no coins needed)", &s.free_play);
@@ -383,6 +409,25 @@ void Menu::controls_tab(MenuModel& m) {
   }
   if (ImGui::Button("Restore the defaults")) in.restore_defaults();
   hint("Saved in %s", in.path().c_str());
+}
+
+void Menu::draw_paused(MenuModel& m) {
+  const ImGuiIO& io = ImGui::GetIO();
+  ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), io.DisplaySize, IM_COL32(0, 0, 0, 80));
+  ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always,
+                          ImVec2(0.5f, 0.5f));
+  ImGui::SetNextWindowBgAlpha(0.75f);
+  const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+                                 ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs;
+  if (ImGui::Begin("##paused", nullptr, flags)) {
+    ImGui::SetWindowFontScale(1.6f);
+    ImGui::TextUnformatted("Paused");
+    ImGui::SetWindowFontScale(1.0f);
+    const std::string keys = pause_keys(m);
+    if (!keys.empty()) ImGui::TextDisabled("%s: resume", keys.c_str());
+  }
+  ImGui::End();
 }
 
 void Menu::draw_notices() {

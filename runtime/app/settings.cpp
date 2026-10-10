@@ -122,6 +122,8 @@ bool load_settings(const std::string& path, Settings* settings, std::string* err
   const auto game = root["game"];
   s.free_play = game["free_play"].value_or(s.free_play);
   s.attract_sound_every_loop = game["attract_sound_every_loop"].value_or(s.attract_sound_every_loop);
+  s.pause_in_menu = game["pause_in_menu"].value_or(s.pause_in_menu);
+  s.pause_in_background = game["pause_in_background"].value_or(s.pause_in_background);
   s.card = game["card"].value_or(s.card);
   const auto camera = root["camera"];
   if (const auto source = camera["source"].value<std::string>(); source && !parse_camera(*source, &s.camera)) {
@@ -168,6 +170,10 @@ bool save_settings(const std::string& path, const Settings& s, std::string* erro
          "# plays the first time round without.\n"
          "attract_sound_every_loop = "
       << (s.attract_sound_every_loop ? "true" : "false")
+      << "\n"
+         "# Pause the game while the menu is open, and while its window is in the background.\n"
+         "pause_in_menu = "
+      << (s.pause_in_menu ? "true" : "false") << "\npause_in_background = " << (s.pause_in_background ? "true" : "false")
       << "\n"
          "# The Mario Card you hold (user/cards/<game>/<name>.bin), or \"\" for none.\n"
          "card = "

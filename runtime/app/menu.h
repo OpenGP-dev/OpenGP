@@ -4,7 +4,8 @@
 // controls, game options, the Mario Card), opened with Esc or a gamepad's
 // guide button. It also shows short notices ("Screenshot saved").
 //
-// The game keeps running behind it, but gets no controls while it is open.
+// The game gets no controls while it is open, and pauses unless the player
+// chose otherwise. The menu also says when the game is paused.
 #pragma once
 
 #include <chrono>
@@ -56,7 +57,10 @@ class Menu final : public video::Overlay {
   // Shows a message for a few seconds.
   void notify(std::string message);
 
-  // Whether there is anything to draw (the menu or a notice).
+  // Shows that the game is paused (while the menu is closed).
+  void set_paused(bool paused) { paused_ = paused; }
+
+  // Whether there is anything to draw (the menu, a notice, or "Paused").
   bool visible() const;
 
   // Lays the menu out for the next presented frame.
@@ -79,12 +83,14 @@ class Menu final : public video::Overlay {
   void sound_tab(MenuModel& m);
   void controls_tab(MenuModel& m);
   void draw_notices();
+  void draw_paused(MenuModel& m);
 
   std::vector<std::string> webcams_;  // listed when the webcam list opens
 
   SDL_Window* window_ = nullptr;
   bool initialised_ = false;
   bool open_ = false;
+  bool paused_ = false;
   bool focus_ = false;       // focus the menu window on its next frame
   bool rendered_ = false;    // ImGui::Render() ran for the next present
   float scale_ = 0.0f;       // UI scale in use

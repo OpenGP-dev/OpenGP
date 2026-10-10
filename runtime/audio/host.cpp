@@ -47,6 +47,12 @@ void HostOutput::set_volume(float volume) {
   if (stream_) SDL_SetAudioStreamGain(stream_, std::clamp(volume, 0.0f, 1.0f));
 }
 
+void HostOutput::set_paused(bool paused) {
+  if (!stream_) return;
+  if (paused) SDL_PauseAudioStreamDevice(stream_);
+  else SDL_ResumeAudioStreamDevice(stream_);
+}
+
 void HostOutput::push(const s16* samples, u32 frames, u32 rate) {
   if (!stream_ || !frames || !rate) return;
   if (rate != rate_) {

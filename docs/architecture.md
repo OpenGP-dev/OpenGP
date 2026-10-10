@@ -231,7 +231,10 @@ guest code to the devices, and owns:
 - the PI interrupt controller;
 - the time base and decrementer, which run in real time (40.5 MHz);
 - the write-gather pipe;
-- a timer thread for timed events (retraces, DMA completion).
+- a timer thread for timed events (retraces, DMA completion);
+- the pause (`set_paused`): the time base stops and carries on where it stopped, timed events
+  wait, and interrupts are made pending so the guest thread reaches a safe point, where it
+  waits until the machine resumes.
 
 | Block | Model |
 |-------|-------|

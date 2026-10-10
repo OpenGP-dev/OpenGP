@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Pause (milestone 14)
+
+- **P** (or the Pause key) pauses the game, and the menu (Esc) pauses it while it is open. The
+  whole machine stops: the game, its timers, its sound and the wheel's forces, and it carries on
+  as if no time had passed. Optionally, the game also pauses while its window is in the
+  background. See [docs/playing.md](docs/playing.md#pausing).
+
 ### Smaller changes
 
 - The attract mode's first time round is silent on purpose: GP 2 starts it quiet and turns the
