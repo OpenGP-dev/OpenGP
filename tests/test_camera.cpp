@@ -128,6 +128,7 @@ TEST_CASE("the game fetches a photo from the camera") {
   CHECK(static_cast<u8>(reply[reply.size() - 2]) == 0xFF);
   CHECK(static_cast<u8>(reply[reply.size() - 1]) == 0xD9);
   CHECK(b.run(triforce::NET_CLOSESOCKET, {fd}) == 0);
+  CHECK_FALSE(b.net.linked());  // the camera is not another cabinet
 }
 
 TEST_CASE("connections without a route are refused") {
@@ -138,6 +139,7 @@ TEST_CASE("connections without a route are refused") {
   CHECK(b.run(triforce::NET_GET_LAST_ERROR, {fd}) == triforce::SSC_ECONNREFUSED);
   CHECK(b.run(triforce::NET_CLOSESOCKET, {fd}) == 0);
   CHECK(b.run(triforce::NET_CLOSESOCKET, {fd}) == kError);
+  CHECK_FALSE(b.net.linked());
 }
 
 TEST_CASE("host sockets: a routed connection to a listening socket") {
@@ -153,13 +155,18 @@ TEST_CASE("host sockets: a routed connection to a listening socket") {
   CHECK(b.run(triforce::NET_LISTEN, {server, 5}) == 0);
   CHECK(b.run(triforce::NET_ACCEPT, {server, 0x1400, 0x1410}) == kError);  // nobody yet
   CHECK(b.run(triforce::NET_GET_LAST_ERROR, {server}) == triforce::SSC_EWOULDBLOCK);
+  CHECK_FALSE(b.net.linked());
 
-  // A client connecting to another cabinet's address, routed to the server.
-  b.net.add_route({0xC0A81D97, 5000}, {0x7F000001, port});
-  const u32 client = b.run(triforce::NET_SOCKET, {2, 1, 0});
-  b.run(triforce::NET_SET_TIMEOUTS, {client, 2000, 2000, 2000});
-  b.put_address(0x1000, 0xC0A81D97, 5000);
-  REQUIRE(b.run(triforce::NET_CONNECT, {client, 0x1000, 16}) == 0);
+  // Another board (another cabinet) connecting to this one's address, routed
+  // to the server.
+  Board other;
+  other.net.add_route({0xC0A81D97, 5000}, {0x7F000001, port});
+  const u32 client = other.run(triforce::NET_SOCKET, {2, 1, 0});
+  other.run(triforce::NET_SET_TIMEOUTS, {client, 2000, 2000, 2000});
+  other.put_address(0x1000, 0xC0A81D97, 5000);
+  REQUIRE(other.run(triforce::NET_CONNECT, {client, 0x1000, 16}) == 0);
+  CHECK(other.net.linked());  // it connected to a cabinet
+  CHECK_FALSE(b.net.linked());
 
   u32 accepted = kError;
   for (int tries = 0; tries < 200 && accepted == kError; ++tries) {
@@ -168,11 +175,12 @@ TEST_CASE("host sockets: a routed connection to a listening socket") {
     accepted = b.run(triforce::NET_ACCEPT, {server, 0x1400, 0x1410});
   }
   REQUIRE(accepted != kError);
+  CHECK(b.net.linked());  // a cabinet connected to it
   CHECK(b.at(0x1400)[1] == 2);  // AF_INET
   CHECK(b.at(0x1404)[0] == 127);
 
-  std::memcpy(b.at(0x2000), "hello", 5);
-  CHECK(b.run(triforce::NET_SEND, {client, 0x2000, 5}) == 5);
+  std::memcpy(other.at(0x2000), "hello", 5);
+  CHECK(other.run(triforce::NET_SEND, {client, 0x2000, 5}) == 5);
   u32 n = kError;
   for (int tries = 0; tries < 200 && n == kError; ++tries) {
     std::memset(b.at(0x1100), 0, 32);
@@ -185,7 +193,11 @@ TEST_CASE("host sockets: a routed connection to a listening socket") {
   }
   REQUIRE(n == 5);
   CHECK(std::memcmp(b.at(0x3000), "hello", 5) == 0);
-  for (u32 fd : {client, accepted, server}) CHECK(b.run(triforce::NET_CLOSESOCKET, {fd}) == 0);
+  CHECK(other.run(triforce::NET_CLOSESOCKET, {client}) == 0);
+  for (u32 fd : {accepted, server}) CHECK(b.run(triforce::NET_CLOSESOCKET, {fd}) == 0);
+  // Linked for the rest of the run, even with the connections closed.
+  CHECK(b.net.linked());
+  CHECK(other.net.linked());
 }
 
 TEST_CASE("InetAddr answers in network byte order") {

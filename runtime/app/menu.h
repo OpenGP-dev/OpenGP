@@ -5,7 +5,8 @@
 // guide button. It also shows short notices ("Screenshot saved").
 //
 // The game gets no controls while it is open, and pauses unless the player
-// chose otherwise. The menu also says when the game is paused.
+// chose otherwise or it is linked to other cabinets. The menu also says when
+// the game is paused.
 #pragma once
 
 #include <chrono>
@@ -32,6 +33,7 @@ struct MenuModel {
   std::string video_info;          // renderer, internal resolution
   std::function<std::vector<std::string>()> webcams;  // lists the webcams' names
   std::string camera_info;           // the camera this run uses
+  bool linked = false;               // linked to another cabinet: no pausing
   std::function<void()> quit;
   std::function<void()> test_menu;  // restarts into the game's test menu (if it has one)
 };

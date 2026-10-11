@@ -381,6 +381,10 @@ runs in-process, with no host network. Host sockets are non-blocking; the games 
 frame. For now only services are reachable: other connections are refused, and binds go to the
 loopback interface (linked cabinets will route the cabinets' addresses, M12).
 
+`Network::linked()` says whether the game has linked to another cabinet since start-up: a routed
+connection made, or one accepted on a listening socket (services don't count). The launcher
+pauses only a game that has not: other cabinets need a linked one to keep running (M12).
+
 The camera is such a service (`camera::NamCam`, at 192.168.29.104-107 port 80): it answers the
 game's `GET /img.jpg` with a 320x240 JPEG from its `camera::Source`, encoded by `camera/jpeg.cpp`
 (baseline 4:2:0, which the games' own decoder reads). The sources are a test pattern and

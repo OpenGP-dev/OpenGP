@@ -21,6 +21,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <compare>
 #include <cstddef>
 #include <functional>
@@ -131,6 +132,12 @@ class Network {
   // The address the game gave itself (ModifyMyIPaddr), 0 before it has.
   u32 own_address() const { return own_address_; }
 
+  // Whether the game has linked to another cabinet since start-up: a routed
+  // connection made, or one accepted on a listening socket (services such as
+  // the camera do not count). The other cabinets expect this one to keep
+  // running, so the launcher does not pause a linked game. Thread-safe.
+  bool linked() const { return linked_.load(std::memory_order_relaxed); }
+
   static constexpr std::size_t kSockets = 64;  // numbers 1-63; 0 is never used
 
  private:
@@ -160,6 +167,7 @@ class Network {
   u32 next_fd_ = 1;
   u32 last_error_ = SSC_SUCCESS;
   u32 own_address_ = 0;
+  std::atomic<bool> linked_{false};
   std::map<Endpoint, std::shared_ptr<Service>> services_;
   std::map<Endpoint, Endpoint> routes_;
 };

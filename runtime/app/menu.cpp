@@ -286,7 +286,8 @@ void Menu::game_tab(MenuModel& m) {
   ImGui::SeparatorText("Pause");
   ImGui::Checkbox("Pause while this menu is open", &s.pause_in_menu);
   ImGui::Checkbox("Pause when the window is in the background", &s.pause_in_background);
-  if (const std::string keys = pause_keys(m); !keys.empty()) hint("%s pauses and resumes the game.", keys.c_str());
+  if (m.linked) hint("Linked to another cabinet: the game keeps running (pausing is only for playing solo).");
+  else if (const std::string keys = pause_keys(m); !keys.empty()) hint("%s pauses and resumes the game.", keys.c_str());
 
   ImGui::SeparatorText("Arcade");
   ImGui::Checkbox("Free play (no coins needed)", &s.free_play);

@@ -356,6 +356,7 @@ u32 Network::connect(u32 fd, u32 address, u32 length) {
   }
   net_log("connect(%u, %s:%u) via %s:%u", fd, ipv4_string(to.ip).c_str(), to.port,
           ipv4_string(route->second.ip).c_str(), route->second.port);
+  linked_ = true;
   last_error_ = SSC_SUCCESS;
   return 0;
 }
@@ -412,6 +413,7 @@ u32 Network::accept(u32 fd, u32 address, u32 length_address) {
   }
   net_log("accept(%u) = %u from %s:%u", fd, client, ipv4_string(c->peer.ip).c_str(), c->peer.port);
   sockets_[client] = std::move(c);
+  linked_ = true;
   last_error_ = SSC_SUCCESS;
   return client;
 }

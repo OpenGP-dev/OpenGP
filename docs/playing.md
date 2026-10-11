@@ -49,6 +49,10 @@ too, and **Pause when the window is in the background** (Game tab) pauses it whi
 another window. The pause control can be changed like the others (Controls tab, or `pause` in
 `controls.toml`). The game's clock falls behind by the time spent paused, until it next starts.
 
+Pausing is only for playing solo. Once the game has linked to another cabinet (on this computer or
+a LAN), the other cabinets need it to keep running, so it doesn't pause again until it restarts:
+the pause control does nothing, and the menu opens over the running game.
+
 ## Settings
 
 The menu's settings are saved in `user/settings.toml` when the menu closes and when the game quits,

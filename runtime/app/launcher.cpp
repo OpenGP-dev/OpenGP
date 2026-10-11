@@ -669,12 +669,20 @@ int run(const Game& game, int argc, char** argv) {
         if (use_input) host_input.handle_event(e);
       }
       // Pausing: with the pause control, while the menu is open, or while the
-      // window is in the background (as the player chose).
-      if (use_input && host_input.take_pause_press() && !menu.is_open()) pause_pressed = !pause_pressed;
+      // window is in the background (as the player chose). Only when playing
+      // solo: once the game has linked to another cabinet, the others need it
+      // to keep running.
+      const bool linked = machine.network().linked();
+      if (use_input && host_input.take_pause_press() && !menu.is_open()) {
+        if (linked) menu.notify("A linked game can't pause");
+        else pause_pressed = !pause_pressed;
+      }
+      if (linked) pause_pressed = false;
+      model.linked = linked;
       const SDL_WindowFlags window_flags = window ? SDL_GetWindowFlags(window) : 0;
       const bool background = window && ((window_flags & SDL_WINDOW_MINIMIZED) || !(window_flags & SDL_WINDOW_INPUT_FOCUS));
-      const bool paused = pause_pressed || (menu.is_open() && settings.pause_in_menu) ||
-                          (background && settings.pause_in_background);
+      const bool paused = !linked && (pause_pressed || (menu.is_open() && settings.pause_in_menu) ||
+                                      (background && settings.pause_in_background));
       if (paused != machine.hardware().paused()) {
         machine.hardware().set_paused(paused);
         if (g_audio_out) g_audio_out->set_paused(paused);

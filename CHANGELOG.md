@@ -7,7 +7,8 @@
 - **P** (or the Pause key) pauses the game, and the menu (Esc) pauses it while it is open. The
   whole machine stops: the game, its timers, its sound and the wheel's forces, and it carries on
   as if no time had passed. Optionally, the game also pauses while its window is in the
-  background. See [docs/playing.md](docs/playing.md#pausing).
+  background. Pausing is only for playing solo: a game linked to other cabinets keeps running.
+  See [docs/playing.md](docs/playing.md#pausing).
 
 ### Smaller changes
 
