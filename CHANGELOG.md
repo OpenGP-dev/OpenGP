@@ -1,20 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-10-01)
 
-### Pause (milestone 14)
-
-- **P** (or the Pause key) pauses the game, and the menu (Esc) pauses it while it is open. The
-  whole machine stops: the game, its timers, its sound and the wheel's forces, and it carries on
-  as if no time had passed. Optionally, the game also pauses while its window is in the
-  background. Pausing is only for playing solo: a game linked to other cabinets keeps running.
-  See [docs/playing.md](docs/playing.md#pausing).
-
-### Smaller changes
-
-- GP 2's attract mode has sound every time round. The game plays its first time round without
-  sound on purpose (it starts quiet and turns the sound on for the rounds after), which made it
-  seem broken.
+This release adds the cabinet's camera, from a webcam, and a pause. It is source only, with no
+installer packages: build it as [docs/building.md](docs/building.md) explains. It has been
+built and tested on Windows; the Linux and macOS builds have not been tested since milestone 10.
 
 ### The camera (milestone 11)
 
@@ -36,6 +26,23 @@
   [mkgp2-decomp](https://github.com/naari3/mkgp2-decomp): 3,427 functions and 488 objects in
   GP 2, about 1,000 functions in GP. Backtraces and profiles show them.
 - `--game-log` prints the games' own debug messages, converted from Shift JIS.
+
+### Pause (milestone 14)
+
+- **P** (or the Pause key) pauses the game, and the menu (Esc) pauses it while it is open. The
+  whole machine stops: the game, its timers, its sound and the wheel's forces, and it carries on
+  as if no time had passed. Optionally, the game also pauses while its window is unfocused.
+  Pausing is only for playing solo: a game linked to other cabinets keeps running. See
+  [docs/playing.md](docs/playing.md#pausing).
+
+### Smaller changes
+
+- GP 2's attract mode has sound every time round. The game plays its first time round without
+  sound on purpose (it starts quiet and turns the sound on for the rounds after), which made it
+  seem broken.
+- Clearer wording in the menu's Game tab.
+
+Still missing before 1.0 are linked cabinets (milestone 12).
 
 ## 0.2.0 (2026-09-26)
 

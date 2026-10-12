@@ -45,8 +45,8 @@ Game tab to keep it running).
 **P** (or the Pause key) pauses the game and shows "Paused"; press it again to carry on. The arcade
 games have no pause of their own, so OpenGP freezes the whole machine: the game, its timers and
 its sound stop where they are, and carry on as if no time had passed. The menu pauses the game
-too, and **Pause when the window is in the background** (Game tab) pauses it while you are in
-another window. The pause control can be changed like the others (Controls tab, or `pause` in
+too, and **Pause when the window is unfocused** (Game tab) pauses it while you are in another
+window. The pause control can be changed like the others (Controls tab, or `pause` in
 `controls.toml`). The game's clock falls behind by the time spent paused, until it next starts.
 
 Pausing is only for playing solo. Once the game has linked to another cabinet (on this computer or
@@ -94,7 +94,7 @@ your face within the frame", then the item button. The photo is shown on your ch
 race. OpenGP can use a webcam for it. In the menu's Game tab, **Photos from** is:
 
 - **Off** (the default): the game takes no photos, as a cabinet without its camera.
-- **Webcam**: the webcam chosen below it (or the first one). Its picture is cropped to 4:3 around
+- **Webcam**: the webcam chosen below it (**Default** is the first one). Its picture is cropped to 4:3 around
   the middle. On macOS, the system asks once whether OpenGP may use the camera.
 - **Test pattern**: colour bars, for trying it without a webcam.
 

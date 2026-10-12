@@ -10,18 +10,19 @@ compiled together with a runtime that stands in for the Triforce hardware (GameC
 DSP, AM-Baseboard, AM-Mediaboard), so the game runs as a normal native program, with room for
 modern features such as higher resolutions, widescreen and remappable controls.
 
-> **Status: playable.** Milestones 1 to 9 are done. Mario Kart Arcade GP 2 (7,612 functions) and
-> Mario Kart Arcade GP (7,504 functions) recompile, boot from their disc images through the
+> **Status: playable.** Milestones 1 to 11 and 14 are done. Mario Kart Arcade GP 2 (7,612 functions)
+> and Mario Kart Arcade GP (7,504 functions) recompile, boot from their disc images through the
 > emulated Triforce hardware (media board, baseboard, JVS I/O, card reader) and play in a window or
-> fullscreen (Vulkan, or Metal on macOS), in 4:3 or widescreen and at up to 8 times their resolution: insert a coin (or
-> turn on free play), make a Mario Card, pick a character and cup, and race at 60 fps with the
-> keyboard, a gamepad or a steering wheel with force feedback, with the games' music and sound
-> effects (their DSP audio microcode is emulated). A menu (Esc) has the settings, the controls and
-> the Mario Cards; the games' own test menus work too. See [docs/playing.md](docs/playing.md) and
-> the [roadmap](#roadmap).
+> fullscreen (Vulkan, or Metal on macOS), in 4:3 or widescreen and at up to 8 times their
+> resolution: insert a coin (or turn on free play), make a Mario Card, pick a character and cup, and
+> race at 60 fps with the keyboard, a gamepad or a steering wheel with force feedback, with the
+> games' music and sound effects (their DSP audio microcode is emulated). A webcam can stand in for
+> the cabinet's camera, and you can pause when you play solo. A menu (Esc) has the settings, the
+> controls and the Mario Cards; the games' own test menus work too. See
+> [docs/playing.md](docs/playing.md) and the [roadmap](#roadmap).
 
-The latest release is **0.2.0**, with installer packages for Windows, Linux and macOS (see
-[CHANGELOG.md](CHANGELOG.md)).
+The latest release is **0.3.0** (source only), with the camera and pause. The latest installer
+packages, for Windows, Linux and macOS, are 0.2.0's (see [CHANGELOG.md](CHANGELOG.md)).
 
 ## How it works
 
@@ -121,14 +122,15 @@ marked as such in the source. Vendored third-party code in `thirdparty/` keeps i
 | M7 | Card saves, settings menu, resolution scaling, widescreen, fullscreen; the game's test menu (**done**) | yes |
 | M8 | Mario Kart Arcade GP (GGPE01): symbol map, the same runtime, free play, test menu (**done**) | yes |
 | M9 | Installer packages for Windows, Linux and macOS (Apple Silicon, Metal renderer): the prebuilt runtime and recompiler; the installer recompiles and builds the games from the player's own images, so no game code is ever distributed (**done**, 0.2.0) | yes |
-| M10 | What the GP 2 decomp ([mkgp2-decomp](https://github.com/naari3/mkgp2-decomp)) knows: its function names in both games' symbol maps, and the games' own debug messages (`--game-log`), for working on M11 and M12 (**done**) | yes |
-| M11 | The NamCam2 camera from a webcam: player photos. The camera is an HTTP server on the media board's network, so this starts the network (the socket API on host sockets) (**done**) | yes |
+| M10 | What the GP 2 decomp ([mkgp2-decomp](https://github.com/naari3/mkgp2-decomp)) knows: its function names in both games' symbol maps, and the games' own debug messages (`--game-log`), for working on M11 and M12 (**done**, 0.3.0) | yes |
+| M11 | The NamCam2 camera from a webcam: player photos. The camera is an HTTP server on the media board's network, so this starts the network (the socket API on host sockets) (**done**, 0.3.0) | yes |
 | M12 | Linked cabinets: the rest of the media board's network, several instances racing each other on one PC or a LAN | yes |
 | 1.0 | Release: the installer package with linked cabinets and the camera | yes |
-| M14 | Pause: freeze the game (its threads, sound and timers) from the menu or a button; the arcade games have no pause of their own. Only when playing solo: a game linked to other cabinets (M12) keeps running (**done**, ahead of 1.0) | yes |
+| M14 | Pause: freeze the game (its threads, sound and timers) from the menu or a button; the arcade games have no pause of their own. Only when playing solo: a game linked to other cabinets (M12) keeps running (**done** ahead of 1.0, 0.3.0) | yes |
 | M15 | Discord Rich Presence: the character, course and race position, read from the game's state (the decomp's names) and sent over Discord's local connection, without Discord's SDK | yes |
 
-Releases from 0.2.0 on come with the installer packages (see [CHANGELOG.md](CHANGELOG.md)).
+Releases from 0.2.0 on come with the installer packages, except 0.3.0, which is source only (see
+[CHANGELOG.md](CHANGELOG.md)).
 
 ## Acknowledgements
 
