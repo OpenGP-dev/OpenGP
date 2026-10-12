@@ -112,6 +112,16 @@ class Hardware {
   u32 decrementer() const;
   void set_decrementer(u32 value);
 
+  // --- Pause --------------------------------------------------------------------------
+  // Freezes the machine: the time base and decrementer stop, timed events
+  // (retraces, DMA, the audio) wait, and guest code stops at its next safe
+  // point, in wait_while_paused(). Resuming carries on as if no time had
+  // passed. Thread-safe.
+  void set_paused(bool paused);
+  bool paused() const { return paused_at_.load(std::memory_order_acquire) != 0; }
+  // Blocks the calling (guest) thread while the machine is paused.
+  void wait_while_paused();
+
   // --- Timed events -------------------------------------------------------------------
   using EventId = u64;
   // Runs `fn` on the timer thread (with mutex() held) at time base `when`.
@@ -139,6 +149,7 @@ class Hardware {
   void update_pending();
   void timer_loop();
   u64 host_ticks() const;
+  u64 clock_ticks() const;  // host_ticks(), or when it stopped while paused
 
   u8* base_;
   u32 mem1_size_;
@@ -158,8 +169,11 @@ class Hardware {
   std::array<u8, 64> gather_buffer_{};  // one 32-byte burst plus spill from up to 8-byte writes
   u32 gather_count_ = 0;
 
-  // Time base: tb = host_ticks - tb_origin_ (+ guest adjustments)
+  // Time base: tb = host_ticks - tb_origin_ (+ guest adjustments, and time
+  // spent paused)
   u64 tb_origin_ = 0;
+  std::atomic<u64> paused_at_{0};  // host ticks when paused; 0 when running
+  std::condition_variable_any pause_cv_;
   // Decrementer: value `dec_value_` written at time base `dec_written_`.
   u32 dec_value_ = 0;
   u64 dec_written_ = 0;

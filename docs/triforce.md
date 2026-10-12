@@ -53,8 +53,70 @@ Status replies the game expects:
 - Board serial
 - A "test hardware" command that answers in two phases
 
-Network sockets (`Socket`, `Bind`, `Connect`, ...) are used for linked cabinets. They will be
-stubbed first and connected to host sockets later.
+Network sockets (`Socket`, `Bind`, `Connect`, ...) are used by the camera and for linked
+cabinets. `triforce/network.cpp` runs them (milestone 11, from Dolphin's media board): each game
+socket is a host socket, or a connection to a service OpenGP answers itself (the camera). Host
+sockets are non-blocking, since the games poll them once a frame (`select` with a zero timeout);
+only connecting waits, up to the game's timeout. Until linked cabinets (milestone 12), connections
+to other addresses are refused and binds go to the loopback interface. Details the games rely on:
+- A reply's second word is the result, stored little endian, except `InetAddr`'s, which the game
+  reads without swapping: the address in network byte order.
+- Addresses are VxWorks' `sockaddr_in` (length, family, port and address in network byte order,
+  8 bytes of padding); `fd_set`s are 256 bits, socket *n* at bit *n* % 8 of byte *n* / 8; a
+  `timeval` is two little-endian words (seconds, microseconds).
+- Timeouts (`SetTimeOuts`) are in milliseconds: 2000 for the camera, 6000 and 10000 for the link.
+
+What the games do with the network, from the mkgp2-decomp's names, checked against GGPE02 (GP 2's
+addresses):
+- The game's side is `ac*` (`acSocket`, `acConnect`, `acSend`, `acRecv`, `acSelect`,
+  `acSetTimeOuts`, ... at `0x80291xxx`), which sends the socket commands to the media board.
+- A cabinet's own address is `192.168.29.150` + (PCB ID - 1), set at start-up with
+  `acModifyMyIPaddr` and netmask `255.255.255.0` (`PcbIdToIpAndModify`, `0x80073954`). The PCB
+  ID is byte `0x21` of the settings block (`0x805986C0`). The other cabinets are at the same
+  addresses for their IDs.
+- A cabinet's camera is at `192.168.29.104` + (PCB ID - 1) (`PcbIdToIpString`, `0x80073B24`;
+  both lists are at `0x8040D910`).
+- The link between cabinets is `TCPConn_*`, `PcbConn_*`, `PCBComm_*`, `PcbSync_*` and
+  `CommBroadcast_*` (each kart's lap and position); the test menu's network pages are
+  `NetDiag_*`.
+- The game gives each connection attempt a timeout (6 seconds in GP 2, per the decomp's author).
+  Dolphin's media board blocks for that long, which freezes the whole game; naari3's Dolphin
+  branch `feature/ammb-async-connect` (not merged) makes connect, send, receive and accept
+  non-blocking.
+- With sockets working, GP 2's link starts after the device check even on a lone cabinet: it
+  listens on port 5000 and tries each other cabinet's ports 5008 down to 5000 (refused for now).
+
+With `--game-log`, the games print their network library's messages, which name each media
+board result (`AC_MEDIACMD_ERR_CANNOT_OPEN`, ...) and describe it in Japanese.
+
+## NamCam2 camera
+
+- Takes the player's photo when a game starts ("Please align your face within the frame"), which
+  is shown on their character in the race. GP asks first ("Take your picture for solo play?").
+- An HTTP server on the media board's network, at the camera address above. For a photo
+  `NamCam_GetImageHandle` (`0x800487F4`, a state machine run once a frame) connects to its port
+  80 with a 2-second timeout, sends `GET /img.jpg HTTP/1.0` (26 bytes), then `select`s and
+  `recv`s up to 64 KiB a frame into a 512 KiB buffer (giving up after 60 empty polls) until the
+  camera closes the connection. The reply must end with JPEG's `FF D9`; the picture starts after
+  the headers' blank line.
+- The picture is a **320x240 JPEG**: the game decodes it itself (`Asset_LoadAndDecompressByType`,
+  `0x8004861C`, decoder type 3) into a 320x240 RGBA8 texture it allocates (`0x4B000` bytes). Its
+  decoder (from `0x8029A944`) takes baseline JPEG only (`SOF0`, 8 bits, 1 or 3 components with
+  4:4:4, 4:2:2 or 4:2:0 sampling), and skips `APPn` and `COM` segments.
+- The camera is powered through the wheel's force feedback board (`StrPcb`): at start-up
+  `BootDispatcher` calls `StrPcb_BeginEffect` (`0x80037BCC`, with the PCB ID - 1), which starts a
+  sequence of states 1-4 at `+0x60`, counted down in seconds at `+0x64` by `StrPcb_StateTick`
+  (`0x80036864`): 20 seconds in state 2, the power bit set, 20 more in state 3. The start-up check
+  waits for state 4 (`StrPcb_IsInErrorState`, in fact "powered") or 3000 frames.
+- `CameraChecker_*` (from `0x8008B918`) is the start-up check: it waits for the power, calls
+  `NamCam_Init`, and downloads a picture (3 tries of 300 frames). The test menu's camera page
+  (`CameraTest_Page`) shows the camera's pictures live.
+- OpenGP answers as the camera (`camera/namcam.cpp`) with its own JPEG encoder
+  (`camera/jpeg.cpp`, baseline 4:2:0) and pictures from a webcam (`camera/webcam.cpp`, SDL3's
+  camera API) or a test pattern. With the camera on, `games/common/camera_use.cpp` sets the
+  settings' "camera use" byte after start-up reads them (`GameBoot_Init`, `0x80075324`; GP
+  `0x8007A5CC`) and cuts the power sequence's waits to half a second; with it off, it clears the
+  byte, so the check is skipped. GP's camera code is the same as GP 2's.
 
 ## AM-Baseboard
 
@@ -94,12 +156,6 @@ See `Triforce/MarioKartGP.cpp` in Dolphin.
 
 - Stores player progress.
 - Emulated as one save file per card (Dolphin: `HW/MagCard/`).
-
-### NamCam2 camera
-
-- Takes the player's photo, which is shown on their character.
-- It hangs off the Namco JVS I/O board.
-- First version: the check is disabled. Later: a webcam feed.
 
 ## Known game-side checks (GGPE02)
 
@@ -148,9 +204,13 @@ readable with decomp-toolkit's `vfs` commands.
 | `.bss` | `0x804FDCC0` | `0x1D0CB8` | |
 | `.sdata` / `.sdata2` | `0x806CE980` / `0x806D1EC0` | | `_SDA_BASE_` (r13) = `0x806D6980`, `_SDA2_BASE_` (r2) = `0x806D9EC0` |
 
-decomp-toolkit finds 7,612 functions covering all of `.text`. About 900 are named:
+decomp-toolkit finds 7,612 functions covering all of `.text`. 3,427 are named:
 - about 280 by decomp-toolkit's own signatures;
-- 632 by `tools/sigmatch.py`, which uses Dolphin's signature database.
+- 632 by `tools/sigmatch.py`, which uses Dolphin's signature database;
+- 2,512 by `tools/decompnames.py`, from the mkgp2-decomp project (see
+  [game-files.md](game-files.md#regenerating-the-symbol-list)).
+
+Of the data, 488 objects are named, 372 of them from the decomp.
 
 The game's `main` is at `0x800AC27C`.
 
@@ -185,12 +245,11 @@ With frames rendered, the start-up sequence is:
 
 What it needed:
 - **Camera**: the NamCam2 is an IP camera on the media board's network ("CAMERA IP INITIALIZE
-  WAIT"). Sockets are not emulated, so the check ends in "CAMERA ERROR / Please call an
-  attendant". The game can run without a camera: byte `0x25` of its settings block
-  (`0x805986C0`) is "camera use", and when it is 0 the check is skipped. `recomp.toml` patches
-  the settings defaults (`0x80073BD8`) to 0. Settings live in the baseboard's backup memory
-  (`user/tribackup_GGPE02.bin`): a backup written with the camera on keeps it on, so delete that
-  file once to get the new default.
+  WAIT"). Without sockets the check ended in "CAMERA ERROR / Please call an attendant". The
+  game can run without a camera: byte `0x25` of its settings block (`0x805986C0`) is "camera
+  use", and when it is 0 the check is skipped. `recomp.toml` patches the settings defaults
+  (`0x80073BD8`) to 0; since milestone 11 the launcher sets the byte at every start-up (see
+  "NamCam2 camera" above).
 - **Fonts**: the LINK screen's text uses the SDK's `OSInitFont`, which reads the system font
   from the boot ROM over EXI. Without it the game crashes on a null font. The IPL device serves
   free replacement fonts (`thirdparty/gc-fonts`), or the fonts from a boot ROM dump in
@@ -259,6 +318,19 @@ With a coin, start and the menus, the game goes from attract mode into a race, a
   then starts the game. OpenGP emulates a reboot by restarting the process (`os/reboot.h`); a
   reboot from a boot that kept memory (the test menu) boots afresh.
 
+### The games' debug messages (milestone 10)
+
+- `DebugPrintf` (`0x8002CE8C`; GP `0x80030760`) has about 570 calls in GP 2: scene changes, the
+  start-up checks, the camera, the link, the card reader and printer, memory use. It prints
+  through `OSReport` only when byte `0x2A` of the settings block is set, which start-up clears.
+- The SDK's `OSPanic`, which reports failed checks (`DVDRead`, `VIConfigure`, `__assert`, ...),
+  is an empty function in both games (`OSPanic_Stub`, `0x8002CDEC`; GP `0x800306C0`), so they
+  carry on after one.
+- `--game-log` (`games/common/game_log.cpp`) replaces both to print `[game]` lines, converted
+  from Shift JIS. GP 2's start-up prints about 40 lines (the cabinet's address, the wheel's
+  calibration, the sound and card printer set-up); its attract mode and menus print almost
+  nothing. GP prints its memory use at each scene change.
+
 ## Mario Kart Arcade GP (GGPE01): what milestone 8 found
 
 GP 2 is a sequel on the same engine, and most of what it needed carried over unchanged: the
@@ -274,7 +346,8 @@ in `recomp.toml` and one patched function.
 - 24 MiB of RAM (arena `0x805D1FA0`-`0x817DE380`).
 - Matching functions between the two games by their code (with relocated fields masked, and the
   same size) pairs up 3,367 of them one to one (`tools/crossmatch.py`). That is how most of the
-  addresses below were found.
+  addresses below were found, and how 1,021 functions and 77 objects got GP 2's names from
+  the decomp.
 
 ### What it needed
 

@@ -39,12 +39,17 @@ class HostInput {
   // Starts SDL's gamepad, joystick and haptic support.
   bool init(std::string* error);
 
-  // Connects and disconnects controllers.
+  // Connects and disconnects controllers, and sees the pause keys pressed.
   void handle_event(const SDL_Event& event);
 
   // Reads the devices. Call about once a frame, on the thread that owns the
   // window.
   triforce::Controls poll();
+
+  // Whether the pause control (OpenGP's own) was pressed since the last call:
+  // its keys as handle_event() sees them, its buttons and axes as poll()
+  // reads them.
+  bool take_pause_press();
 
   // Plays the cabinet's outputs (wheel forces) on the devices.
   void set_outputs(const triforce::Outputs& outputs);
@@ -52,7 +57,7 @@ class HostInput {
   // ---- Seeing and changing the bindings (the menu) ----
 
   enum class DeviceKind { Keyboard, Gamepad, Joystick };
-  static constexpr std::size_t kControlCount = 11;
+  static constexpr std::size_t kControlCount = 12;
   // A control's name in the file ("gas") and in the menu ("Gas").
   static const char* control_name(std::size_t control);
   static const char* control_label(std::size_t control);

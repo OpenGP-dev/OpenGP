@@ -32,7 +32,7 @@ namespace guest {
 PPC_FUNC(OSReport) {
   std::string text = os::format_guest(ctx, base, ctx.gpr[3], 4);
   if (text.empty() || text.back() != '\n') text += '\n';
-  std::fputs(("[OSReport] " + text).c_str(), stdout);
+  std::fputs(("[OSReport] " + os::sjis_to_utf8(text)).c_str(), stdout);
   std::fflush(stdout);
 }
 

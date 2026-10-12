@@ -36,22 +36,7 @@ enum : u16 {
   CMD_GET_NETWORK_CONFIG = 0x104,
   CMD_NETWORK_REINIT = 0x204,
   CMD_TEST_HARDWARE = 0x301,
-  // Sockets (Mario Kart GP)
-  CMD_ACCEPT = 0x401,
-  CMD_BIND = 0x402,
-  CMD_CLOSESOCKET = 0x403,
-  CMD_CONNECT = 0x404,
-  CMD_INET_ADDR = 0x406,
-  CMD_LISTEN = 0x408,
-  CMD_RECV = 0x409,
-  CMD_SEND = 0x40A,
-  CMD_SOCKET = 0x40B,
-  CMD_SELECT = 0x40C,
-  CMD_SET_SOCK_OPT = 0x40E,
-  CMD_SET_TIMEOUTS = 0x410,
-  CMD_GET_LAST_ERROR = 0x411,
-  CMD_GET_PARAM_BY_DHCP_EXEC = 0x414,
-  CMD_MODIFY_MY_IP_ADDR = 0x415,
+  // 0x401-0x415: sockets (NET_* in network.h)
   // F-Zero AX link
   CMD_INIT_LINK = 0x601,
   CMD_ALLNET_INIT = 0x700,
@@ -91,10 +76,6 @@ enum : u32 {
 
 enum : u32 { STATUS_LOADING_GAME_PROGRAM = 4, STATUS_LOADED_GAME_PROGRAM = 5 };
 enum : u8 { MEDIA_GDROM = 1, BOARD_NAND_MASK_NAND = 2 };
-
-// Socket status codes.
-constexpr u32 SSC_EBADF = 9;
-constexpr u32 SSC_SUCCESS = 70;
 
 // "TEST OK", read by the game's display code with a byte swap.
 constexpr u32 TEST_OK_WORD0 = 0x54455354;
@@ -172,7 +153,7 @@ MediaBoard::MediaBoard(hw::Hardware& hw, const disc::Image& disc, const std::str
       allnet_buffer_(0x1000),
       allnet_settings_(0x8500),
       board_status_(STATUS_LOADING_GAME_PROGRAM),
-      last_error_(SSC_SUCCESS) {
+      network_([this](u32 address) { return span_for(address); }) {
   const std::string& id = disc.game_id();
   game_ = id == "GGPE01" ? Game::MarioKartGP : id == "GGPE02" ? Game::MarioKartGP2 : Game::Other;
 
@@ -416,16 +397,11 @@ void MediaBoard::execute_board_command() {
       if (u8* p = guest(mb32(12), 8)) put_le32(p, TEST_OK_WORD0), put_le32(p + 4, TEST_OK_WORD1);
       set_mb32(1, mb32(9));
       break;
-    case CMD_CLOSESOCKET:
-    case CMD_CONNECT:
-    case CMD_RECV:
-    case CMD_SEND:
-    case CMD_SOCKET:
-    case CMD_SELECT:
-    case CMD_SET_SOCK_OPT:
-    case CMD_MODIFY_MY_IP_ADDR: socket_command(command, 10); break;
     case CMD_INIT_LINK: break;
-    default: mb_error("unhandled execute command %04X", command); break;
+    default:
+      if (command >= NET_ACCEPT && command <= NET_MODIFY_MY_IP_ADDR) socket_command(command, 10);
+      else mb_error("unhandled execute command %04X", command);
+      break;
   }
 
   std::memset(&media_buffer_[0x20], 0, 0x20);
@@ -508,25 +484,11 @@ void MediaBoard::execute2(u32 address, u32 length) {
       schedule_test_result(true);
       break;
     }
-    case CMD_ACCEPT:
-    case CMD_BIND:
-    case CMD_CLOSESOCKET:
-    case CMD_CONNECT:
-    case CMD_INET_ADDR:
-    case CMD_LISTEN:
-    case CMD_RECV:
-    case CMD_SEND:
-    case CMD_SOCKET:
-    case CMD_SELECT:
-    case CMD_SET_SOCK_OPT:
-    case CMD_SET_TIMEOUTS:
-    case CMD_GET_LAST_ERROR:
-    case CMD_GET_PARAM_BY_DHCP_EXEC:
-    case CMD_MODIFY_MY_IP_ADDR: socket_command(command, 2); break;
     case CMD_INIT_LINK:
     case CMD_ALLNET_INIT: break;
     default:
-      if (!(command & 0x8000)) mb_error("unhandled execute2 command %04X", command);
+      if (command >= NET_ACCEPT && command <= NET_MODIFY_MY_IP_ADDR) socket_command(command, 2);
+      else if (!(command & 0x8000)) mb_error("unhandled execute2 command %04X", command);
       break;
   }
 
@@ -536,41 +498,24 @@ void MediaBoard::execute2(u32 address, u32 length) {
   raise_interrupt(0x10);
 }
 
+// The parameters are the command block's words from `parameter_index` on;
+// the result is the reply's second word. Most replies also echo byte 8 of the
+// block in byte 1 (a sequence number), as Dolphin's do.
 void MediaBoard::socket_command(u16 command, u32 parameter_index) {
-  // No network yet: every socket operation fails as if no socket exists.
-  const u32 fail = 0xFFFFFFFF;
-  mb_log("socket command %04X (not supported)", command);
+  std::array<u32, 6> params;
+  for (u32 i = 0; i < params.size(); ++i) params[i] = mb32(parameter_index + i);
+  const u32 result = network_.execute(command, params);
   switch (command) {
-    case CMD_SOCKET:
-      media_buffer_[1] = 0;
-      set_mb32(1, fail);
-      break;
-    case CMD_SELECT:
-      media_buffer_[1] = 0;
-      set_mb32(1, 0);  // nothing ready
-      break;
-    case CMD_CLOSESOCKET:
-      set_mb32(1, fail);
-      last_error_ = SSC_SUCCESS;
-      break;
-    case CMD_BIND:
-    case CMD_ACCEPT: set_mb32(1, fail); break;
-    case CMD_GET_PARAM_BY_DHCP_EXEC:
-      media_buffer_[1] = 0;
-      set_mb32(1, 0);
-      break;
-    case CMD_GET_LAST_ERROR:
-      media_buffer_[1] = media_buffer_[8];
-      set_mb32(1, last_error_);
-      break;
-    case CMD_MODIFY_MY_IP_ADDR: break;
-    default:
-      media_buffer_[1] = media_buffer_[8];
-      set_mb32(1, fail);
-      last_error_ = SSC_EBADF;
-      break;
+    case NET_SOCKET:
+    case NET_SELECT:
+    case NET_GET_PARAM_BY_DHCP_EXEC: media_buffer_[1] = 0; break;
+    case NET_CLOSESOCKET:
+    case NET_ACCEPT:
+    case NET_BIND:
+    case NET_MODIFY_MY_IP_ADDR: break;
+    default: media_buffer_[1] = media_buffer_[8]; break;
   }
-  (void)parameter_index;
+  if (command != NET_MODIFY_MY_IP_ADDR) set_mb32(1, result);
 }
 
 void MediaBoard::schedule_test_result(bool execute2) {

@@ -31,7 +31,7 @@ jobs:
           "version=$version" >> $env:GITHUB_OUTPUT
           "sha256=$sha" >> $env:GITHUB_OUTPUT
           "dir=llvm-mingw-$version-ucrt-x86_64" >> $env:GITHUB_OUTPUT
-          $project = [regex]::Match((Get-Content CMakeLists.txt -Raw), 'VERSION ([0-9.]+)').Groups[1].Value
+          $project = [regex]::Match((Get-Content CMakeLists.txt -Raw), 'project\(OpenGP VERSION ([0-9.]+)').Groups[1].Value
           "project=$project" >> $env:GITHUB_OUTPUT
       - name: Cache llvm-mingw
         id: cache

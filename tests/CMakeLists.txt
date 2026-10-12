@@ -46,9 +46,17 @@ add_executable(test_dsp test_dsp.cpp)
 target_link_libraries(test_dsp PRIVATE opengp_machine doctest opengp_warnings)
 add_test(NAME dsp COMMAND test_dsp)
 
+add_executable(test_pause test_pause.cpp)
+target_link_libraries(test_pause PRIVATE opengp_machine doctest opengp_warnings)
+add_test(NAME pause COMMAND test_pause)
+
 add_executable(test_disc test_disc.cpp)
 target_link_libraries(test_disc PRIVATE opengp_machine doctest opengp_warnings)
 add_test(NAME disc COMMAND test_disc)
+
+add_executable(test_text test_text.cpp)
+target_link_libraries(test_text PRIVATE opengp_machine doctest opengp_warnings)
+add_test(NAME text COMMAND test_text)
 
 add_executable(test_settings test_settings.cpp)
 target_link_libraries(test_settings PRIVATE opengp_settings doctest opengp_warnings)
@@ -59,3 +67,7 @@ if(TARGET opengp_input)
   target_link_libraries(test_controls PRIVATE opengp_input doctest opengp_warnings)
   add_test(NAME controls COMMAND test_controls)
 endif()
+
+add_executable(test_camera test_camera.cpp)
+target_link_libraries(test_camera PRIVATE opengp_machine doctest opengp_warnings)
+add_test(NAME camera COMMAND test_camera)

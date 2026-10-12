@@ -70,6 +70,34 @@ functions the runtime replaces are named by hand afterwards (see [triforce.md](t
 `OSSetSaveRegion`, `OSGetSaveRegion`, `OSGetSavedRegion`, and `OSGetExecParams` (decomp-toolkit
 calls it `__OSGetExecParams`).
 
+The game's own functions and globals are named from
+[mkgp2-decomp](https://github.com/naari3/mkgp2-decomp) (CC0), a decompilation of the Japanese
+release of GP 2 (`GNLJ82`). Its code and data are the same as `GGPE02`'s apart from a few
+functions and objects of other sizes, so `tools/decompnames.py` lines up the two symbol lists by
+the sizes of their functions and, section by section, of their objects, and takes the decomp's
+names. Where the decomp has split an object to name a field of it (`g_DebugPrintfEnable` in the
+settings block), the same object here is split the same way. With a clone of the decomp in
+`gp2decomp/` (gitignored):
+
+```sh
+python tools/decompnames.py gp2decomp/mkgp2-decomp/config/GNLJ82/symbols.txt games/mkgp2/config/symbols.txt --apply
+```
+
+GP has no decomp. `tools/crossmatch.py --apply` gives it GP 2's names for the functions whose
+code is the same in both games, and for the globals those functions use at the same places in
+their code:
+
+```sh
+python tools/crossmatch.py orig/GGPE02/sys/main.dol games/mkgp2/config/symbols.txt \
+                           orig/GGPE01/sys/main.dol games/mkgp1/config/symbols.txt --apply
+```
+
+Both only rename generated names (`fn_XXXXXXXX`, `dtor_XXXXXXXX`, `lbl_XXXXXXXX`), and keep
+names that are already taken; run them again as the decomp names more. Object names do not change
+the generated code (the recompiler uses objects only for their sizes, which stay the same). The decomp's names are its authors'
+reading of the code, so they are a guide rather than a fact. Where it names an SDK function
+differently, the name from `sigmatch.py` is kept.
+
 ## Working with Claude Code
 
 Cloud sessions (claude.ai/code) start from a fresh clone of the GitHub repository, so they cannot

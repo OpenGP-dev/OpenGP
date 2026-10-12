@@ -44,6 +44,9 @@ constexpr const char* kDefaultConfig = R"(# OpenGP controls. Delete this file to
 #
 # Steering: "steer" takes whole axes (a wheel, a stick); "steer_left" and
 # "steer_right" take keys, buttons or half axes.
+#
+# "pause" is OpenGP's, not the cabinet's: it freezes the game until pressed
+# again.
 
 [keyboard]
 steer_left = ["Left", "A"]
@@ -56,6 +59,7 @@ start = ["Return", "1"]
 coin = ["5", "C"]
 service = ["F1"]
 test = ["F2"]
+pause = ["P", "Pause"]
 
 [gamepad]
 steer = ["leftx"]
@@ -115,13 +119,14 @@ enum Control : std::size_t {
   kCoin,
   kTest,
   kService,
+  kPause,  // OpenGP's, not the cabinet's
   kControlCount
 };
 constexpr std::array<const char*, kControlCount> kControlNames = {
-    "steer", "steer_left", "steer_right", "gas", "brake", "item", "cancel", "start", "coin", "test", "service"};
+    "steer", "steer_left", "steer_right", "gas", "brake", "item", "cancel", "start", "coin", "test", "service", "pause"};
 constexpr std::array<const char*, kControlCount> kControlLabels = {
     "Steering", "Steer left", "Steer right", "Gas", "Brake", "Item button", "Cancel button",
-    "Start",    "Coin",       "Test",        "Service"};
+    "Start",    "Coin",       "Test",        "Service", "Pause"};
 static_assert(kControlCount == HostInput::kControlCount);
 
 // The bindings of one kind of device.
@@ -360,6 +365,8 @@ struct HostInput::Impl {
     std::map<SDL_JoystickID, std::vector<Sint16>> axes;  // where each axis was at the start
   } capture;
   float digital_steer = 0.0f;  // -1..1, keys and buttons turn it gradually
+  bool pause_held = false;     // the pause control's buttons and axes, at the last poll
+  bool pause_pressed = false;  // pressed since take_pause_press()
   std::chrono::steady_clock::time_point last_poll = std::chrono::steady_clock::now();
   triforce::Outputs outputs;
   std::chrono::steady_clock::time_point last_play{};
@@ -457,6 +464,12 @@ bool HostInput::init(std::string* error) {
 void HostInput::handle_event(const SDL_Event& e) {
   if (e.type == SDL_EVENT_JOYSTICK_ADDED) impl_->open(e.jdevice.which);
   else if (e.type == SDL_EVENT_JOYSTICK_REMOVED) impl_->close(e.jdevice.which);
+  // Pause keys go by their key presses, which a poll can miss if they are
+  // quick (the game's controls are held).
+  if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
+    for (const Source& s : impl_->config.keyboard.sources[kPause])
+      if (s.kind == Source::Kind::Key && s.index == static_cast<int>(e.key.scancode)) impl_->pause_pressed = true;
+  }
 }
 
 void HostInput::Impl::open(SDL_JoystickID id) {
@@ -576,6 +589,7 @@ triforce::Controls HostInput::poll() {
   float steer_axis = 0.0f;
   auto gather = [&](const Bindings& b, const Impl::Device* d) {
     for (std::size_t c = 0; c < kControlCount; ++c) {
+      if (c == kPause && !d) continue;  // pause keys: see handle_event()
       for (const Source& s : b.sources[c]) {
         if (c == kSteer) {
           if (!Impl::is_axis(s)) continue;
@@ -607,7 +621,17 @@ triforce::Controls HostInput::poll() {
   c.coin = amount[kCoin] > 0.5f;
   c.test = amount[kTest] > 0.5f;
   c.service = amount[kService] > 0.5f;
+
+  const bool pause = amount[kPause] > 0.5f;
+  if (pause && !m.pause_held) m.pause_pressed = true;
+  m.pause_held = pause;
   return c;
+}
+
+bool HostInput::take_pause_press() {
+  const bool pressed = impl_->pause_pressed;
+  impl_->pause_pressed = false;
+  return pressed;
 }
 
 }  // namespace input

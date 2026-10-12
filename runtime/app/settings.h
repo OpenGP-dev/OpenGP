@@ -21,6 +21,13 @@ enum class AspectRatio : u8 {
   Wide21x9,
 };
 
+// Where the cabinet's camera (the NamCam2) gets its pictures.
+enum class CameraSource : u8 {
+  Off,          // no camera: the game takes no photos
+  Webcam,       // a webcam
+  TestPattern,  // colour bars
+};
+
 struct Settings {
   // [video]
   bool fullscreen = false;
@@ -34,7 +41,13 @@ struct Settings {
 
   // [game]
   bool free_play = false;
+  bool pause_in_menu = true;         // the game pauses while the menu is open
+  bool pause_in_background = false;  // ... and while its window is not the active one
   std::string card = "Card 1";  // the Mario Card the player holds (a file in user/cards/); "" for none
+
+  // [camera] (read at start-up: changes take effect when the game restarts)
+  CameraSource camera = CameraSource::Off;
+  std::string webcam;  // the webcam's name; "" for the first
 
   bool operator==(const Settings&) const = default;
 };
@@ -46,6 +59,11 @@ bool load_settings(const std::string& path, Settings* settings, std::string* err
 
 // Writes `settings` to `path` (replacing it only once written in full).
 bool save_settings(const std::string& path, const Settings& settings, std::string* error);
+
+// Camera source names as used in the file and on the command line ("off",
+// "webcam", "test").
+const char* camera_name(CameraSource camera);
+bool parse_camera(const std::string& name, CameraSource* camera);
 
 // Aspect ratio names as used in the file and on the command line ("auto",
 // "4:3", "16:9", "16:10", "21:9").

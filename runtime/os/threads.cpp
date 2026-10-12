@@ -223,6 +223,7 @@ void ThreadManager::thread_main(HostThread* t, u32 entry) {
 }
 
 void ThreadManager::service_interrupts(ppc::Context& ctx) {
+  hw_.wait_while_paused();  // a pause makes interrupts pending, to stop guest code here
   while ((ctx.msr & MSR_EE) && ppc::g_interrupt_pending.load(std::memory_order_acquire)) {
     const hw::Exception e = hw_.take_exception();
     if (e == hw::Exception::None) break;

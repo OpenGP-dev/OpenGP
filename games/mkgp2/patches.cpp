@@ -3,9 +3,22 @@
 // Mario Kart Arcade GP 2 (GGPE02): replacements for recompiled functions.
 
 #include "arcade.h"
+#include "camera_use.h"
 #include "ppc_recomp_shared.h"
 
 namespace guest {
+
+// The attract mode's constructor. The game plays the attract mode's first
+// time round without sound: the object starts with a "quiet" flag (+0x18)
+// that the scenes it makes copy (the promo at 8014E998, whose 80150C1C starts
+// its music only when made with sound, and the instructions at 8014E53C),
+// and clears it when a round ends (8014E368). OpenGP clears it at once, so
+// every round has sound.
+PPC_FUNC(fn_8014EDC0) {
+  const gekko::u32 attract = ctx.gpr[3];
+  __imp__fn_8014EDC0(ctx, base);
+  base[attract + 0x18] = 0;
+}
 
 // The arcade library's coin set-up: copies the coin settings from the system
 // backup (SegaBoot's, normally set in its test menu) to 80690AA0. Its restart
@@ -14,6 +27,20 @@ namespace guest {
 PPC_FUNC(fn_80289B54) {
   __imp__fn_80289B54(ctx, base);
   arcade::on_coin_setup(base, 0x80690AA0u);
+}
+
+// Start-up: reads the settings (805986C0) from the backup, or sets their
+// defaults, before the device check.
+PPC_FUNC(GameBoot_Init) {
+  __imp__GameBoot_Init(ctx, base);
+  camera_use::on_settings_loaded(base, 0x805986C0u);
+}
+
+// The wheel board's state, each frame: the camera's power.
+PPC_FUNC(StrPcb_StateTick) {
+  const gekko::u32 board = ctx.gpr[3];
+  __imp__StrPcb_StateTick(ctx, base);
+  camera_use::on_power_tick(base, board);
 }
 
 }  // namespace guest

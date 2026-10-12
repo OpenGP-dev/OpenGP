@@ -10,18 +10,19 @@ compiled together with a runtime that stands in for the Triforce hardware (GameC
 DSP, AM-Baseboard, AM-Mediaboard), so the game runs as a normal native program, with room for
 modern features such as higher resolutions, widescreen and remappable controls.
 
-> **Status: playable.** Milestones 1 to 9 are done. Mario Kart Arcade GP 2 (7,612 functions) and
-> Mario Kart Arcade GP (7,504 functions) recompile, boot from their disc images through the
+> **Status: playable.** Milestones 1 to 11 and 14 are done. Mario Kart Arcade GP 2 (7,612 functions)
+> and Mario Kart Arcade GP (7,504 functions) recompile, boot from their disc images through the
 > emulated Triforce hardware (media board, baseboard, JVS I/O, card reader) and play in a window or
-> fullscreen (Vulkan, or Metal on macOS), in 4:3 or widescreen and at up to 8 times their resolution: insert a coin (or
-> turn on free play), make a Mario Card, pick a character and cup, and race at 60 fps with the
-> keyboard, a gamepad or a steering wheel with force feedback, with the games' music and sound
-> effects (their DSP audio microcode is emulated). A menu (Esc) has the settings, the controls and
-> the Mario Cards; the games' own test menus work too. See [docs/playing.md](docs/playing.md) and
-> the [roadmap](#roadmap).
+> fullscreen (Vulkan, or Metal on macOS), in 4:3 or widescreen and at up to 8 times their
+> resolution: insert a coin (or turn on free play), make a Mario Card, pick a character and cup, and
+> race at 60 fps with the keyboard, a gamepad or a steering wheel with force feedback, with the
+> games' music and sound effects (their DSP audio microcode is emulated). A webcam can stand in for
+> the cabinet's camera, and you can pause when you play solo. A menu (Esc) has the settings, the
+> controls and the Mario Cards; the games' own test menus work too. See
+> [docs/playing.md](docs/playing.md) and the [roadmap](#roadmap).
 
-The latest release is **0.2.0**, with installer packages for Windows, Linux and macOS (see
-[CHANGELOG.md](CHANGELOG.md)).
+The latest release is **0.3.0** (source only), with the camera and pause. The latest installer
+packages, for Windows, Linux and macOS, are 0.2.0's (see [CHANGELOG.md](CHANGELOG.md)).
 
 ## How it works
 
@@ -46,11 +47,26 @@ your GGPE02.iso ─extract─> main.dol ─decomp-toolkit─> symbols.txt
 | Launcher | `runtime/app/` | Command line, settings, window, the in-game menu (Dear ImGui) |
 | Games | `games/` | Per-game symbol maps, recompiler config, patches and launcher (`mkgp1`, `mkgp2`); what both share in `common/` (SDK replacements, the arcade library's free play and test-menu restart) |
 | Installer | `tools/installer/` | Builds the games on the player's machine from the installer package (see [docs/packaging.md](docs/packaging.md)) |
-| Scripts | `tools/*.py`, `tools/devshell.ps1` | Game setup (extract and verify `main.dol`), SDK signature matching, matching functions between the games, Windows build shell |
+| Scripts | `tools/*.py`, `tools/devshell.ps1` | Game setup (extract and verify `main.dol`), naming functions (SDK signatures, the GP 2 decomp, matching functions between the games), Windows build shell |
 | Tests | `tests/` | Decoder tests, known-answer semantics tests, and differential tests (interpreter vs recompiled code) |
 
 Details are in [docs/architecture.md](docs/architecture.md). Notes on the arcade hardware are in
 [docs/triforce.md](docs/triforce.md).
+
+## Made with AI
+
+OpenGP is developed with AI. The maintainer decides what gets built and plays the results; most
+of the code and documentation is written by Claude (Anthropic's model) through
+[Claude Code](https://claude.com/claude-code). Commits made that way end with a
+`Co-Authored-By: Claude` line, so the history shows which ones.
+
+The code is held to the same checks as any other:
+- The test suite (decoder tests, known-answer semantics tests, and differential tests that run the
+  same guest code through the interpreter and the recompiled code) runs in CI on every push, on
+  Linux, Windows and macOS.
+- The hardware follows Dolphin's behaviour, and code ported from Dolphin is marked as such.
+- What OpenGP learned from other projects is credited below and in the docs. Nothing is copied
+  from projects that have no license, only facts such as addresses.
 
 ## Playing
 
@@ -106,14 +122,26 @@ marked as such in the source. Vendored third-party code in `thirdparty/` keeps i
 | M7 | Card saves, settings menu, resolution scaling, widescreen, fullscreen; the game's test menu (**done**) | yes |
 | M8 | Mario Kart Arcade GP (GGPE01): symbol map, the same runtime, free play, test menu (**done**) | yes |
 | M9 | Installer packages for Windows, Linux and macOS (Apple Silicon, Metal renderer): the prebuilt runtime and recompiler; the installer recompiles and builds the games from the player's own images, so no game code is ever distributed (**done**, 0.2.0) | yes |
-| M10 | Linked cabinets: the media board's network (socket API on host sockets), several instances racing each other on one PC or a LAN | yes |
-| M11 | The NamCam2 camera from a webcam: player photos, on the media board's network from M10 | yes |
+| M10 | What the GP 2 decomp ([mkgp2-decomp](https://github.com/naari3/mkgp2-decomp)) knows: its function names in both games' symbol maps, and the games' own debug messages (`--game-log`), for working on M11 and M12 (**done**, 0.3.0) | yes |
+| M11 | The NamCam2 camera from a webcam: player photos. The camera is an HTTP server on the media board's network, so this starts the network (the socket API on host sockets) (**done**, 0.3.0) | yes |
+| M12 | Linked cabinets: the rest of the media board's network, several instances racing each other on one PC or a LAN | yes |
 | 1.0 | Release: the installer package with linked cabinets and the camera | yes |
+| M14 | Pause: freeze the game (its threads, sound and timers) from the menu or a button; the arcade games have no pause of their own. Only when playing solo: a game linked to other cabinets (M12) keeps running (**done** ahead of 1.0, 0.3.0) | yes |
+| M15 | Discord Rich Presence: the character, course and race position, read from the game's state (the decomp's names) and sent over Discord's local connection, without Discord's SDK | yes |
 
-Releases from 0.2.0 on come with the installer packages (see [CHANGELOG.md](CHANGELOG.md)).
+Releases from 0.2.0 on come with the installer packages, except 0.3.0, which is source only (see
+[CHANGELOG.md](CHANGELOG.md)).
 
 ## Acknowledgements
 
-- **Dolphin**: the reference for Gekko, GameCube and Triforce behaviour.
-- **decomp-toolkit**: GameCube binary analysis.
+- **[Dolphin](https://github.com/dolphin-emu/dolphin)**: the reference for Gekko, GameCube and
+  Triforce behaviour, and the source of the runtime's ported parts.
+- **[mkgp2-decomp](https://github.com/naari3/mkgp2-decomp)** by naari3: the names of GP 2's
+  functions and globals (and through them GP's), and notes on the games' network code.
+- **[mkgp2-patch](https://github.com/naari3/mkgp2-patch)** by naari3: the Ghidra analysis of GP 2
+  that the decomp's names grew out of.
+- **[Skip-checks patch](https://github.com/coremaven/Mario-Kart-Arcade-GP-2---Skip-Checks-Patch)**
+  by coremaven: where GP 2's hardware checks are, which OpenGP's camera and cabinet-link patches
+  are based on.
+- **[decomp-toolkit](https://github.com/encounter/decomp-toolkit)**: GameCube binary analysis.
 - **N64Recomp / Zelda64Recomp** and **XenonRecomp / UnleashedRecomp**: the overall design.

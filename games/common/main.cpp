@@ -7,6 +7,8 @@
 
 #include "app/launcher.h"
 #include "arcade.h"
+#include "camera_use.h"
+#include "game_log.h"
 #include "ppc_recomp_shared.h"
 
 int main(int argc, char** argv) {
@@ -19,5 +21,7 @@ int main(int argc, char** argv) {
   // Both games are built on the same arcade library.
   game.set_free_play = arcade::set_free_play;
   game.test_menu = arcade::test_menu_reboot;
+  game.set_game_log = game_log::enable;
+  game.set_camera = camera_use::set;
   return app::run(game, argc, argv);
 }

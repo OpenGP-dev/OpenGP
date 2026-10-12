@@ -2,6 +2,7 @@
 
 #include "app/menu.h"
 
+#include <utility>
 #include <SDL3/SDL.h>
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
@@ -10,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdarg>
+#include <string_view>
 
 namespace app {
 
@@ -69,6 +71,23 @@ bool Menu::init(SDL_Window* window, SDL_GPUDevice* device, u32 format, std::stri
   return true;
 }
 
+namespace {
+
+// The keyboard keys bound to pause ("P / Pause"; with `first`, "P"), or ""
+// if none.
+std::string pause_keys(const MenuModel& m, bool first = false) {
+  if (!m.input) return "";
+  std::string keys;
+  for (std::size_t c = 0; c < input::HostInput::kControlCount; ++c) {
+    if (std::string_view(input::HostInput::control_name(c)) != "pause") continue;
+    for (const std::string& key : m.input->bindings(input::HostInput::DeviceKind::Keyboard, c))
+      if (keys.empty() || !first) keys += (keys.empty() ? "" : " / ") + key;
+  }
+  return keys;
+}
+
+}  // namespace
+
 void Menu::set_open(bool open) {
   if (open == open_) return;
   open_ = open;
@@ -109,7 +128,7 @@ void Menu::notify(std::string message) {
   if (notices_.size() > 4) notices_.erase(notices_.begin());
 }
 
-bool Menu::visible() const { return open_ || !notices_.empty(); }
+bool Menu::visible() const { return open_ || paused_ || !notices_.empty(); }
 
 void Menu::apply_scale(float scale) {
   // Sizes are scaled from the defaults each time (ScaleAllSizes multiplies).
@@ -182,9 +201,12 @@ void Menu::update(MenuModel& m) {
       if (ImGui::Button("Resume")) set_open(false);
       ImGui::SameLine();
       if (ImGui::Button("Quit") && m.quit) m.quit();
-      hint("Esc: menu    F11: fullscreen    F12: screenshot");
+      const std::string pause = pause_keys(m, true);
+      hint("Esc: menu    %s%sF11: fullscreen    F12: screenshot", pause.c_str(), pause.empty() ? "" : ": pause    ");
     }
     ImGui::End();
+  } else if (paused_) {
+    draw_paused(m);
   }
   draw_notices();
   ImGui::Render();
@@ -222,26 +244,58 @@ void Menu::game_tab(MenuModel& m) {
     s.card = name;
   }
   if (cards.inserted()) {
-    ImGui::TextWrapped("The card is in the card reader.");
+    ImGui::TextWrapped("The card is loaded in the virtual card reader.");
   } else if (held_exists) {
     ImGui::TextWrapped("You insert it when the game asks for your card.");
   } else if (!held.empty()) {
     ImGui::TextWrapped(
-        "A blank card: when the game asks \"Do you have Mario Card?\", answer No, then buy one. It is saved as "
+        "A blank card: when the game asks on startup \"Do you have Mario Card?\", answer No, Then create one in the following prompt. It is saved as "
         "\"%s\".",
         held.c_str());
   } else {
-    ImGui::TextWrapped("You play without a card (the game can still sell you one).");
+    ImGui::TextWrapped("Playing without a card. (You can still create one after the game ends.)");
   }
   hint("Cards are saved in %s", cards.dir().c_str());
 
+  ImGui::SeparatorText("Camera");
+  ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
+  static constexpr std::pair<CameraSource, const char*> kSources[] = {
+      {CameraSource::Off, "Off"}, {CameraSource::Webcam, "Webcam"}, {CameraSource::TestPattern, "Test pattern"}};
+  const char* source_label = "Off";
+  for (const auto& [source, text] : kSources)
+    if (source == s.camera) source_label = text;
+  if (ImGui::BeginCombo("Photos from", source_label)) {
+    for (const auto& [source, text] : kSources)
+      if (ImGui::Selectable(text, source == s.camera)) s.camera = source;
+    ImGui::EndCombo();
+  }
+  if (s.camera == CameraSource::Webcam) {
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
+    const std::string current = s.webcam.empty() ? std::string("Default") : s.webcam;
+    if (ImGui::BeginCombo("Webcam", current.c_str())) {
+      if (ImGui::IsWindowAppearing()) webcams_ = m.webcams ? m.webcams() : std::vector<std::string>{};
+      if (ImGui::Selectable("Default", s.webcam.empty())) s.webcam.clear();
+      for (const std::string& name : webcams_)
+        if (ImGui::Selectable(name.c_str(), name == s.webcam)) s.webcam = name;
+      ImGui::EndCombo();
+    }
+  }
+  ImGui::TextWrapped("The game takes your photo for your character. Now: %s.", m.camera_info.c_str());
+  hint("Changes take effect when the game restarts.");
+
+  ImGui::SeparatorText("Pause");
+  ImGui::Checkbox("Pause while this menu is open", &s.pause_in_menu);
+  ImGui::Checkbox("Pause when the window is unfocused", &s.pause_in_background);
+  if (m.linked) hint("When linked to another cabinet, Pausing is disabled.");
+  else if (const std::string keys = pause_keys(m); !keys.empty()) hint("%s pauses and resumes the game.", keys.c_str());
+
   ImGui::SeparatorText("Arcade");
-  ImGui::Checkbox("Free play (no coins needed)", &s.free_play);
+  ImGui::Checkbox("Free play", &s.free_play);
   if (m.test_menu) {
     if (ImGui::Button("Test menu")) m.test_menu();
     ImGui::SameLine();
     ImGui::AlignTextToFramePadding();
-    hint("The operator's settings: restarts the game.");
+    hint("Open the Operator's Menu (Will restart the game)");
   }
 }
 
@@ -250,7 +304,7 @@ void Menu::video_tab(MenuModel& m) {
   ImGui::Checkbox("Fullscreen (F11)", &s.fullscreen);
 
   static constexpr std::pair<AspectRatio, const char*> kAspects[] = {
-      {AspectRatio::Auto, "Fit the window"}, {AspectRatio::Original, "4:3 (original)"}, {AspectRatio::Wide16x9, "16:9"},
+      {AspectRatio::Auto, "Scale to fit"}, {AspectRatio::Original, "4:3 (original)"}, {AspectRatio::Wide16x9, "16:9"},
       {AspectRatio::Wide16x10, "16:10"},     {AspectRatio::Wide21x9, "21:9"},
   };
   const char* current = "";
@@ -264,7 +318,7 @@ void Menu::video_tab(MenuModel& m) {
   }
 
   auto resolution = [](u32 scale) {
-    if (scale == 0) return std::string("Match the window");
+    if (scale == 0) return std::string("Scale to fit");
     return std::to_string(scale) + "x (" + std::to_string(640 * scale) + "x" + std::to_string(480 * scale) + ")";
   };
   ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
@@ -276,8 +330,7 @@ void Menu::video_tab(MenuModel& m) {
   ImGui::Checkbox("VSync", &s.vsync);
   hint("%s", m.video_info.c_str());
   ImGui::TextWrapped(
-      "Widescreen shows more of the race on the sides; the game's 2D graphics stay in the middle, and full-screen "
-      "backgrounds are stretched.");
+      "Widescreen expands the viewport, some 2D elements are at their original aspect ratio and some are stretched to fit.");
 }
 
 void Menu::sound_tab(MenuModel& m) {
@@ -323,8 +376,8 @@ void Menu::controls_tab(MenuModel& m) {
       if (in.capturing() && capture_control_ == control) {
         ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "%s",
                            kind == Kind::Keyboard   ? "Press a key..."
-                           : input::HostInput::control_is_axis(control) ? "Move an axis..."
-                                                                        : "Press a button or move an axis...");
+                           : input::HostInput::control_is_axis(control) ? "Move a joystick..."
+                                                                        : "Press a button or move a joystick...");
         ImGui::SameLine();
         if (ImGui::SmallButton("Cancel")) in.cancel_capture();
       } else if (ImGui::SmallButton("+")) {
@@ -335,23 +388,42 @@ void Menu::controls_tab(MenuModel& m) {
     }
     ImGui::EndTable();
   }
-  hint("Click an input to remove it; + adds one (Esc cancels).");
+  hint("Click an input to remove it; + adds one (Esc to cancel).");
 
   ImGui::Spacing();
   ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.45f);
   float strength = in.force_feedback() * 100.0f;
-  if (ImGui::SliderFloat("Force feedback", &strength, 0.0f, 200.0f, "%.0f%%")) in.set_force_feedback(strength / 100.0f);
+  if (ImGui::SliderFloat("Vibration strength", &strength, 0.0f, 200.0f, "%.0f%%")) in.set_force_feedback(strength / 100.0f);
   if (kind == Kind::Keyboard) {
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.45f);
     float speed = in.steer_speed();
-    if (ImGui::SliderFloat("Steering speed", &speed, 0.5f, 10.0f, "%.1f turns/s")) in.set_steer_speed(speed);
+    if (ImGui::SliderFloat("Turn speed", &speed, 0.5f, 10.0f, "%.1f turns/s")) in.set_steer_speed(speed);
   } else {
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.45f);
     float deadzone = in.deadzone(kind) * 100.0f;
-    if (ImGui::SliderFloat("Dead zone", &deadzone, 0.0f, 50.0f, "%.0f%%")) in.set_deadzone(kind, deadzone / 100.0f);
+    if (ImGui::SliderFloat("Stick Deadzone", &deadzone, 0.0f, 50.0f, "%.0f%%")) in.set_deadzone(kind, deadzone / 100.0f);
   }
-  if (ImGui::Button("Restore the defaults")) in.restore_defaults();
+  if (ImGui::Button("Restore defaults")) in.restore_defaults();
   hint("Saved in %s", in.path().c_str());
+}
+
+void Menu::draw_paused(MenuModel& m) {
+  const ImGuiIO& io = ImGui::GetIO();
+  ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), io.DisplaySize, IM_COL32(0, 0, 0, 80));
+  ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always,
+                          ImVec2(0.5f, 0.5f));
+  ImGui::SetNextWindowBgAlpha(0.75f);
+  const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+                                 ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs;
+  if (ImGui::Begin("##paused", nullptr, flags)) {
+    ImGui::SetWindowFontScale(1.6f);
+    ImGui::TextUnformatted("Paused");
+    ImGui::SetWindowFontScale(1.0f);
+    const std::string keys = pause_keys(m);
+    if (!keys.empty()) ImGui::TextDisabled("%s: resume", keys.c_str());
+  }
+  ImGui::End();
 }
 
 void Menu::draw_notices() {

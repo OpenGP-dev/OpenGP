@@ -27,17 +27,31 @@ the card keeps your progress (Mario Coins, titles, unlocked characters). See [Ma
 ## The menu
 
 **Esc** (or a gamepad's guide button) opens the menu over the game; Esc again closes it. The game
-keeps running behind it but gets no controls while it is open.
+pauses while it is open and gets no controls (turn off **Pause while this menu is open** in the
+Game tab to keep it running).
 
 | Tab | Settings |
 |-----|----------|
-| Game | The Mario Card you hold; free play |
+| Game | The Mario Card you hold; the camera; pausing; free play |
 | Video | Fullscreen, aspect ratio, internal resolution, VSync |
 | Sound | Volume |
 | Controls | The keys, buttons and axes for each control; force feedback, steering speed, dead zones |
 
 **F11** (or Alt+Enter) switches between a window and fullscreen, and **F12** saves a screenshot to
 `user/screenshots/`.
+
+### Pausing
+
+**P** (or the Pause key) pauses the game and shows "Paused"; press it again to carry on. The arcade
+games have no pause of their own, so OpenGP freezes the whole machine: the game, its timers and
+its sound stop where they are, and carry on as if no time had passed. The menu pauses the game
+too, and **Pause when the window is unfocused** (Game tab) pauses it while you are in another
+window. The pause control can be changed like the others (Controls tab, or `pause` in
+`controls.toml`). The game's clock falls behind by the time spent paused, until it next starts.
+
+Pausing is only for playing solo. Once the game has linked to another cabinet (on this computer or
+a LAN), the other cabinets need it to keep running, so it doesn't pause again until it restarts:
+the pause control does nothing, and the menu opens over the running game.
 
 ## Settings
 
@@ -73,6 +87,23 @@ renamed (the name is only for the menu) or copied to back them up.
 
 A card saved by an earlier version as `user/tricard_GGPE02.bin` is moved to `Card 1.bin`.
 
+## The camera
+
+The cabinet has a camera (the NamCam2) that takes your photo when you start a game: "Please align
+your face within the frame", then the item button. The photo is shown on your character in the
+race. OpenGP can use a webcam for it. In the menu's Game tab, **Photos from** is:
+
+- **Off** (the default): the game takes no photos, as a cabinet without its camera.
+- **Webcam**: the webcam chosen below it (**Default** is the first one). Its picture is cropped to 4:3 around
+  the middle. On macOS, the system asks once whether OpenGP may use the camera.
+- **Test pattern**: colour bars, for trying it without a webcam.
+
+The camera is set up when the game starts, so a change takes effect when the game restarts. If the
+webcam cannot be opened, the game runs without its camera and says why on the console. In
+`user/settings.toml` the setting is `[camera] source` (`"off"`, `"webcam"` or `"test"`) with
+`webcam` (the webcam's name, `""` for the first), and `--camera off|webcam|test` sets it for one
+run. The webcam's light stays on while the game runs with it.
+
 ## Controls
 
 | Cabinet | Keyboard | Gamepad |
@@ -86,6 +117,7 @@ A card saved by an earlier version as `user/tricard_GGPE02.bin` is moved to `Car
 | Coin | 5, C | Back |
 | Service / test | F1 / F2 | |
 | Menu | Esc | Guide |
+| Pause | P, Pause | |
 | Fullscreen | F11, Alt+Enter | |
 | Screenshot | F12 | |
 
@@ -129,8 +161,12 @@ off).
 ## Sound
 
 Sound plays on the system's default output device. The menu's volume (or `--volume PERCENT`)
-turns it down, and `--no-audio` turns it off. The attract mode (the demo that loops before a coin goes in) is
-silent, which looks like the game's own setting: the sound starts with the first coin.
+turns it down, and `--no-audio` turns it off.
+
+The attract mode (the demo that loops before a coin goes in) has sound every time round. GP 2 by
+itself plays its first time round without sound; OpenGP turns that off. Its volume is the game's
+own ATTRACT setting, in the test menu's SOUND SETTING (8 of 15 by default). The demo race in each
+round is silent; whether it is on a cabinet is not known yet.
 
 ## Scripted input
 
@@ -166,5 +202,5 @@ calibration and a switch test); hold F1 and press F2 again to leave it.
 
 ## Not done yet
 
-- The NamCam2 camera is disabled, and cabinets cannot be linked.
+- Cabinets cannot be linked (milestone 12).
 

@@ -17,6 +17,8 @@ target_link_libraries(ppc_runtime
 # The emulated machine around the CPU: hardware, OS support, boot, disc.
 add_library(opengp_machine STATIC
   audio/wav.cpp
+  camera/jpeg.cpp
+  camera/namcam.cpp
   disc/disc.cpp
   disc/sha1.cpp
   dsp/accelerator.cpp
@@ -51,6 +53,7 @@ add_library(opengp_machine STATIC
   triforce/mediaboard.cpp
   triforce/magcard.cpp
   triforce/mkgp.cpp
+  triforce/network.cpp
 )
 target_include_directories(opengp_machine PUBLIC .)
 
@@ -71,7 +74,15 @@ target_link_libraries(opengp_machine
   PUBLIC ppc_runtime Threads::Threads
   PRIVATE opengp_warnings)
 if(WIN32)
-  target_link_libraries(opengp_machine PRIVATE winmm dbghelp)
+  target_link_libraries(opengp_machine PRIVATE winmm dbghelp ws2_32)
+else()
+  # Shift JIS text from the games (os/printf.h); iconv is part of glibc, and
+  # its own library on macOS.
+  find_package(Iconv)
+  if(Iconv_FOUND)
+    target_link_libraries(opengp_machine PRIVATE Iconv::Iconv)
+    target_compile_definitions(opengp_machine PRIVATE OPENGP_HAVE_ICONV)
+  endif()
 endif()
 
 if(OPENGP_BUILD_VIDEO)
@@ -82,6 +93,12 @@ if(OPENGP_BUILD_VIDEO)
   target_link_libraries(opengp_input
     PUBLIC opengp_machine SDL3::SDL3
     PRIVATE tomlplusplus opengp_warnings)
+
+  # The camera's pictures from a webcam (SDL3).
+  add_library(opengp_webcam STATIC camera/webcam.cpp)
+  target_link_libraries(opengp_webcam
+    PUBLIC opengp_machine SDL3::SDL3
+    PRIVATE opengp_warnings)
 
   # Sound output (SDL3).
   add_library(opengp_audio STATIC audio/host.cpp)
@@ -128,6 +145,6 @@ target_link_libraries(opengp_app
 target_compile_definitions(opengp_app PRIVATE OPENGP_VERSION="${PROJECT_VERSION}")
 if(OPENGP_BUILD_VIDEO)
   target_sources(opengp_app PRIVATE app/menu.cpp)
-  target_link_libraries(opengp_app PUBLIC opengp_video opengp_input opengp_audio imgui)
+  target_link_libraries(opengp_app PUBLIC opengp_video opengp_input opengp_audio opengp_webcam imgui)
   target_compile_definitions(opengp_app PRIVATE OPENGP_VIDEO)
 endif()
