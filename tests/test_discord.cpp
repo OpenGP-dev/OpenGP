@@ -143,13 +143,13 @@ TEST_CASE("discord: the commands") {
   a.details = "Yoshi Cup · Round 1";
   a.state = "Say \"hi\"\\";
   a.start = 1700000000;
-  a.large_image = "gp2_cup_yoshi";
-  a.small_image = "gp2_mario";
+  a.large_image = "cup_yoshi";
+  a.small_image = "mario";
   a.small_text = "Mario";
   CHECK(discord::set_activity_json(a, 42, "7") ==
         R"({"cmd":"SET_ACTIVITY","args":{"pid":42,"activity":{"details":"Yoshi Cup · Round 1",)"
         R"("state":"Say \"hi\"\\","timestamps":{"start":1700000000},)"
-        R"("assets":{"large_image":"gp2_cup_yoshi","small_image":"gp2_mario","small_text":"Mario"}}},"nonce":"7"})");
+        R"("assets":{"large_image":"cup_yoshi","small_image":"mario","small_text":"Mario"}}},"nonce":"7"})");
   // No activity clears it; empty fields are left out.
   CHECK(discord::set_activity_json(std::nullopt, 42, "8") == R"({"cmd":"SET_ACTIVITY","args":{"pid":42},"nonce":"8"})");
   discord::Activity plain;
@@ -227,7 +227,7 @@ TEST_CASE("rich presence: what the games' status shows") {
   s.game_image = "gp2";
   s.scene = Scene::Attract;
   s.character = "Mario";
-  s.character_image = "gp2_mario";
+  s.character_image = "mario";
   discord::Activity a = app::describe(s, "Mario Kart Arcade GP 2", 100, 0);
   CHECK(a.details == "Mario Kart Arcade GP 2");
   CHECK(a.state == "In the attract mode");
@@ -239,21 +239,21 @@ TEST_CASE("rich presence: what the games' status shows") {
   s.activity = "Choosing a cup";
   a = app::describe(s, "Mario Kart Arcade GP 2", 100, 0);
   CHECK(a.state == "Choosing a cup");
-  CHECK(a.small_image == "gp2_mario");
+  CHECK(a.small_image == "mario");
   CHECK(a.small_text == "Mario");
 
   s.scene = Scene::Racing;
   s.mode = "Grand Prix";
   s.engine = "100cc";
   s.cup = "Yoshi Cup";
-  s.cup_image = "gp2_cup_yoshi";
+  s.cup_image = "cup_yoshi";
   s.course = "Yoshi Park 1";
   s.round = 1;
   a = app::describe(s, "Mario Kart Arcade GP 2", 100, 0);
   CHECK(a.details == "Yoshi Cup · Round 1: Yoshi Park 1");
   CHECK(a.state == "Mario · On the starting grid");
   CHECK(a.start == 100);
-  CHECK(a.large_image == "gp2_cup_yoshi");
+  CHECK(a.large_image == "cup_yoshi");
   CHECK(a.large_text == "Yoshi Cup, 100cc");
 
   s.started = true;

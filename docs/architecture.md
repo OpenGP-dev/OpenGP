@@ -393,6 +393,22 @@ scaled. The launcher starts the source the settings ask for and tells the game w
 camera (`app::Game::set_camera`), which sets the game's own "camera use" setting at start-up
 (`games/common/camera_use.cpp`).
 
+### Discord Rich Presence (`runtime/discord/`, `games/*/status.cpp`)
+
+Each game reads what the player is doing from its globals (`game_status::read` in
+`games/<game>/status.cpp`) into an `app::GameStatus`: the scene (start-up, the attract mode, the
+menus, a race, the race over, the test menu) and, once chosen, the character, cup, course, place
+and lap. The scene is the game's own `g_currentSceneState`, which it sets at every scene change
+for linked cabinets to compare; the race globals have the same names and meanings in both games,
+and the names of their characters, cups and courses are the games' own (`games/common/status.h`).
+
+Once a second the launcher reads the status, and `app::RichPresence` (`app/rich_presence.h`) turns
+it into Discord's two lines and pictures. `discord::Presence` sends them from a thread of its own
+over Discord's local connection (`discord/ipc.h`: a named pipe or a Unix socket carrying framed
+JSON; no Discord SDK), connecting while Discord runs, reconnecting when it restarts, and staying
+within Discord's rate limit. The pictures are art assets in OpenGP's Discord application, uploaded
+there from the games' textures; nothing from the games is in the code.
+
 ## What comes next
 
 | Area | Plan |

@@ -124,6 +124,7 @@ Environment variables for debugging:
 | `OPENGP_LOG_EXI=<n>` / `OPENGP_LOG_SI=<n>` | the first *n* EXI / SI transfers |
 | `OPENGP_LOG_JVS=1` | the JVS I/O protocol |
 | `OPENGP_LOG_FFB=1` | the forces the game sends to the steering wheel |
+| `OPENGP_LOG_DISCORD=1` | what Discord Rich Presence shows, each time it changes; headless runs show it too (on Discord as well, if it runs) |
 | `OPENGP_GPU_DEBUG=1` | enables the GPU API's validation (needs the Vulkan SDK's validation layers) |
 | `OPENGP_GX_DUMP=<n>` | every draw (with its pipeline state), texture, EFB copy and clear of frame *n* |
 | `OPENGP_EFB_SYNC=1` | (not a log) CPU reads of the EFB wait for the GPU instead of returning the previous frame's contents |

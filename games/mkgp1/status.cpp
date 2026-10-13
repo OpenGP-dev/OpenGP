@@ -15,7 +15,6 @@ namespace {
 constexpr gekko::u32 kScene = 0x805B7C3C;
 
 constexpr RaceGlobals kRace = {
-    .prefix = "gp1",
     .characters = 11,
     .cups = 6,
     .game_mode = 0x805B8AC0,

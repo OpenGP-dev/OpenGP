@@ -2,8 +2,9 @@
 //
 // What the player is doing, for Discord Rich Presence: each game's status.cpp
 // reads it from the game's globals (the decomp's names), with what both games
-// share here: their names for characters, cups and courses, and their race
-// globals, which have the same names and meanings in both.
+// share here: their names for characters, cups and courses, the pictures for
+// them (art assets in OpenGP's Discord application, the same for both games),
+// and their race globals, which have the same names and meanings in both.
 #pragma once
 
 #include <array>
@@ -23,7 +24,7 @@ void read(const gekko::u8* base, app::GameStatus* status);
 
 struct CharacterName {
   const char* name;
-  const char* image;  // the art asset's key, after "gp2_" or "gp1_"
+  const char* image;  // the art asset's key
 };
 
 // By character ID: the order of the games' character tables (MARIO, LUIGI,
@@ -64,7 +65,6 @@ inline constexpr std::array<CupName, 8> kCupNames = {{
 
 // A game's race globals.
 struct RaceGlobals {
-  const char* prefix;  // the game's art assets: "gp2"
   std::size_t characters, cups;  // how many of the names above the game has
   gekko::u32 game_mode;    // g_gameMode: 0 Grand Prix, 1 time trial, 2 versus (linked)
   gekko::u32 character;    // g_characterId
@@ -85,10 +85,9 @@ inline gekko::u32 word(const gekko::u8* base, gekko::u32 address) { return ppc::
 // race. `s->scene` is set already.
 inline void read_race(const gekko::u8* base, const RaceGlobals& g, app::GameStatus* s) {
   using Scene = app::GameStatus::Scene;
-  const std::string prefix = std::string(g.prefix) + "_";
   if (const gekko::u32 c = word(base, g.character); c < g.characters) {
     s->character = kCharacterNames[c].name;
-    s->character_image = prefix + kCharacterNames[c].image;
+    s->character_image = kCharacterNames[c].image;
   }
   if (s->scene != Scene::Racing && s->scene != Scene::Finished) return;
 
@@ -99,7 +98,7 @@ inline void read_race(const gekko::u8* base, const RaceGlobals& g, app::GameStat
   if (const gekko::u32 cup = word(base, g.cup); cup >= 1 && cup <= g.cups) {
     const CupName& c = kCupNames[cup - 1];
     s->cup = c.name;
-    s->cup_image = prefix + c.image;
+    s->cup_image = c.image;
     s->course = c.courses[word(base, g.long_layout) ? 1 : 0];
     if (word(base, g.reverse)) s->course += " (reverse)";
   }

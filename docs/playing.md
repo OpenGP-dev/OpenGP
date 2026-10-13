@@ -104,6 +104,22 @@ webcam cannot be opened, the game runs without its camera and says why on the co
 `webcam` (the webcam's name, `""` for the first), and `--camera off|webcam|test` sets it for one
 run. The webcam's light stays on while the game runs with it.
 
+## Discord
+
+While Discord runs on the same computer, your Discord profile shows what you are playing, as
+**Playing OpenGP**: the game, and what you are doing in its menus; in a race, the cup, the round
+and the course, your character, your place and the lap, with the time since the race started.
+For example:
+
+    Yoshi Cup · Round 1: Yoshi Park 1
+    Mario · 3rd · Lap 2/3
+
+OpenGP talks only to the Discord app on your computer, through its local connection, and sends
+nothing anywhere else. If Discord starts after the game, your profile shows it within 15 seconds.
+To turn it off, untick **Show what you're playing** in the menu's Game tab (`[discord]
+rich_presence = false` in `user/settings.toml`). Discord's own Activity Privacy settings can hide
+it as well.
+
 ## Controls
 
 | Cabinet | Keyboard | Gamepad |
