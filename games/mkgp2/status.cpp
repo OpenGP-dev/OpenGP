@@ -28,6 +28,7 @@ constexpr RaceGlobals kRace = {
     .round = 0x806D0EF8,
     .engine = 0x806D0F2C,
     .started = 0x806D0EC0,
+    .ended = 0x806D0EE9,
     .position = 0x806D0FA0,
     .lap = 0x806D0FA4,
     .laps = 0x806D0FA8,
@@ -48,7 +49,8 @@ void read(const gekko::u8* base, app::GameStatus* s) {
     s->scene = Scene::Starting;
     return;
   }
-  bool chosen = false;  // the player has chosen their character
+  bool chosen = false;    // the player has chosen their character
+  bool on_track = false;  // the race itself, or its end
   switch (scene) {
     case 0x02: case 0x03: case 0x04: case 0x05: case 0x06: case 0x07:  // entry, the attract mode (its demo races too), title
       s->scene = Scene::Attract;
@@ -68,13 +70,16 @@ void read(const gekko::u8* base, app::GameStatus* s) {
     case 0x15: case 0x17: case 0x19: case 0x1A: case 0x1B: case 0x22:
       s->scene = Scene::Menus, s->activity = "Choosing a course", chosen = true;
       break;
-    case 0x25: case 0x26: case 0x2A: case 0x2B: case 0x2C:  // the race's introduction, loading, the race
+    case 0x25: case 0x26: case 0x2A:  // the race's introduction, loading
       s->scene = Scene::Racing, chosen = true;
       break;
-    case 0x2D: s->scene = Scene::Finished, chosen = true; break;  // coins, "Continue?"
+    case 0x2B: case 0x2C: s->scene = Scene::Racing, chosen = on_track = true; break;
+    case 0x2D: case 0x34:  // coins, "Continue?"; the hand-over to the results
+      s->scene = Scene::Finished, chosen = on_track = true;
+      break;
     default: s->scene = Scene::Menus; break;
   }
-  if (chosen) read_race(base, kRace, s);
+  if (chosen) read_race(base, kRace, on_track, s);
 }
 
 }  // namespace game_status

@@ -109,8 +109,8 @@ run. The webcam's light stays on while the game runs with it.
 While Discord runs on the same computer, your Discord profile shows what you are playing, as
 **Playing OpenGP**: the game, and whether you are choosing a character or a course (or having your
 photo taken, with the camera on); in a race, the cup, the round and the course, your character, your
-place and the lap, with the time since the race started. It changes every 15 seconds at most. For
-example:
+place and the lap, with the time since the race started; then the place you finished, with the cup's
+trophy if you won. The pictures are the games' own, of the characters and courses. For example:
 
     Yoshi Cup · Round 1: Yoshi Park 1
     Mario · 3rd · Lap 2/3

@@ -23,10 +23,17 @@ std::string race_line(const GameStatus& s) {
   return line;
 }
 
-// The player in the race: "Mario · 3rd · Lap 2/3" (only "Mario" until it starts).
+// The player in the race: "Mario · 3rd · Lap 2/3" (only "Mario" until it
+// starts), and after it: "Mario · Finished 3rd", or "Race over" when the time
+// ran out.
 std::string racer_line(const GameStatus& s) {
   std::string line = s.character;
   auto add = [&line](const std::string& part) { line += (line.empty() ? "" : " · ") + part; };
+  if (s.scene == GameStatus::Scene::Finished) {
+    if (!s.finished) return "Race over";
+    add(s.position ? "Finished " + ordinal(s.position) : "Finished");
+    return line;
+  }
   if (!s.started) return line;
   if (s.position) add(ordinal(s.position));
   if (s.lap && s.laps) add("Lap " + std::to_string(std::min(s.lap, s.laps)) + "/" + std::to_string(s.laps));
@@ -56,11 +63,11 @@ discord::Activity describe(const GameStatus& s, const std::string& title, std::i
     case GameStatus::Scene::Racing:
     case GameStatus::Scene::Finished: {
       if (std::string line = race_line(s); !line.empty()) a.details = line;
-      a.state = s.scene == GameStatus::Scene::Racing ? racer_line(s) : "Race over";
+      a.state = racer_line(s);
       if (s.scene == GameStatus::Scene::Racing && race_start) a.start = race_start;
-      if (!s.cup_image.empty()) {
-        a.large_image = s.cup_image;
-        a.large_text = s.cup + (s.engine.empty() ? "" : ", " + s.engine);
+      if (!s.course_image.empty()) {
+        a.large_image = s.course_image;
+        a.large_text = s.cup.empty() ? s.course : s.cup + (s.engine.empty() ? "" : ", " + s.engine);
       }
       break;
     }
@@ -69,6 +76,11 @@ discord::Activity describe(const GameStatus& s, const std::string& title, std::i
       !s.character_image.empty()) {
     a.small_image = s.character_image;
     a.small_text = s.character;
+  }
+  // A race won: the cup's trophy.
+  if (s.scene == GameStatus::Scene::Finished && s.finished && s.position == 1 && !s.trophy_image.empty()) {
+    a.small_image = s.trophy_image;
+    a.small_text = s.character.empty() ? "1st" : s.character + ", 1st";
   }
   return a;
 }

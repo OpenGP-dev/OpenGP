@@ -39,15 +39,15 @@ std::string set_activity_json(const std::optional<Activity>& activity, long pid,
 std::string handshake_json(std::string_view application_id);
 
 // Keeps an activity on Discord, on a thread of its own: connects when Discord
-// is running (and again if it restarts), and sends changes once every 15
-// seconds at most (Discord allows 5 in 20 seconds), so a change waits a little
-// and only the latest is sent. Without Discord, it does nothing.
+// is running (and again if it restarts), and sends changes once every 5
+// seconds at most (Discord allows 5 in 20 seconds), so a quick change waits a
+// little and only the latest is sent. Without Discord, it does nothing.
 class Presence {
  public:
   struct Options {
     std::function<std::unique_ptr<Transport>()> connect = connect_local;
     int retry_ms = 15000;        // between attempts to connect
-    int min_interval_ms = 15000;  // between updates
+    int min_interval_ms = 5000;  // between updates
     bool log = true;             // say on the console when it connects
   };
 

@@ -45,22 +45,29 @@ inline constexpr std::array<CharacterName, 13> kCharacterNames = {{
     {"Mametchi", "mametchi"},
 }};
 
-struct CupName {
+struct CourseName {
   const char* name;
   const char* image;
-  const char* courses[2];  // its two courses, the short and the long layout
 };
 
-// By cup ID, from 1, as the games write them. GP has the first 6.
+struct CupName {
+  const char* name;
+  const char* trophy;          // the cup's trophy, for winning one of its races
+  CourseName courses[2];       // its two courses: the short and the long layout
+};
+
+// By cup ID, from 1, as the games write them. GP has the first 6. The
+// courses are in the order of g_longRoundFlag, as the round select shows them.
 inline constexpr std::array<CupName, 8> kCupNames = {{
-    {"Mario Cup", "cup_mario", {"Mario Highway", "Mario Beach"}},
-    {"DK Cup", "cup_dk", {"DK Jungle", "Bananan Ruins"}},
-    {"Wario Cup", "cup_wario", {"Diamond City", "Snow Panic"}},
-    {"Pac-Man Cup", "cup_pacman", {"Pac Mountain", "Pac Labyrinth"}},
-    {"Bowser Cup", "cup_bowser", {"Bowser's Castle", "Castle Wall"}},
-    {"Rainbow Cup", "cup_rainbow", {"Rainbow Coaster", "Rainbow Downhill"}},
-    {"Yoshi Cup", "cup_yoshi", {"Yoshi Park 1", "Yoshi Park 2"}},
-    {"Waluigi Cup", "cup_waluigi", {"Waluigi Stadium", "Arena Stadium"}},
+    {"Mario Cup", "trophy_mario", {{"Mario Highway", "course_mario_highway"}, {"Mario Beach", "course_mario_beach"}}},
+    {"DK Cup", "trophy_dk", {{"DK Jungle", "course_dk_jungle"}, {"Bananan Ruins", "course_bananan_ruins"}}},
+    {"Wario Cup", "trophy_wario", {{"Diamond City", "course_diamond_city"}, {"Snow Panic", "course_snow_panic"}}},
+    {"Pac-Man Cup", "trophy_pacman", {{"Pac Mountain", "course_pac_mountain"}, {"Pac Labyrinth", "course_pac_labyrinth"}}},
+    {"Bowser Cup", "trophy_bowser", {{"Bowser's Castle", "course_bowsers_castle"}, {"Castle Wall", "course_castle_wall"}}},
+    {"Rainbow Cup", "trophy_rainbow",
+     {{"Rainbow Coaster", "course_rainbow_coaster"}, {"Rainbow Downhill", "course_rainbow_downhill"}}},
+    {"Yoshi Cup", "trophy_yoshi", {{"Yoshi Park 1", "course_yoshi_park_1"}, {"Yoshi Park 2", "course_yoshi_park_2"}}},
+    {"Waluigi Cup", "trophy_waluigi", {{"Arena Stadium", "course_arena_stadium"}, {"Waluigi Stadium", "course_waluigi_stadium"}}},
 }};
 
 // A game's race globals.
@@ -74,6 +81,7 @@ struct RaceGlobals {
   gekko::u32 round;        // g_roundIndex, from 0 (4-7: the cup's second set of rounds)
   gekko::u32 engine;       // g_ccClass: 0-2 for 50, 100, 150cc
   gekko::u32 started;      // g_raceStarted (a byte): the countdown is over
+  gekko::u32 ended;        // g_raceEnded (a byte): the player crossed the finish line (not when time ran out)
   gekko::u32 position;     // the player's place now, from 0 (GP 2's g_finalRacePosition)
   gekko::u32 lap;          // from 1
   gekko::u32 laps;         // g_totalLaps
@@ -82,8 +90,10 @@ struct RaceGlobals {
 inline gekko::u32 word(const gekko::u8* base, gekko::u32 address) { return ppc::load_be<gekko::u32>(base + address); }
 
 // Fills in the player's character and, in a race (or just after one), the
-// race. `s->scene` is set already.
-inline void read_race(const gekko::u8* base, const RaceGlobals& g, app::GameStatus* s) {
+// race. `s->scene` is set already; a race the player has finished becomes
+// Scene::Finished. `on_track` says the race itself (or its end) is on screen,
+// not its introduction, where the flags may still be the last race's.
+inline void read_race(const gekko::u8* base, const RaceGlobals& g, bool on_track, app::GameStatus* s) {
   using Scene = app::GameStatus::Scene;
   if (const gekko::u32 c = word(base, g.character); c < g.characters) {
     s->character = kCharacterNames[c].name;
@@ -97,13 +107,18 @@ inline void read_race(const gekko::u8* base, const RaceGlobals& g, app::GameStat
     s->engine = std::array{"50cc", "100cc", "150cc"}[engine];
   if (const gekko::u32 cup = word(base, g.cup); cup >= 1 && cup <= g.cups) {
     const CupName& c = kCupNames[cup - 1];
+    const CourseName& course = c.courses[word(base, g.long_layout) ? 1 : 0];
     s->cup = c.name;
-    s->cup_image = c.image;
-    s->course = c.courses[word(base, g.long_layout) ? 1 : 0];
+    s->trophy_image = c.trophy;
+    s->course = course.name;
+    s->course_image = course.image;
     if (word(base, g.reverse)) s->course += " (reverse)";
   }
   if (mode == 0) s->round = static_cast<int>(word(base, g.round) % 4) + 1;
+  if (!on_track) return;
   s->started = base[g.started] != 0;
+  s->finished = base[g.ended] != 0;
+  if (s->finished) s->scene = Scene::Finished;
   if (mode != 1) s->position = static_cast<int>(word(base, g.position)) + 1;  // alone in a time trial
   s->lap = static_cast<int>(word(base, g.lap));
   s->laps = static_cast<int>(word(base, g.laps));

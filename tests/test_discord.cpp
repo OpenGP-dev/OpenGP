@@ -246,14 +246,15 @@ TEST_CASE("rich presence: what the games' status shows") {
   s.mode = "Grand Prix";
   s.engine = "100cc";
   s.cup = "Yoshi Cup";
-  s.cup_image = "cup_yoshi";
+  s.trophy_image = "trophy_yoshi";
   s.course = "Yoshi Park 1";
+  s.course_image = "course_yoshi_park_1";
   s.round = 1;
   a = app::describe(s, "Mario Kart Arcade GP 2", 100, 0);
   CHECK(a.details == "Yoshi Cup · Round 1: Yoshi Park 1");
   CHECK(a.state == "Mario");
   CHECK(a.start == 100);
-  CHECK(a.large_image == "cup_yoshi");
+  CHECK(a.large_image == "course_yoshi_park_1");
   CHECK(a.large_text == "Yoshi Cup, 100cc");
 
   s.started = true;
@@ -267,10 +268,24 @@ TEST_CASE("rich presence: what the games' status shows") {
   s.lap = 4;  // past the finish line
   CHECK(app::describe(s, "", 100, 160).state == "Mario · 3rd · Lap 3/3");
 
+  // The time ran out.
   s.scene = Scene::Finished;
   a = app::describe(s, "Mario Kart Arcade GP 2", 100, 0);
   CHECK(a.details == "Yoshi Cup · Round 1: Yoshi Park 1");
   CHECK(a.state == "Race over");
+  CHECK(a.small_image == "mario");
+
+  // Over the finish line: the place, and for a win the cup's trophy.
+  s.finished = true;
+  a = app::describe(s, "Mario Kart Arcade GP 2", 100, 0);
+  CHECK(a.state == "Mario · Finished 3rd");
+  CHECK(a.small_image == "mario");
+  s.position = 1;
+  a = app::describe(s, "Mario Kart Arcade GP 2", 100, 0);
+  CHECK(a.state == "Mario · Finished 1st");
+  CHECK(a.small_image == "trophy_yoshi");
+  CHECK(a.small_text == "Mario, 1st");
+  CHECK(a.large_image == "course_yoshi_park_1");
 
   app::GameStatus tt;
   tt.scene = Scene::Racing;
@@ -283,4 +298,7 @@ TEST_CASE("rich presence: what the games' status shows") {
   a = app::describe(tt, "Mario Kart Arcade GP 2", 100, 200);
   CHECK(a.details == "Time Trial · Diamond City (reverse)");
   CHECK(a.state == "Luigi · Lap 1/3");
+  tt.scene = Scene::Finished;
+  tt.finished = true;
+  CHECK(app::describe(tt, "", 100, 200).state == "Luigi · Finished");
 }
