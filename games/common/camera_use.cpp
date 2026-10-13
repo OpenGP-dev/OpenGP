@@ -18,6 +18,8 @@ constexpr gekko::u32 kCameraUse = 0x25;
 
 void set(bool on) { g_on = on; }
 
+bool on() { return g_on; }
+
 void on_settings_loaded(gekko::u8* base, gekko::u32 settings) { base[settings + kCameraUse] = g_on ? 1 : 0; }
 
 void on_power_tick(gekko::u8* base, gekko::u32 board) {

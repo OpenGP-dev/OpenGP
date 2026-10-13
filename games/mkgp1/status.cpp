@@ -7,6 +7,8 @@
 
 #include "status.h"
 
+#include "camera_use.h"
+
 namespace game_status {
 
 namespace {
@@ -52,9 +54,17 @@ void read(const gekko::u8* base, app::GameStatus* s) {
       break;
     case 0x21: s->scene = Scene::Starting; break;  // looking for linked cabinets (BootPCBCheck_Init)
     case 0x20: s->scene = Scene::TestMenu; break;
-    case 0x08: case 0x0A: case 0x0B: s->scene = Scene::Menus, s->activity = "Inserting a Mario Card"; break;
-    case 0x0E: s->scene = Scene::Menus, s->activity = "Having a photo taken", chosen = true; break;
-    case 0x0F: s->scene = Scene::Menus, s->activity = "Choosing a race", chosen = true; break;  // mode, cup, round
+    // Getting into a race: the Mario Card (where a new player chooses their character); the
+    // photo (its screen says the camera can't be used when there is none); then the mode, the
+    // cup and the round.
+    case 0x08: case 0x0A: case 0x0B:
+      s->scene = Scene::Menus, s->activity = "Choosing a character";
+      break;
+    case 0x0E:
+      s->scene = Scene::Menus, chosen = true;
+      s->activity = camera_use::on() ? "Having a photo taken" : "Choosing a character";
+      break;
+    case 0x0F: s->scene = Scene::Menus, s->activity = "Choosing a course", chosen = true; break;
     case 0x18: case 0x1A: case 0x1B: case 0x1C:  // the race's introduction, loading, the race
       s->scene = Scene::Racing, chosen = true;
       break;

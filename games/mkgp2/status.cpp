@@ -6,6 +6,8 @@
 
 #include "status.h"
 
+#include "camera_use.h"
+
 namespace game_status {
 
 namespace {
@@ -53,16 +55,19 @@ void read(const gekko::u8* base, app::GameStatus* s) {
       break;
     case 0x36: s->scene = Scene::Starting; break;  // looking for linked cabinets
     case 0x35: s->scene = Scene::TestMenu; break;
-    case 0x08: s->scene = Scene::Menus, s->activity = "Starting a game"; break;
-    case 0x09: s->scene = Scene::Menus, s->activity = "Inserting a Mario Card"; break;
-    case 0x0B: case 0x0C: s->scene = Scene::Menus, s->activity = "Choosing a class"; break;
-    case 0x0D: case 0x14: s->scene = Scene::Menus, s->activity = "Choosing a character"; break;
-    case 0x0F: s->scene = Scene::Menus, s->activity = "Choosing a kart", chosen = true; break;
-    case 0x13: s->scene = Scene::Menus, s->activity = "Having a photo taken", chosen = true; break;
-    case 0x15: s->scene = Scene::Menus, s->activity = "Choosing a cup", chosen = true; break;
-    case 0x17: case 0x19: case 0x1A: s->scene = Scene::Menus, s->activity = "Choosing a course", chosen = true; break;
-    case 0x1B: s->scene = Scene::Menus, s->activity = "Choosing a round", chosen = true; break;
-    case 0x22: s->scene = Scene::Menus, s->activity = "Choosing items", chosen = true; break;
+    // Getting into a race: the start of a game, the Mario Card, the class, the character and
+    // the kart; the photo (its screen says the camera can't be used when there is none); then
+    // the cup, the round or course, and the items.
+    case 0x08: case 0x09: case 0x0B: case 0x0C: case 0x0D: case 0x0F: case 0x14:
+      s->scene = Scene::Menus, s->activity = "Choosing a character";
+      break;
+    case 0x13:
+      s->scene = Scene::Menus, chosen = true;
+      s->activity = camera_use::on() ? "Having a photo taken" : "Choosing a character";
+      break;
+    case 0x15: case 0x17: case 0x19: case 0x1A: case 0x1B: case 0x22:
+      s->scene = Scene::Menus, s->activity = "Choosing a course", chosen = true;
+      break;
     case 0x25: case 0x26: case 0x2A: case 0x2B: case 0x2C:  // the race's introduction, loading, the race
       s->scene = Scene::Racing, chosen = true;
       break;

@@ -23,14 +23,11 @@ std::string race_line(const GameStatus& s) {
   return line;
 }
 
-// The player in the race: "Mario · 3rd · Lap 2/3".
+// The player in the race: "Mario · 3rd · Lap 2/3" (only "Mario" until it starts).
 std::string racer_line(const GameStatus& s) {
   std::string line = s.character;
   auto add = [&line](const std::string& part) { line += (line.empty() ? "" : " · ") + part; };
-  if (!s.started) {
-    add("On the starting grid");
-    return line;
-  }
+  if (!s.started) return line;
   if (s.position) add(ordinal(s.position));
   if (s.lap && s.laps) add("Lap " + std::to_string(std::min(s.lap, s.laps)) + "/" + std::to_string(s.laps));
   return line;

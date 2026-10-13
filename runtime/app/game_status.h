@@ -21,7 +21,7 @@ struct GameStatus {
     TestMenu,  // the operator's test menu
   };
   Scene scene = Scene::Starting;
-  std::string activity;  // in the menus, e.g. "Choosing a cup"
+  std::string activity;  // in the menus: "Choosing a character", "Choosing a course"...
 
   // Image names are art assets' keys in OpenGP's Discord application.
   std::string game_image;  // the game's logo

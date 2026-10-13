@@ -236,9 +236,9 @@ TEST_CASE("rich presence: what the games' status shows") {
   CHECK(a.small_image.empty());  // the attract mode's demo racers are nobody's
 
   s.scene = Scene::Menus;
-  s.activity = "Choosing a cup";
+  s.activity = "Choosing a course";
   a = app::describe(s, "Mario Kart Arcade GP 2", 100, 0);
-  CHECK(a.state == "Choosing a cup");
+  CHECK(a.state == "Choosing a course");
   CHECK(a.small_image == "mario");
   CHECK(a.small_text == "Mario");
 
@@ -251,7 +251,7 @@ TEST_CASE("rich presence: what the games' status shows") {
   s.round = 1;
   a = app::describe(s, "Mario Kart Arcade GP 2", 100, 0);
   CHECK(a.details == "Yoshi Cup · Round 1: Yoshi Park 1");
-  CHECK(a.state == "Mario · On the starting grid");
+  CHECK(a.state == "Mario");
   CHECK(a.start == 100);
   CHECK(a.large_image == "cup_yoshi");
   CHECK(a.large_text == "Yoshi Cup, 100cc");

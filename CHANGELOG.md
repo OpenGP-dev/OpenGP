@@ -5,11 +5,12 @@
 ### Discord Rich Presence (milestone 15)
 
 - While Discord runs on the same computer, your profile shows what you are playing, as "Playing
-  OpenGP": the game, and what you are doing in its menus; in a race, the cup, round and course,
-  your character, your place and the lap, with the race's time. Both games, with their own names
-  for everything and pictures of the characters and cups. It is on by default; turn it off in the
-  menu's Game tab (**Show what you're playing**) or with `[discord] rich_presence` in
-  `user/settings.toml`. See [docs/playing.md](docs/playing.md#discord).
+  OpenGP": the game, and whether you are choosing a character or a course (or having your photo
+  taken); in a race, the cup, round and course, your character, your place and the lap, with the
+  race's time. It changes every 15 seconds at most. Both games, with their own names for everything
+  and pictures of the characters and cups. It is on by default; turn it off in the menu's Game tab
+  (**Show what you're playing**) or with `[discord] rich_presence` in `user/settings.toml`. See
+  [docs/playing.md](docs/playing.md#discord).
 - OpenGP talks to the Discord app through its local connection, without Discord's SDK, and sends
   nothing anywhere else. `OPENGP_LOG_DISCORD=1` prints what it shows.
 
