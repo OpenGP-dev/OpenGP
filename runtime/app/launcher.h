@@ -18,6 +18,7 @@
 
 #include <functional>
 
+#include "app/game_status.h"
 #include "gekko/types.h"
 #include "os/reboot.h"
 #include "ppc/module.h"
@@ -44,6 +45,9 @@ struct Game {
   std::function<void(bool on)> set_game_log;
   // Whether the game uses its camera (OpenGP plays it), before the game runs.
   std::function<void(bool on)> set_camera;
+  // What the player is doing, read from guest memory while the game runs
+  // (for Discord Rich Presence).
+  std::function<void(const u8* base, GameStatus* status)> status;
 };
 
 // Runs the game; returns the process exit code.

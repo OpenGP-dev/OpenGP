@@ -71,3 +71,7 @@ endif()
 add_executable(test_camera test_camera.cpp)
 target_link_libraries(test_camera PRIVATE opengp_machine doctest opengp_warnings)
 add_test(NAME camera COMMAND test_camera)
+
+add_executable(test_discord test_discord.cpp)
+target_link_libraries(test_discord PRIVATE opengp_discord doctest opengp_warnings)
+add_test(NAME discord COMMAND test_discord)

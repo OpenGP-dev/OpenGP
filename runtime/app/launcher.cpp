@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -18,6 +19,7 @@
 #include <vector>
 
 #include "app/paths.h"
+#include "app/rich_presence.h"
 #include "app/settings.h"
 #include "audio/wav.h"
 #include "camera/namcam.h"
@@ -184,6 +186,7 @@ Settings settings_to_save(const Settings& file, const Settings& start, const Set
   OPENGP_KEEP_CHANGE(card);
   OPENGP_KEEP_CHANGE(camera);
   OPENGP_KEEP_CHANGE(webcam);
+  OPENGP_KEEP_CHANGE(rich_presence);
 #undef OPENGP_KEEP_CHANGE
   return s;
 }
@@ -614,6 +617,11 @@ int run(const Game& game, int argc, char** argv) {
     bool cursor_hidden = false;
     auto last_present = std::chrono::steady_clock::now();
     bool pause_pressed = false;  // paused with the pause control
+    // Discord Rich Presence: when playing in a window (not in headless runs,
+    // unless OPENGP_LOG_DISCORD=1 asks for what it would show).
+    const bool log_discord = std::getenv("OPENGP_LOG_DISCORD") != nullptr;
+    std::unique_ptr<RichPresence> rich_presence;
+    auto next_status = std::chrono::steady_clock::now();
     MenuModel model;
     model.title = game.title;
     model.settings = &settings;
@@ -696,6 +704,16 @@ int run(const Game& game, int argc, char** argv) {
       }
       settings.card = applied.card = machine.cards().held();  // the game may have given the player a new card
       apply_settings();
+      if (!settings.rich_presence || !game.status || !(window || log_discord)) {
+        rich_presence.reset();
+      } else if (const auto now = std::chrono::steady_clock::now(); now >= next_status) {
+        next_status = now + std::chrono::seconds(1);
+        if (!rich_presence) rich_presence = std::make_unique<RichPresence>(game.title, log_discord);
+        GameStatus status;
+        game.status(machine.base(), &status);
+        rich_presence->update(status);
+      }
+      model.discord = rich_presence && rich_presence->connected();
       if (window) {
         const bool hide = settings.fullscreen && !menu.is_open();
         if (hide != cursor_hidden) {

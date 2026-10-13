@@ -13,7 +13,7 @@ set(OPENGP_LLVM_MINGW_URL
 set(OPENGP_LLVM_MINGW_SHA256 e3ad77d117a4bea19a7a3b333341824d79a5a371004a10e25b8504e7b3047666)
 
 # The runtime's libraries, in link order.
-set(package_libs opengp_app opengp_settings opengp_video opengp_input opengp_audio opengp_webcam imgui
+set(package_libs opengp_app opengp_settings opengp_discord opengp_video opengp_input opengp_audio opengp_webcam imgui
                  opengp_machine ppc_runtime gekko_isa SDL3-static)
 install(TARGETS ${package_libs} ARCHIVE DESTINATION sdk/lib)
 install(TARGETS opengp_installer RUNTIME DESTINATION .)
@@ -108,7 +108,7 @@ install(DIRECTORY ${PROJECT_SOURCE_DIR}/common/gekko/include/ DESTINATION sdk/in
 # The games' own files (addresses, names and hand-written code only).
 foreach(game mkgp2 mkgp1)
   set(dir ${PROJECT_SOURCE_DIR}/games/${game})
-  install(FILES ${dir}/game.toml ${dir}/recomp.toml ${dir}/patches.cpp DESTINATION sdk/games/${game})
+  install(FILES ${dir}/game.toml ${dir}/recomp.toml ${dir}/patches.cpp ${dir}/status.cpp DESTINATION sdk/games/${game})
   install(FILES ${dir}/config/symbols.txt DESTINATION sdk/games/${game}/config)
 endforeach()
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/games/common/ DESTINATION sdk/games/common)

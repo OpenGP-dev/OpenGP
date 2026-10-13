@@ -130,6 +130,7 @@ bool load_settings(const std::string& path, Settings* settings, std::string* err
     return false;
   }
   s.webcam = camera["webcam"].value_or(s.webcam);
+  s.rich_presence = root["discord"]["rich_presence"].value_or(s.rich_presence);
   *settings = std::move(s);
   return true;
 }
@@ -181,7 +182,14 @@ bool save_settings(const std::string& path, const Settings& s, std::string* erro
       << "\"\n"
          "# The webcam's name, or \"\" for the first one.\n"
          "webcam = "
-      << quoted(s.webcam) << "\n";
+      << quoted(s.webcam)
+      << "\n"
+         "\n"
+         "[discord]\n"
+         "# Show what you are playing (character, cup, course, place) on your Discord profile, while\n"
+         "# Discord runs on this computer.\n"
+         "rich_presence = "
+      << (s.rich_presence ? "true" : "false") << "\n";
   const std::string text = out.str();
   if (!os::write_file_atomically(path, text.data(), text.size())) {
     if (error) *error = "cannot write " + path;

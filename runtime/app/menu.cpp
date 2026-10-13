@@ -289,6 +289,12 @@ void Menu::game_tab(MenuModel& m) {
   if (m.linked) hint("When linked to another cabinet, Pausing is disabled.");
   else if (const std::string keys = pause_keys(m); !keys.empty()) hint("%s pauses and resumes the game.", keys.c_str());
 
+  ImGui::SeparatorText("Discord");
+  ImGui::Checkbox("Show what you're playing", &s.rich_presence);
+  if (s.rich_presence)
+    hint("%s", m.discord ? "On your Discord profile: the game, character, cup, course and place."
+                         : "Discord isn't running on this computer.");
+
   ImGui::SeparatorText("Arcade");
   ImGui::Checkbox("Free play", &s.free_play);
   if (m.test_menu) {

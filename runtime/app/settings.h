@@ -49,6 +49,9 @@ struct Settings {
   CameraSource camera = CameraSource::Off;
   std::string webcam;  // the webcam's name; "" for the first
 
+  // [discord]
+  bool rich_presence = true;  // show what the player is doing on their Discord profile
+
   bool operator==(const Settings&) const = default;
 };
 

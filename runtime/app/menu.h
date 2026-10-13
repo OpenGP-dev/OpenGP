@@ -34,6 +34,7 @@ struct MenuModel {
   std::function<std::vector<std::string>()> webcams;  // lists the webcams' names
   std::string camera_info;           // the camera this run uses
   bool linked = false;               // linked to another cabinet: no pausing
+  bool discord = false;              // Discord is connected (for Rich Presence)
   std::function<void()> quit;
   std::function<void()> test_menu;  // restarts into the game's test menu (if it has one)
 };

@@ -49,6 +49,7 @@ TEST_CASE("settings: save and load round trip") {
   s.volume = 42;
   s.free_play = true;
   s.card = "Mario's \"best\" card";
+  s.rich_presence = false;
   std::string error;
   REQUIRE_MESSAGE(app::save_settings(path.string(), s, &error), error);
   app::Settings loaded;
