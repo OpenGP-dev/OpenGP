@@ -84,6 +84,12 @@ class HostInput {
   void set_steer_speed(float speed);
   float deadzone(DeviceKind kind) const;
   void set_deadzone(DeviceKind kind, float deadzone);
+  // Reads the controls while the window is in the background too, so that
+  // several OpenGPs on one computer can be driven at once: gamepads
+  // everywhere, the keyboard on Windows.
+  bool background_input() const;
+  void set_background_input(bool on);
+  static bool background_keyboard();  // whether this system reads the keyboard in the background
   void restore_defaults();
 
   // Writes the bindings back to the file load() read, if they changed.

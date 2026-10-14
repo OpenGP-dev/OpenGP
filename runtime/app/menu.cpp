@@ -447,6 +447,11 @@ void Menu::controls_tab(MenuModel& m) {
     float deadzone = in.deadzone(kind) * 100.0f;
     if (ImGui::SliderFloat("Stick Deadzone", &deadzone, 0.0f, 50.0f, "%.0f%%")) in.set_deadzone(kind, deadzone / 100.0f);
   }
+  bool background = in.background_input();
+  if (ImGui::Checkbox("Use the controls in the background too", &background)) in.set_background_input(background);
+  hint("%s", input::HostInput::background_keyboard()
+                 ? "Every OpenGP window reacts, active or not: for driving several copies at once."
+                 : "Gamepads reach every OpenGP window, active or not (the keyboard only the active one).");
   if (ImGui::Button("Restore defaults")) in.restore_defaults();
   hint("Saved in %s", in.path().c_str());
 }

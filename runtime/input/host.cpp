@@ -16,6 +16,16 @@
 
 #include "os/atomic_file.h"
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 #define TOML_EXCEPTIONS 0
 #include <toml.hpp>
 
@@ -140,7 +150,53 @@ struct Config {
   float steer_speed = 4.0f;
   float ffb_strength = 1.0f;
   bool rumble = true;
+  bool background = false;  // read the controls while the window is in the background
 };
+
+// Reading keys in the background (set from the controls' setting).
+bool g_background_keys = false;
+
+// Whether a key is down, asked of the system rather than of the window, so
+// that it works while the window is in the background. Windows only: keys
+// are matched by position (SDL's scancodes are USB usages), through the PC
+// scancode and the keyboard layout's virtual key; keys that do not move with
+// the layout go straight to their virtual key.
+#ifdef _WIN32
+bool system_key_down(int scancode) {
+  static constexpr struct {
+    int usage;
+    UINT code;  // the PC scancode
+  } kKeys[] = {
+      {4, 0x1E}, {5, 0x30}, {6, 0x2E}, {7, 0x20}, {8, 0x12}, {9, 0x21}, {10, 0x22}, {11, 0x23}, {12, 0x17},
+      {13, 0x24}, {14, 0x25}, {15, 0x26}, {16, 0x32}, {17, 0x31}, {18, 0x18}, {19, 0x19}, {20, 0x10}, {21, 0x13},
+      {22, 0x1F}, {23, 0x14}, {24, 0x16}, {25, 0x2F}, {26, 0x11}, {27, 0x2D}, {28, 0x15}, {29, 0x2C},  // A-Z
+      {30, 0x02}, {31, 0x03}, {32, 0x04}, {33, 0x05}, {34, 0x06}, {35, 0x07}, {36, 0x08}, {37, 0x09}, {38, 0x0A},
+      {39, 0x0B},  // 1-0
+      {45, 0x0C}, {46, 0x0D}, {47, 0x1A}, {48, 0x1B}, {49, 0x2B}, {51, 0x27}, {52, 0x28}, {53, 0x29}, {54, 0x33},
+      {55, 0x34}, {56, 0x35}, {100, 0x56},  // punctuation, and the key left of Z on ISO keyboards
+  };
+  static constexpr struct {
+    int usage;
+    UINT vk;
+  } kVirtualKeys[] = {
+      {40, VK_RETURN}, {41, VK_ESCAPE}, {42, VK_BACK}, {43, VK_TAB}, {44, VK_SPACE}, {57, VK_CAPITAL},
+      {58, VK_F1}, {59, VK_F2}, {60, VK_F3}, {61, VK_F4}, {62, VK_F5}, {63, VK_F6}, {64, VK_F7}, {65, VK_F8},
+      {66, VK_F9}, {67, VK_F10}, {68, VK_F11}, {69, VK_F12}, {72, VK_PAUSE}, {73, VK_INSERT}, {74, VK_HOME},
+      {75, VK_PRIOR}, {76, VK_DELETE}, {77, VK_END}, {78, VK_NEXT}, {79, VK_RIGHT}, {80, VK_LEFT}, {81, VK_DOWN},
+      {82, VK_UP}, {84, VK_DIVIDE}, {85, VK_MULTIPLY}, {86, VK_SUBTRACT}, {87, VK_ADD}, {88, VK_RETURN},
+      {89, VK_NUMPAD1}, {90, VK_NUMPAD2}, {91, VK_NUMPAD3}, {92, VK_NUMPAD4}, {93, VK_NUMPAD5}, {94, VK_NUMPAD6},
+      {95, VK_NUMPAD7}, {96, VK_NUMPAD8}, {97, VK_NUMPAD9}, {98, VK_NUMPAD0}, {99, VK_DECIMAL},
+      {224, VK_LCONTROL}, {225, VK_LSHIFT}, {226, VK_LMENU}, {227, VK_LWIN}, {228, VK_RCONTROL}, {229, VK_RSHIFT},
+      {230, VK_RMENU}, {231, VK_RWIN},
+  };
+  UINT vk = 0;
+  for (const auto& k : kKeys)
+    if (k.usage == scancode) vk = MapVirtualKeyW(k.code, MAPVK_VSC_TO_VK_EX);
+  for (const auto& k : kVirtualKeys)
+    if (k.usage == scancode) vk = k.vk;
+  return vk && (GetAsyncKeyState(static_cast<int>(vk)) & 0x8000);
+}
+#endif
 
 bool is_trigger(int axis) { return axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER; }
 
@@ -261,6 +317,7 @@ bool parse_config(std::string_view text, Config* config, std::string* error) {
   c.ffb_strength =
       std::clamp(static_cast<float>(root["force_feedback"]["strength"].value_or(double{c.ffb_strength})), 0.0f, 2.0f);
   c.rumble = root["force_feedback"]["rumble"].value_or(c.rumble);
+  c.background = root["background"]["input"].value_or(c.background);
   *config = std::move(c);
   return true;
 }
@@ -332,7 +389,10 @@ std::string config_text(const Config& c) {
   section("joystick", c.joystick, true, true);
   out += "[steering]\n# Keys and buttons turn the wheel gradually: full turns per second.\nspeed = " + real(c.steer_speed) +
          "\n\n[force_feedback]\n# 0 turns it off, 1 is the game's full strength.\nstrength = " + real(c.ffb_strength) +
-         "\n# Gamepads rumble on bumps and hits.\nrumble = " + (c.rumble ? "true" : "false") + "\n";
+         "\n# Gamepads rumble on bumps and hits.\nrumble = " + (c.rumble ? "true" : "false") +
+         "\n\n[background]\n# Read the controls while the window is in the background too (to drive several\n"
+         "# copies of OpenGP at once): gamepads, and the keyboard on Windows.\ninput = " +
+         (c.background ? "true" : "false") + "\n";
   return out;
 }
 
@@ -356,6 +416,13 @@ struct HostInput::Impl {
   Config config;
   std::string path;
   bool dirty = false;  // bindings changed since load() or save()
+
+  // Gamepads' events come to a window in the background only if SDL is told.
+  void apply_background() {
+    g_background_keys = config.background && background_keyboard_supported();
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, config.background ? "1" : "0");
+  }
+  static bool background_keyboard_supported() { return HostInput::background_keyboard(); }
   std::map<SDL_JoystickID, Device> devices;
   // Binding an input from the menu: waiting for one of `kind`, for `control`.
   struct Capture {
@@ -386,6 +453,9 @@ struct HostInput::Impl {
   static float raw(const Source& s, const Device* d) {
     switch (s.kind) {
       case Source::Kind::Key: {
+#ifdef _WIN32
+        if (g_background_keys) return system_key_down(s.index) ? 1.0f : 0.0f;
+#endif
         int count = 0;
         const bool* keys = SDL_GetKeyboardState(&count);
         return s.index < count && keys[s.index] ? 1.0f : 0.0f;
@@ -445,11 +515,10 @@ bool HostInput::load(const std::string& path, std::string* error) {
   std::string why;
   impl_->config = Config{};
   parse_config(kDefaultConfig, &impl_->config, &why);
-  if (!parse_config(text, &impl_->config, &why)) {
-    if (error) *error = path + ": " + why + " (using the default controls)";
-    return false;
-  }
-  return true;
+  const bool ok = parse_config(text, &impl_->config, &why);
+  if (!ok && error) *error = path + ": " + why + " (using the default controls)";
+  impl_->apply_background();
+  return ok;
 }
 
 bool HostInput::init(std::string* error) {
@@ -784,6 +853,22 @@ void HostInput::set_steer_speed(float speed) {
   impl_->dirty = true;
 }
 
+bool HostInput::background_input() const { return impl_->config.background; }
+void HostInput::set_background_input(bool on) {
+  if (on == impl_->config.background) return;
+  impl_->config.background = on;
+  impl_->apply_background();
+  impl_->dirty = true;
+}
+
+bool HostInput::background_keyboard() {
+#ifdef _WIN32
+  return true;
+#else
+  return false;
+#endif
+}
+
 float HostInput::deadzone(DeviceKind kind) const { return impl_->bindings(kind).deadzone; }
 void HostInput::set_deadzone(DeviceKind kind, float deadzone) {
   deadzone = std::clamp(deadzone, 0.0f, 0.9f);
@@ -797,6 +882,7 @@ void HostInput::restore_defaults() {
   std::string why;
   parse_config(kDefaultConfig, &defaults, &why);
   impl_->config = defaults;
+  impl_->apply_background();
   impl_->dirty = true;
 }
 
