@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Linked cabinets (milestone 12)
+
+- Up to four cabinets link for Versus races, as in an arcade: copies of OpenGP on one computer,
+  or on computers on a local network. Give each its own **Cabinet number** in the menu's Game tab
+  (`[link] cabinet`, or `--cabinet N`); on a local network, also turn on **Link over the local
+  network** (`[link] lan`, or `--lan`). Start a game on one cabinet, and players on the others
+  join it. Both games link, each with its own kind. See
+  [docs/playing.md](docs/playing.md#linked-cabinets).
+- The cabinets find each other by themselves, and connect only to cabinets playing the same game.
+  The Game tab shows who this cabinet is linked with.
+- If a cabinet stops in the middle of a game, the others stop with "Link error occurred", as arcade
+  cabinets do: OpenGP restarts them after a few seconds.
+
 ### Discord Rich Presence (milestone 15)
 
 - While Discord runs on the same computer, your profile shows what you are playing, as "Playing

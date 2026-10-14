@@ -104,6 +104,34 @@ webcam cannot be opened, the game runs without its camera and says why on the co
 `webcam` (the webcam's name, `""` for the first), and `--camera off|webcam|test` sets it for one
 run. The webcam's light stays on while the game runs with it.
 
+## Linked cabinets
+
+Up to four cabinets link, so that up to four players race each other in Versus mode, as in an
+arcade. Each cabinet is a copy of OpenGP: on the same computer, or on computers on the same local
+network. Both games link, each with its own kind (GP 2 with GP 2, GP with GP).
+
+Each cabinet needs its own number, 1 to 4: **Cabinet number** in the menu's Game tab
+(`[link] cabinet` in `user/settings.toml`, or `--cabinet N` for one run). **The game's setting**
+keeps the number set in the game's test menu, which is 1 unless changed there. The number is read
+when the game starts, so a change takes effect when it restarts.
+
+- **On one computer**, give each copy its own user folder as well as its own number, since two
+  copies sharing one would overwrite each other's settings and saves:
+  `opengp-mkgp2 --user-dir user2 --cabinet 2`.
+- **On a local network**, turn on **Link over the local network** on each computer
+  (`[link] lan = true`, or `--lan`). The cabinets find each other by broadcasting on the network.
+  The first time, Windows asks whether OpenGP may use the network: allow it on private networks.
+  The link uses ports 28500 to 28539 (TCP and UDP) on each computer; `[link] port` moves them
+  (give every cabinet the same).
+
+Then start a game on one cabinet. The others show "Waiting for entry!", and players who insert a
+coin there (or press the gas pedal, with free play) before the time runs out join the race. The
+Game tab says which cabinets this one is linked with, and if another cabinet has the same number.
+
+A linked game can't pause (see [Pausing](#pausing)). If a cabinet stops in the middle of a game,
+the others stop too with "Please call an attendant / Link error occurred", as arcade cabinets
+do: OpenGP restarts them after a few seconds.
+
 ## Discord
 
 While Discord runs on the same computer, your Discord profile shows what you are playing, as
@@ -222,8 +250,4 @@ calibration and a switch test); hold F1 and press F2 again to leave it.
 If the game's picture stops for 10 seconds while it is not paused, OpenGP writes where the game's
 threads are to `user/hang-report.txt` (and the console). Please send that file with the report:
 it shows what the game was waiting for.
-
-## Not done yet
-
-- Cabinets cannot be linked (milestone 12).
 

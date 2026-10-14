@@ -382,12 +382,26 @@ The games reach the media board's network through board commands (socket, connec
 send, recv...). `triforce::Network` numbers the sockets 1-63 as the board does and backs each with
 a host socket, or with a `Service` that OpenGP plays itself: a connection to a service's address
 runs in-process, with no host network. Host sockets are non-blocking; the games poll them once a
-frame. For now only services are reachable: other connections are refused, and binds go to the
-loopback interface (linked cabinets will route the cabinets' addresses, M12).
+frame. Besides services, connections reach other cabinets (below) and routes added for tests;
+others are refused, and binds go to the loopback interface.
 
-`Network::linked()` says whether the game has linked to another cabinet since start-up: a routed
-connection made, or one accepted on a listening socket (services don't count). The launcher
-pauses only a game that has not: other cabinets need a linked one to keep running (M12).
+Linked cabinets (M12): `Network::enable_link` makes each OpenGP one cabinet, numbered 1-4 like
+the games' PCB ID (`app::Game::set_cabinet` sets the game's own setting, `games/common/cabinet.cpp`).
+Cabinet n is at 192.168.29.150 + n - 1 and listens on one of ports 5000-5008; on the host, its
+port 5000 + k is `[link] port` + 10 (n - 1) + k, so four run on one computer, and port + 10 (n - 1)
++ 9 takes UDP beacons. Twice a second each cabinet sends the others (on this computer, and with
+`lan` to every network's broadcast address) its number, its game and the ports it listens on. A
+game's connection to another cabinet goes to the host port only once that cabinet has said it
+listens there, so a connection never waits for a cabinet that is not there, and it starts with a
+16-byte hello naming the cabinet and the game: the cabinet accepting it hands it to its game only
+then, as a connection from the other cabinet's address. With `lan` off, everything stays on the
+loopback interface. `Network::link_status()` is what the menu shows.
+
+`Network::linked()` says whether the game has linked to another cabinet since start-up: a
+connection to one made, or one accepted (services don't count). The launcher pauses only a game
+that has not: other cabinets need a linked one to keep running (M12). A linked game that
+loses its link stops with a link error until the cabinet restarts (`app::Game::link_error`
+reads the flag); the launcher restarts it.
 
 The camera is such a service (`camera::NamCam`, at 192.168.29.104-107 port 80): it answers the
 game's `GET /img.jpg` with a 320x240 JPEG from its `camera::Source`, encoded by `camera/jpeg.cpp`
@@ -418,4 +432,3 @@ there from the games' textures; nothing from the games is in the code.
 | Area | Plan |
 |------|------|
 | GPU | Remaining GX features as games need them (depth textures, z-freeze, destination alpha with blending, logic ops) |
-| Network | Routes for the cabinets' addresses on the socket API's host sockets, for linking cabinets (M12) |
