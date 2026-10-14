@@ -27,7 +27,6 @@
 #include <functional>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <span>
 #include <string>
 #include <string_view>
@@ -159,6 +158,9 @@ class Network {
   // Links this cabinet with the others (see LinkOptions).
   void enable_link(const LinkOptions& options);
   LinkStatus link_status() const;  // thread-safe
+  // Tells the other cabinets that this one is stopping. For a process that
+  // ends without running destructors; thread-safe.
+  void stop_link();
 
   // Runs socket API command `command` (NET_*) with its parameters (the
   // command block's words after the command) and returns its result.
@@ -177,7 +179,7 @@ class Network {
 
  private:
   struct Socket;
-  struct Link;
+  class Link;
 
   u32 socket(u32 domain, u32 type);
   u32 closesocket(u32 fd);
@@ -195,9 +197,7 @@ class Network {
 
   u32 host_connect(Socket& s, u32 fd, Endpoint to, Endpoint host);
   int own_cabinet() const;
-  void poll_link();
-  void receive_beacons();
-  void send_beacons();
+  void update_link();
   void take_incoming(Socket& listener);
 
   Socket* find(u32 fd);
@@ -214,8 +214,6 @@ class Network {
   std::map<Endpoint, std::shared_ptr<Service>> services_;
   std::map<Endpoint, Endpoint> routes_;
   std::unique_ptr<Link> link_;
-  mutable std::mutex status_mutex_;
-  LinkStatus status_;
 };
 
 }  // namespace triforce

@@ -208,6 +208,13 @@ Settings settings_to_save(const Settings& file, const Settings& start, const Set
   return s;
 }
 
+// The machine's network, so that the other cabinets hear when this one stops:
+// the process ends with std::_Exit, without destructors.
+triforce::Network* g_network = nullptr;
+void stop_link() {
+  if (g_network) g_network->stop_link();
+}
+
 // The reboot the game asked for (set on the guest thread; the main thread
 // restarts the process).
 std::mutex g_reboot_mutex;
@@ -223,6 +230,7 @@ std::atomic<bool> g_reboot_requested{false};
     std::fprintf(stderr, "[opengp] cannot write %s\n", path.string().c_str());
     std::_Exit(1);
   }
+  stop_link();
   std::vector<std::string> args = o.args;
   args.push_back("--reboot");
   args.push_back(path.string());
@@ -450,6 +458,7 @@ int run(const Game& game, int argc, char** argv) {
   if (game.set_camera) game.set_camera(camera_source != nullptr);
   if (game.set_cabinet) game.set_cabinet(settings.cabinet);
   machine.network().enable_link({game.id, static_cast<u16>(settings.link_port), settings.lan});
+  g_network = &machine.network();
   machine.gpu().frontend().set_widescreen(widescreen_side(settings.aspect, 0, 0));
 
   static audio::WavWriter wav;
@@ -524,6 +533,7 @@ int run(const Game& game, int argc, char** argv) {
       std::this_thread::sleep_until(wake);
       if (clock::now() >= deadline) {
         print_status("timeout");
+        stop_link();
         std::fflush(stdout);
         std::_Exit(0);
       }
@@ -609,6 +619,7 @@ int run(const Game& game, int argc, char** argv) {
     auto quit = [&save, &print_status](const char* why) {
       save();
       print_status(why);
+      stop_link();
       std::fflush(stdout);
       std::_Exit(0);
     };

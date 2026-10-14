@@ -98,6 +98,10 @@ addresses):
   each time it listens anew, which is why the others try ports 5008 to 5000 in turn
   (`TCPConn_Poll`, `0x80086BC0`). Both `acConnect` and `acAccept` are asynchronous: the game polls
   `acPollResponse` once a frame, then reads the result.
+- A cabinet looks for the others only as it starts, during its LINK screen (60 seconds on a
+  cabinet; OpenGP skips the wait, so it is about a second and a half, a port tried every 100 ms).
+  After that it only accepts the others' connections, and connects back to a cabinet that
+  connected to it. So a cabinet started later links to those already running.
 - Each pair of linked cabinets has two connections, one made by each, and each carries data one
   way. Messages are a 16-bit type, a 16-bit size (including the 4-byte header) and the data
   (`TCPConn_PeekRxMessage`); a cabinet's first message is 120 bytes in GP 2 (GP: 96 and 80).

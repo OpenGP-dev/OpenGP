@@ -185,3 +185,19 @@ TEST_CASE("two cabinets with the same number on one computer") {
   REQUIRE(run_until({&second}, [&] { return !second.net.link_status().error.empty(); }));
   CHECK(second.net.link_status().error.find("cabinet 1") != std::string::npos);
 }
+
+TEST_CASE("cabinets find each other while the game is busy, and see one stop") {
+  Cabinet one(1);
+  auto wait = [](const std::function<bool()>& done, int ms) {
+    for (int i = 0; i < ms / 10 && !done(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    return done();
+  };
+  {
+    Cabinet two(2);
+    // No board commands: the beacons go round by themselves.
+    REQUIRE(wait([&] { return one.net.link_status().found[2] && two.net.link_status().found[1]; }, 3000));
+  }
+  // Two says goodbye as it stops, so one knows at once (well before the
+  // beacons' timeout).
+  CHECK(wait([&] { return !one.net.link_status().found[2]; }, 1000));
+}

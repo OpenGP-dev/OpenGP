@@ -4,9 +4,11 @@
 
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <random>
 #include <thread>
 
@@ -225,7 +227,7 @@ constexpr int kPortsPerCabinet = 10;
 constexpr u8 kLinkVersion = 1;
 constexpr std::size_t kHelloSize = 16, kBeaconSize = 24;
 constexpr auto kBeaconInterval = std::chrono::milliseconds(500);
-constexpr auto kPeerTimeout = std::chrono::seconds(3);  // a cabinet not heard from for this long is gone
+constexpr auto kPeerTimeout = std::chrono::seconds(5);  // a cabinet not heard from for this long is gone
 constexpr auto kHelloTimeout = std::chrono::seconds(5);
 constexpr auto kClashTimeout = std::chrono::seconds(3);
 
@@ -266,12 +268,13 @@ int read_hello(const u8* p, const GameTag& game) {
 
 // A beacon: "OGPB", the version, the cabinet, the ports it listens on (bit k
 // for 5000 + k, big endian), the sender's random number (to tell its own
-// beacons and another cabinet with the same number apart), the game, 4 bytes
-// of 0.
+// beacons and another cabinet with the same number apart), the game, flags
+// (bit 0: leaving), 3 bytes of 0.
 struct Beacon {
   int cabinet = 0;
   u16 listening = 0;
   u32 nonce = 0;
+  bool leaving = false;  // the cabinet is stopping
 };
 
 void write_beacon(u8* p, const Beacon& b, const GameTag& game) {
@@ -283,6 +286,7 @@ void write_beacon(u8* p, const Beacon& b, const GameTag& game) {
   p[8] = static_cast<u8>(b.nonce >> 24), p[9] = static_cast<u8>(b.nonce >> 16);
   p[10] = static_cast<u8>(b.nonce >> 8), p[11] = static_cast<u8>(b.nonce);
   std::memcpy(p + 12, game.data(), game.size());
+  p[20] = b.leaving ? 1 : 0;
 }
 
 bool read_beacon(const u8* p, std::size_t size, const GameTag& game, Beacon* b) {
@@ -292,18 +296,25 @@ bool read_beacon(const u8* p, std::size_t size, const GameTag& game, Beacon* b) 
   b->cabinet = p[5];
   b->listening = static_cast<u16>((p[6] << 8) | p[7]);
   b->nonce = (u32{p[8]} << 24) | (u32{p[9]} << 16) | (u32{p[10]} << 8) | p[11];
+  b->leaving = p[20] & 1;
   return true;
 }
 
 }  // namespace
 
-#define net_log(...)                       \
-  do {                                     \
-    if (log_enabled()) {                   \
-      std::fputs("[network] ", stderr);    \
-      std::fprintf(stderr, __VA_ARGS__);   \
-      std::fputc('\n', stderr);            \
-    }                                      \
+// Seconds since the first message, to see how long linking takes.
+double log_time() {
+  static const auto start = std::chrono::steady_clock::now();
+  return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+}
+
+#define net_log(...)                                        \
+  do {                                                      \
+    if (log_enabled()) {                                    \
+      std::fprintf(stderr, "[network] %8.3f ", log_time()); \
+      std::fprintf(stderr, __VA_ARGS__);                    \
+      std::fputc('\n', stderr);                             \
+    }                                                       \
   } while (0)
 
 bool parse_ipv4(std::string_view text, u32* ip) {
@@ -366,30 +377,230 @@ struct Network::Socket {
   std::size_t pending() const { return service ? service->out_.size() - service->out_pos_ : 0; }
 };
 
-struct Network::Link {
+// Finding the other cabinets: the beacons. They run on a thread of their own
+// from the moment the game has given itself its number, whatever the game is
+// doing, so that the others are known before the game looks for them: it
+// does that for a moment only, as it starts (the cabinet's 60-second LINK
+// screen is skipped), and then only waits for them to connect.
+class Network::Link {
+ public:
   struct Peer {
     u32 ip = 0;  // where it is (host byte order)
     u16 listening = 0;
     Clock::time_point seen{};
   };
 
-  LinkOptions options;
-  GameTag game{};
-  u32 nonce = 0;
-  HostSocket beacons = kNoSocket;  // bound to this cabinet's beacon port
-  int beacons_cabinet = 0;         // ... for this number
-  u16 listening = 0;               // the ports in the last beacon sent
-  std::vector<u32> broadcasts;     // where the beacons go on the local network
-  Clock::time_point next_poll{}, next_beacon{}, next_open{}, next_networks{}, clash_seen{};
-  std::array<Peer, kCabinets + 1> peers{};
-  std::string error;
+  explicit Link(const LinkOptions& options)
+      : options_(options), game_(game_tag(options.game)), nonce_(std::random_device{}()) {
+    thread_ = std::thread([this] { run(); });
+  }
+  ~Link() { stop(); }
 
-  ~Link() {
-    if (beacons != kNoSocket) close_host(beacons);
+  // Says goodbye to the other cabinets and stops the thread.
+  void stop() {
+    std::call_once(stopped_, [this] {
+      {
+        std::lock_guard lock(mutex_);
+        stop_ = true;
+      }
+      wake_.notify_all();
+      thread_.join();
+    });
   }
+
+  const LinkOptions& options() const { return options_; }
+  const GameTag& game() const { return game_; }
+
+  // From the game's thread: its number (0 for none yet), the ports it
+  // listens on (bit k for 5000 + k) and the cabinets it is connected with
+  // (bit n for cabinet n).
+  void set_cabinet(int cabinet) {
+    std::lock_guard lock(mutex_);
+    cabinet_ = cabinet;
+  }
+  void set_state(u16 listening, u8 connected) {
+    {
+      std::lock_guard lock(mutex_);
+      if (listening != listening_) changed_ = true;  // tell the others at once
+      listening_ = listening;
+      connected_ = connected;
+    }
+    wake_.notify_all();
+  }
+  // A cabinet heard from recently.
+  bool peer(int cabinet, Peer* out) const {
+    std::lock_guard lock(mutex_);
+    if (!found(cabinet, Clock::now())) return false;
+    *out = peers_[cabinet];
+    return true;
+  }
+
+  LinkStatus status() const {
+    std::lock_guard lock(mutex_);
+    const Clock::time_point now = Clock::now();
+    LinkStatus s;
+    s.on = true;
+    s.cabinet = cabinet_;
+    for (int n = 1; n <= kCabinets; ++n) {
+      s.found[n] = n != cabinet_ && found(n, now);
+      s.connected[n] = (connected_ >> n) & 1;
+    }
+    s.clash = clash_seen_ != Clock::time_point{} && now - clash_seen_ < kClashTimeout;
+    s.error = error_;
+    return s;
+  }
+
+ private:
   bool found(int cabinet, Clock::time_point now) const {
-    return peers[cabinet].seen != Clock::time_point{} && now - peers[cabinet].seen < kPeerTimeout;
+    return peers_[cabinet].seen != Clock::time_point{} && now - peers_[cabinet].seen < kPeerTimeout;
   }
+
+  void run() {
+    std::unique_lock lock(mutex_);
+    while (!stop_) {
+      const Clock::time_point now = Clock::now();
+      const int cabinet = cabinet_;
+      const u16 listening = listening_;
+      const bool changed = changed_;
+      changed_ = false;
+      lock.unlock();
+      if (cabinet && socket_cabinet_ != cabinet && now >= next_open_) open(cabinet, now);
+      if (socket_ != kNoSocket) {
+        receive();
+        if (changed || now >= next_beacon_) {
+          send(listening, false);
+          next_beacon_ = now + kBeaconInterval;
+        }
+      }
+      lock.lock();
+      wake_.wait_for(lock, std::chrono::milliseconds(20), [this] { return stop_ || changed_; });
+    }
+    lock.unlock();
+    if (socket_ != kNoSocket) {
+      send(0, true);  // so the others know at once
+      close_host(socket_);
+    }
+  }
+
+  void open(int cabinet, Clock::time_point now) {
+    if (socket_ != kNoSocket) close_host(socket_), socket_ = kNoSocket;
+    socket_cabinet_ = 0;
+    const u16 port = beacon_port(options_.port, cabinet);
+    const HostSocket b = open_host(SOCK_DGRAM);
+    if (b == kNoSocket) return;
+    const int on = 1;
+    if (options_.lan) ::setsockopt(b, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<const char*>(&on), sizeof(on));
+#ifdef _WIN32
+    // Windows reports a beacon sent to a cabinet that is not there as an
+    // error on the next receive.
+    BOOL report = FALSE;
+    DWORD bytes = 0;
+    WSAIoctl(b, SIO_UDP_CONNRESET, &report, sizeof(report), nullptr, 0, &bytes, nullptr, nullptr);
+#endif
+    const sockaddr_in a = host_address({options_.lan ? INADDR_ANY : INADDR_LOOPBACK, port});
+    std::string error;
+    if (::bind(b, reinterpret_cast<const sockaddr*>(&a), sizeof(a)) == 0) {
+      socket_ = b;
+      socket_cabinet_ = cabinet;
+      net_log("link: cabinet %d, beacons on port %u%s", cabinet, port, options_.lan ? " (local network)" : "");
+    } else {
+      close_host(b);
+      error = "Port " + std::to_string(port) + " is in use: is another OpenGP playing cabinet " +
+              std::to_string(cabinet) + "?";
+      net_log("link: %s", error.c_str());
+      next_open_ = now + std::chrono::seconds(2);
+    }
+    std::lock_guard lock(mutex_);
+    error_ = std::move(error);
+  }
+
+  void receive() {
+    for (int i = 0; i < 64; ++i) {
+      u8 data[64];
+      sockaddr_in from{};
+      socklen_t from_len = sizeof(from);
+      const auto r = ::recvfrom(socket_, reinterpret_cast<char*>(data), sizeof(data), 0,
+                                reinterpret_cast<sockaddr*>(&from), &from_len);
+      if (r < 0) {
+        if (would_block(host_error())) break;
+        continue;
+      }
+      Beacon b;
+      if (!read_beacon(data, static_cast<std::size_t>(r), game_, &b) || b.nonce == nonce_) continue;
+      const Clock::time_point now = Clock::now();
+      const u32 ip = ntohl(from.sin_addr.s_addr);
+      std::lock_guard lock(mutex_);
+      if (b.cabinet == socket_cabinet_) {
+        if (!b.leaving) clash_seen_ = now;
+        continue;
+      }
+      Peer& p = peers_[b.cabinet];
+      if (b.leaving) {
+        if (found(b.cabinet, now)) net_log("link: cabinet %d left", b.cabinet);
+        p = {};
+        continue;
+      }
+      if (!found(b.cabinet, now)) net_log("link: found cabinet %d at %s", b.cabinet, ipv4_string(ip).c_str());
+      p.ip = ip;
+      p.listening = b.listening;
+      p.seen = now;
+    }
+  }
+
+  // To the other cabinets on this computer, and with linking on the local
+  // network to every cabinet's port there (this one's too: a cabinet with
+  // the same number answers), by broadcast and to each cabinet found there
+  // (broadcasts get lost, on Wi-Fi especially).
+  void send(u16 listening, bool leaving) {
+    u8 data[kBeaconSize];
+    write_beacon(data, {socket_cabinet_, listening, nonce_, leaving}, game_);
+    auto send_to = [&](u32 ip, u16 port) {
+      const sockaddr_in to = host_address({ip, port});
+      ::sendto(socket_, reinterpret_cast<const char*>(data), sizeof(data), 0, reinterpret_cast<const sockaddr*>(&to),
+               sizeof(to));
+    };
+    const Clock::time_point now = Clock::now();
+    if (options_.lan && now >= next_networks_) {
+      broadcasts_ = broadcast_addresses();  // networks come and go
+      next_networks_ = now + std::chrono::seconds(10);
+    }
+    std::array<u32, kCabinets + 1> found_at{};
+    {
+      std::lock_guard lock(mutex_);
+      for (int n = 1; n <= kCabinets; ++n)
+        if (found(n, now)) found_at[n] = peers_[n].ip;
+    }
+    for (int n = 1; n <= kCabinets; ++n) {
+      const u16 port = beacon_port(options_.port, n);
+      if (n != socket_cabinet_) send_to(INADDR_LOOPBACK, port);
+      if (!options_.lan) continue;
+      for (const u32 broadcast : broadcasts_) send_to(broadcast, port);
+      if (found_at[n] && (found_at[n] >> 24) != 127) send_to(found_at[n], port);
+    }
+  }
+
+  const LinkOptions options_;
+  const GameTag game_;
+  const u32 nonce_;
+
+  mutable std::mutex mutex_;  // for what follows, up to the thread's own
+  std::condition_variable wake_;
+  bool stop_ = false;
+  int cabinet_ = 0;
+  u16 listening_ = 0;
+  u8 connected_ = 0;
+  bool changed_ = false;
+  std::array<Peer, kCabinets + 1> peers_{};
+  Clock::time_point clash_seen_{};
+  std::string error_;
+
+  // The thread's own.
+  HostSocket socket_ = kNoSocket;  // bound to this cabinet's beacon port
+  int socket_cabinet_ = 0;         // ... for this number
+  std::vector<u32> broadcasts_;    // where the beacons go on the local network
+  Clock::time_point next_beacon_{}, next_open_{}, next_networks_{};
+  std::thread thread_;
+  std::once_flag stopped_;
 };
 
 Network::Network(std::function<std::span<u8>(u32)> memory) : memory_(std::move(memory)) {
@@ -412,141 +623,29 @@ void Network::add_service(Endpoint address, std::shared_ptr<Service> service) { 
 void Network::add_route(Endpoint address, Endpoint to) { routes_[address] = to; }
 
 void Network::enable_link(const LinkOptions& options) {
-  link_ = std::make_unique<Link>();
-  link_->options = options;
-  link_->game = game_tag(options.game);
-  link_->nonce = std::random_device{}();
-  std::lock_guard lock(status_mutex_);
-  status_ = {};
-  status_.on = true;
+  link_ = std::make_unique<Link>(options);
+  link_->set_cabinet(own_cabinet());
 }
 
-LinkStatus Network::link_status() const {
-  std::lock_guard lock(status_mutex_);
-  return status_;
+LinkStatus Network::link_status() const { return link_ ? link_->status() : LinkStatus{}; }
+
+void Network::stop_link() {
+  if (link_) link_->stop();
 }
 
 int Network::own_cabinet() const { return cabinet_at(own_address_); }
 
-// Runs with every board command, a few times a second at most: the beacons,
-// and what the menu shows.
-void Network::poll_link() {
+// Tells the link what the game listens on and who it is connected with.
+void Network::update_link() {
   if (!link_) return;
-  Link& l = *link_;
-  const Clock::time_point now = Clock::now();
-  if (now < l.next_poll) return;
-  l.next_poll = now + std::chrono::milliseconds(20);
-  const int own = own_cabinet();
-  if (own == 0) return;
-
-  if (l.beacons_cabinet != own && now >= l.next_open) {
-    if (l.beacons != kNoSocket) close_host(l.beacons), l.beacons = kNoSocket;
-    l.beacons_cabinet = 0;
-    const u16 port = beacon_port(l.options.port, own);
-    const HostSocket b = open_host(SOCK_DGRAM);
-    if (b != kNoSocket) {
-      const int on = 1;
-      if (l.options.lan) ::setsockopt(b, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<const char*>(&on), sizeof(on));
-#ifdef _WIN32
-      // Windows reports a beacon sent to a cabinet that is not there as an
-      // error on the next receive.
-      BOOL report = FALSE;
-      DWORD bytes = 0;
-      WSAIoctl(b, SIO_UDP_CONNRESET, &report, sizeof(report), nullptr, 0, &bytes, nullptr, nullptr);
-#endif
-      const sockaddr_in a = host_address({l.options.lan ? INADDR_ANY : INADDR_LOOPBACK, port});
-      if (::bind(b, reinterpret_cast<const sockaddr*>(&a), sizeof(a)) == 0) {
-        l.beacons = b;
-        l.beacons_cabinet = own;
-        l.error.clear();
-        net_log("link: cabinet %d, beacons on port %u%s", own, port, l.options.lan ? " (local network)" : "");
-      } else {
-        close_host(b);
-        l.error = "Port " + std::to_string(port) + " is in use: is another OpenGP playing cabinet " +
-                  std::to_string(own) + "?";
-        net_log("link: %s", l.error.c_str());
-        l.next_open = now + std::chrono::seconds(2);
-      }
-    }
+  u16 listening = 0;
+  u8 connected = 0;
+  for (const auto& s : sockets_) {
+    if (!s || s->host == kNoSocket) continue;
+    if (s->link_listener && s->listening) listening |= static_cast<u16>(1u << (s->game_port - kGamePort));
+    if (s->cabinet) connected |= static_cast<u8>(1u << s->cabinet);
   }
-
-  if (l.beacons != kNoSocket) {
-    receive_beacons();
-    u16 listening = 0;
-    for (const auto& s : sockets_)
-      if (s && s->link_listener && s->listening) listening |= static_cast<u16>(1u << (s->game_port - kGamePort));
-    if (listening != l.listening || now >= l.next_beacon) {
-      l.listening = listening;
-      send_beacons();
-      l.next_beacon = now + kBeaconInterval;
-    }
-  }
-
-  LinkStatus status;
-  status.on = true;
-  status.cabinet = own;
-  for (int n = 1; n <= kCabinets; ++n) status.found[n] = n != own && l.found(n, now);
-  for (const auto& s : sockets_)
-    if (s && s->cabinet && s->host != kNoSocket) status.connected[s->cabinet] = true;
-  status.clash = l.clash_seen != Clock::time_point{} && now - l.clash_seen < kClashTimeout;
-  status.error = l.error;
-  std::lock_guard lock(status_mutex_);
-  status_ = std::move(status);
-}
-
-void Network::receive_beacons() {
-  Link& l = *link_;
-  const Clock::time_point now = Clock::now();
-  for (int i = 0; i < 64; ++i) {
-    u8 data[64];
-    sockaddr_in from{};
-    socklen_t from_len = sizeof(from);
-    const auto r = ::recvfrom(l.beacons, reinterpret_cast<char*>(data), sizeof(data), 0,
-                              reinterpret_cast<sockaddr*>(&from), &from_len);
-    if (r < 0) {
-      if (would_block(host_error())) break;
-      continue;
-    }
-    Beacon b;
-    if (!read_beacon(data, static_cast<std::size_t>(r), l.game, &b) || b.nonce == l.nonce) continue;
-    if (b.cabinet == l.beacons_cabinet) {
-      l.clash_seen = now;
-      continue;
-    }
-    Link::Peer& p = l.peers[b.cabinet];
-    const u32 ip = ntohl(from.sin_addr.s_addr);
-    if (!l.found(b.cabinet, now)) net_log("link: found cabinet %d at %s", b.cabinet, ipv4_string(ip).c_str());
-    p.ip = ip;
-    p.listening = b.listening;
-    p.seen = now;
-  }
-}
-
-// To the other cabinets on this computer, and with linking on the local
-// network to every cabinet's port there (this one's too: a cabinet with the
-// same number answers).
-void Network::send_beacons() {
-  Link& l = *link_;
-  u8 data[kBeaconSize];
-  write_beacon(data, {l.beacons_cabinet, l.listening, l.nonce}, l.game);
-  if (const Clock::time_point now = Clock::now(); l.options.lan && now >= l.next_networks) {
-    l.broadcasts = broadcast_addresses();  // networks come and go
-    l.next_networks = now + std::chrono::seconds(10);
-  }
-  for (int n = 1; n <= kCabinets; ++n) {
-    const u16 port = beacon_port(l.options.port, n);
-    if (n != l.beacons_cabinet) {
-      const sockaddr_in to = host_address({INADDR_LOOPBACK, port});
-      ::sendto(l.beacons, reinterpret_cast<const char*>(data), sizeof(data), 0, reinterpret_cast<const sockaddr*>(&to),
-               sizeof(to));
-    }
-    if (!l.options.lan) continue;
-    for (const u32 broadcast : l.broadcasts) {
-      const sockaddr_in to = host_address({broadcast, port});
-      ::sendto(l.beacons, reinterpret_cast<const char*>(data), sizeof(data), 0, reinterpret_cast<const sockaddr*>(&to),
-               sizeof(to));
-    }
-  }
+  link_->set_state(listening, connected);
 }
 
 // Takes the connections waiting on a link listener and reads their hellos.
@@ -573,7 +672,7 @@ void Network::take_incoming(Socket& listener) {
       if (r > 0) in.received += static_cast<std::size_t>(r);
       else if (r == 0 || !would_block(host_error())) drop = true;
       if (in.received == kHelloSize) {
-        in.cabinet = read_hello(in.hello.data(), link_->game);
+        in.cabinet = read_hello(in.hello.data(), link_->game());
         if (!in.cabinet || in.cabinet == own_cabinet()) {
           net_log("link: a connection from %s is not another cabinet of this game", ipv4_string(in.from.ip).c_str());
           drop = true;
@@ -618,7 +717,6 @@ u32 Network::new_socket() {
 }
 
 u32 Network::execute(u16 command, std::span<const u32> p) {
-  poll_link();
   auto param = [&p](std::size_t i) { return i < p.size() ? p[i] : 0u; };
   switch (command) {
     case NET_SOCKET: return socket(param(0), param(1));
@@ -669,6 +767,7 @@ u32 Network::closesocket(u32 fd) {
   last_error_ = SSC_SUCCESS;
   if (!find(fd)) return kError;
   sockets_[fd].reset();
+  update_link();
   return 0;
 }
 
@@ -701,24 +800,24 @@ u32 Network::connect(u32 fd, u32 address, u32 length) {
 
   // Another cabinet: only on a port it has said it listens on.
   if (const int cabinet = cabinet_at(to.ip); link_ && cabinet && is_game_port(to.port)) {
-    poll_link();
     const int own = own_cabinet();
-    const Link::Peer& peer = link_->peers[cabinet];
-    if (cabinet == own || !link_->found(cabinet, Clock::now()) || !(peer.listening & (1u << (to.port - kGamePort)))) {
+    Link::Peer peer;
+    if (cabinet == own || !link_->peer(cabinet, &peer) || !(peer.listening & (1u << (to.port - kGamePort)))) {
       net_log("connect(%u, %s:%u): refused (cabinet %d is not listening there)", fd, ipv4_string(to.ip).c_str(),
               to.port, cabinet);
       return fail(SSC_ECONNREFUSED);
     }
-    const Endpoint host{peer.ip, host_port(link_->options.port, cabinet, to.port)};
+    const Endpoint host{peer.ip, host_port(link_->options().port, cabinet, to.port)};
     if (const u32 r = host_connect(*s, fd, to, host); r != SSC_SUCCESS) return fail(r);
     u8 hello[kHelloSize];
-    write_hello(hello, own, link_->game);
+    write_hello(hello, own, link_->game());
     if (::send(s->host, reinterpret_cast<const char*>(hello), static_cast<int>(kHelloSize), kSendFlags) !=
         static_cast<int>(kHelloSize)) {
       net_log("connect(%u, %s:%u): the hello was not sent", fd, ipv4_string(to.ip).c_str(), to.port);
       return fail(SSC_ENOTCONN);
     }
     s->cabinet = cabinet;
+    update_link();
     linked_ = true;
     last_error_ = SSC_SUCCESS;
     return 0;
@@ -770,7 +869,7 @@ u32 Network::bind(u32 fd, u32 address, u32 length) {
   const Endpoint requested = read_address(a.data());
   Endpoint on{INADDR_LOOPBACK, requested.port};
   if (const int own = own_cabinet(); link_ && own && is_game_port(requested.port)) {
-    on = {link_->options.lan ? INADDR_ANY : INADDR_LOOPBACK, host_port(link_->options.port, own, requested.port)};
+    on = {link_->options().lan ? INADDR_ANY : INADDR_LOOPBACK, host_port(link_->options().port, own, requested.port)};
     s->link_listener = true;
     s->game_port = requested.port;
 #ifndef _WIN32
@@ -797,8 +896,8 @@ u32 Network::listen(u32 fd, u32 backlog) {
   net_log("listen(%u, %u): %s", fd, backlog, r == 0 ? "ok" : "failed");
   if (r != 0) return fail(status_for(host_error()));
   s->listening = true;
+  update_link();  // tell the other cabinets
   last_error_ = SSC_SUCCESS;
-  poll_link();  // tell the other cabinets
   return 0;
 }
 
@@ -842,6 +941,7 @@ u32 Network::accept(u32 fd, u32 address, u32 length_address) {
   }
   net_log("accept(%u) = %u from %s:%u", fd, client, ipv4_string(c->peer.ip).c_str(), c->peer.port);
   sockets_[client] = std::move(c);
+  update_link();
   linked_ = true;
   last_error_ = SSC_SUCCESS;
   return client;
@@ -1001,6 +1101,7 @@ void Network::modify_my_ip_addr(u32 text) {
   const std::string_view s = string_at(text, 15);
   u32 ip = 0;
   if (parse_ipv4(s, &ip)) own_address_ = ip;
+  if (link_) link_->set_cabinet(own_cabinet());
   net_log("modifymyipaddr(\"%.*s\")", static_cast<int>(s.size()), s.data());
 }
 

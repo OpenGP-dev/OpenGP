@@ -124,7 +124,8 @@ when the game starts, so a change takes effect when it restarts.
   The link uses ports 28500 to 28539 (TCP and UDP) on each computer; `[link] port` moves them
   (give every cabinet the same).
 
-Then start a game on one cabinet. The others show "Waiting for entry!", and players who insert a
+Start the cabinets, and wait for the later ones to get through their start-up (the attract mode
+begins): a cabinet links to the others as it starts. Then start a game on one cabinet. The others show "Waiting for entry!", and players who insert a
 coin there (or press the gas pedal, with free play) before the time runs out join the race. The
 Game tab says which cabinets this one is linked with, and if another cabinet has the same number.
 

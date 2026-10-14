@@ -390,8 +390,10 @@ the games' PCB ID (`app::Game::set_cabinet` sets the game's own setting, `games/
 Cabinet n is at 192.168.29.150 + n - 1 and listens on one of ports 5000-5008; on the host, its
 port 5000 + k is `[link] port` + 10 (n - 1) + k, so four run on one computer, and port + 10 (n - 1)
 + 9 takes UDP beacons. Twice a second each cabinet sends the others (on this computer, and with
-`lan` to every network's broadcast address) its number, its game and the ports it listens on. A
-game's connection to another cabinet goes to the host port only once that cabinet has said it
+`lan` to every network's broadcast address and to each cabinet found there) its number, its game
+and the ports it listens on, and a last one when it stops. The beacons have a thread of their own
+and start as soon as the game has its number, because the game looks for the others for only a
+moment as it starts (below): they must be known by then. A game's connection to another cabinet goes to the host port only once that cabinet has said it
 listens there, so a connection never waits for a cabinet that is not there, and it starts with a
 16-byte hello naming the cabinet and the game: the cabinet accepting it hands it to its game only
 then, as a connection from the other cabinet's address. With `lan` off, everything stays on the
