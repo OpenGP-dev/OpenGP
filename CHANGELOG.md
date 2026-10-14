@@ -14,6 +14,12 @@
 - OpenGP talks to the Discord app through its local connection, without Discord's SDK, and sends
   nothing anywhere else. `OPENGP_LOG_DISCORD=1` prints what it shows.
 
+### Fixes
+
+- Widescreen: the rain in GP 2's DK Cup (rounds 3 and 4) covers the whole screen instead of
+  stopping at the edges of the 4:3 picture, and so does the fade at the end of the attract mode's
+  demo race.
+
 ## 0.3.0 (2026-10-01)
 
 This release adds the cabinet's camera, from a webcam, and a pause. It is source only, with no

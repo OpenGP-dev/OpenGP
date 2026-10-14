@@ -102,6 +102,7 @@ class Frontend {
   u32 efb_width() const { return kEfbWidth + 2 * side_; }
   bool widen_2d(u32 first_vertex);
   void extend_edges(u32 first_vertex);
+  void widen_overlay(u32 first_vertex, const DrawState& state);
   PixelFormat pixel_format() const { return static_cast<PixelFormat>(bits(bp_[BP_ZCOMPARE], 0, 3)); }
 
   TextureBinding bind_texture(u32 map, s32* size);

@@ -304,6 +304,9 @@ side (107 for 16:9), with the game's 640 pixels in the middle:
   menu backgrounds are drawn as (a run of draws of the same height, each starting where the last
   ended). Other 2D that reaches the game's screen edge (a banner running off the side) gets quads
   out to the wide edge that repeat its edge texels.
+- Some full-screen overlays are drawn in 3D: a flat quad facing the camera (all its vertices at the
+  same depth) that spans exactly the game's width, such as GP 2's rain. They are widened like 2D,
+  and a repeating texture carries on across the added sides, so the pattern keeps its size.
 - Scissors, clears and EFB copies that span the game's width span the wide EFB, so a full-screen
   copy (and the copy to the XFB, which is displayed) is as much wider. CPU reads of the EFB see
   the game's part.
