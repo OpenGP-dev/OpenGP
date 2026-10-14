@@ -117,7 +117,8 @@ when the game starts, so a change takes effect when it restarts.
 
 - **On one computer**, give each copy its own user folder as well as its own number, since two
   copies sharing one would overwrite each other's settings and saves:
-  `opengp-mkgp2 --user-dir user2 --cabinet 2`.
+  `opengp-mkgp2 --user-dir user2 --cabinet 2`. To drive them all at once from one keyboard or
+  gamepad, turn on **Use the controls in the background too** (Controls tab) in each.
 - **On a local network**, turn on **Link over the local network** on each computer
   (`[link] lan = true`, or `--lan`). The cabinets find each other by broadcasting on the network.
   The first time, Windows asks whether OpenGP may use the network: allow it (on the kind of
@@ -197,6 +198,11 @@ brake = ["-axis3"]
 
 Axes: `axis2` is the whole axis, `axis2+` and `axis2-` are one half of it, and a leading `-`
 turns it around. The file itself lists every name.
+
+Normally only the active window reads the controls. **Use the controls in the background too**
+(Controls tab; `[background] input` in the file) makes every OpenGP window read them, active or
+not, to drive several copies on one computer at once (see [Linked cabinets](#linked-cabinets)):
+gamepads on every system, and the keyboard on Windows. The windows then all do the same.
 
 ## Steering wheels and force feedback
 

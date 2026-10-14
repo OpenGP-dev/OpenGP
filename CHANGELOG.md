@@ -17,6 +17,12 @@
 - If a cabinet stops in the middle of a game, the others stop with "Link error occurred", as arcade
   cabinets do: OpenGP restarts them after a few seconds.
 
+### Controls
+
+- **Use the controls in the background too** (Controls tab) lets every OpenGP window read the
+  controls, active or not, to drive several copies on one computer at once: gamepads everywhere,
+  the keyboard on Windows.
+
 ### Discord Rich Presence (milestone 15)
 
 - While Discord runs on the same computer, your profile shows what you are playing, as "Playing
