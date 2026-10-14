@@ -339,7 +339,8 @@ phase shift for 3D sound).
 The games' executables only describe the game (`app::Game`: its ID, its recompiled module, how to
 turn free play on); `app::run` does the rest:
 - the command line and the player's settings (`settings.h`: `user/settings.toml`);
-- booting, the status line, crash reports;
+- booting, the status line, crash reports, and hang reports (`hang_watch.h`: when no frame comes for
+  10 seconds, each guest thread's call stack, from its stack's back chain);
 - the window (fullscreen, and the aspect ratio and internal resolution that follow its size), the
   controls, the sound;
 - the menu (`menu.h`): Dear ImGui, drawn by the renderer over the presented picture

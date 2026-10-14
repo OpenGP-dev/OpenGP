@@ -18,6 +18,7 @@
 #include <thread>
 #include <vector>
 
+#include "app/hang_watch.h"
 #include "app/paths.h"
 #include "app/rich_presence.h"
 #include "app/settings.h"
@@ -493,6 +494,7 @@ int run(const Game& game, int argc, char** argv) {
   ppc::g_hooks.fatal = [](const char* message) { std::fprintf(stderr, "[opengp] fatal: %s\n", message); };
   static const auto status_on_crash = print_status;
   os::install_crash_handler(machine.base(), [] { status_on_crash("crash"); });
+  app::start_hang_watch(machine, names, user_dir / "hang-report.txt");
   os::start_profiler_from_env();
 
   std::thread([timeout_s = o.timeout_s, status_s = o.status_s, print_status] {

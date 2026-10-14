@@ -111,10 +111,17 @@ void ThreadManager::idle(ppc::Context& ctx) {
   // for the next interrupt (up to a few milliseconds) before running.
   const u64 delivered = exceptions_delivered_.load(std::memory_order_relaxed);
   if (delivered == idle_seen_) {
+    ++idle_waits_;
     hw_.wait_for_interrupt(4);
     service_interrupts(ctx);
   }
   idle_seen_ = exceptions_delivered_.load(std::memory_order_relaxed);
+}
+
+const ppc::Context* ThreadManager::running_context(int* id) {
+  std::lock_guard lock(mutex_);
+  if (id) *id = running_ ? running_->id : -1;
+  return running_ ? running_->ctx : nullptr;
 }
 
 void ThreadManager::load_context(ppc::Context& ctx, u32 target) {

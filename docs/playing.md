@@ -217,6 +217,12 @@ service button) moves to the next item and **F2** chooses it; **EXIT** restarts 
 Holding **F1** and pressing **F2** during the game opens the I/O test instead (wheel and pedal
 calibration and a switch test); hold F1 and press F2 again to leave it.
 
+## If the game freezes
+
+If the game's picture stops for 10 seconds while it is not paused, OpenGP writes where the game's
+threads are to `user/hang-report.txt` (and the console). Please send that file with the report:
+it shows what the game was waiting for.
+
 ## Not done yet
 
 - Cabinets cannot be linked (milestone 12).

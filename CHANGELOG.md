@@ -19,6 +19,9 @@
 - Widescreen: the rain in GP 2's DK Cup (rounds 3 and 4) covers the whole screen instead of
   stopping at the edges of the 4:3 picture, and so does the fade at the end of the attract mode's
   demo race.
+- If the game's picture stops for 10 seconds while it is not paused, OpenGP writes a hang report,
+  `user/hang-report.txt`: each of the game's threads with its call stack. See
+  [docs/playing.md](docs/playing.md#if-the-game-freezes).
 
 ## 0.3.0 (2026-10-01)
 

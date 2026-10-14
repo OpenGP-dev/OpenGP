@@ -146,7 +146,7 @@ target_link_libraries(opengp_discord
   PRIVATE opengp_warnings)
 
 # The launcher the games share: settings, window, sound, controls, menu.
-add_library(opengp_app STATIC app/launcher.cpp)
+add_library(opengp_app STATIC app/launcher.cpp app/hang_watch.cpp)
 target_link_libraries(opengp_app
   PUBLIC opengp_machine opengp_settings opengp_discord
   PRIVATE opengp_warnings)
