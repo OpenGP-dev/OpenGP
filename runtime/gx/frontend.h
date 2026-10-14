@@ -49,6 +49,10 @@ class Frontend {
   // Where finished frames go. Without an output, only register state is
   // tracked (no vertex or texture work is done).
   void set_output(FrameOutput* output) { output_ = output; }
+  // Waits while the output is too far behind (see FrameOutput::wait_for_room).
+  void wait_for_output() {
+    if (output_) output_->wait_for_room();
+  }
 
   // Widescreen: widens the EFB by `side` pixels on the left and right, from
   // the next frame on (0: the game's 4:3). Thread-safe.

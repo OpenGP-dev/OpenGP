@@ -29,6 +29,7 @@
 #include "hw/vi.h"
 #include "input/script.h"
 #include "machine.h"
+#include "os/activity.h"
 #include "os/atomic_file.h"
 #include "os/crash.h"
 #include "os/printf.h"
@@ -682,6 +683,7 @@ int run(const Game& game, int argc, char** argv) {
         std::lock_guard lock(g_reboot_mutex);
         restart(o, user_dir, argv[0], next_boot(*g_pending_reboot), machine.frame_offset() + machine.gpu().frames());
       }
+      os::g_main_activity.set("handling the window's events");
       SDL_Event e;
       while (SDL_PollEvent(&e)) {
         switch (e.type) {
@@ -783,6 +785,7 @@ int run(const Game& game, int argc, char** argv) {
       }
 
       const auto wait_start = std::chrono::steady_clock::now();
+      os::g_main_activity.set("waiting for the game's next frame");
       auto frame = queue.pop(8);
       g_wait_ns.fetch_add(elapsed_ns(wait_start));
       if (!frame) {
@@ -808,6 +811,7 @@ int run(const Game& game, int argc, char** argv) {
       }
       video::Image shot;
       const auto render_start = std::chrono::steady_clock::now();
+      os::g_main_activity.set("drawing a frame");
       renderer.render(*frame, shoot ? &shot : nullptr);
       g_render_ns.fetch_add(elapsed_ns(render_start));
       if (frame->xfb) {

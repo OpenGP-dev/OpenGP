@@ -223,7 +223,11 @@ struct Frame {
 class FrameOutput {
  public:
   virtual ~FrameOutput() = default;
+  // Takes a frame; never blocks.
   virtual void submit(std::unique_ptr<Frame> frame) = 0;
+  // Blocks while the renderer is too far behind, which paces the game. Called
+  // on the game's thread with no lock held.
+  virtual void wait_for_room() {}
   // A rendered frame to reuse (its buffers keep their capacity), or nullptr.
   virtual std::unique_ptr<Frame> recycle() { return nullptr; }
 };

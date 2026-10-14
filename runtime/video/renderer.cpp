@@ -11,6 +11,8 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "os/activity.h"
+
 // SPIR-V, compiled from shaders/ at build time.
 #include "blit_frag.h"
 #include "color_frag.h"
@@ -79,10 +81,17 @@ struct CopyUniforms {
 // ---- FrameQueue ------------------------------------------------------------------------------
 
 void FrameQueue::submit(std::unique_ptr<gx::Frame> frame) {
-  std::unique_lock lock(mutex_);
-  cv_.wait(lock, [this] { return frames_.size() < max_pending_; });
+  std::lock_guard lock(mutex_);
   frames_.push_back(std::move(frame));
   cv_.notify_all();
+}
+
+void FrameQueue::wait_for_room() {
+  std::unique_lock lock(mutex_);
+  if (frames_.size() < max_pending_) return;
+  os::g_guest_wait.set("waiting for the renderer to take a frame");
+  cv_.wait(lock, [this] { return frames_.size() < max_pending_; });
+  os::g_guest_wait.set(nullptr);
 }
 
 std::unique_ptr<gx::Frame> FrameQueue::recycle() {
@@ -621,7 +630,10 @@ void Renderer::copy(SDL_GPUCommandBuffer* cmd, const gx::CopyCmd& c) {
 void Renderer::present(SDL_GPUCommandBuffer* cmd, const Texture* xfb, float aspect) {
   SDL_GPUTexture* swapchain = nullptr;
   Uint32 sw = 0, sh = 0;
-  if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmd, window_, &swapchain, &sw, &sh) || !swapchain) return;
+  os::g_main_activity.set("waiting for the window's next image");
+  const bool acquired = SDL_WaitAndAcquireGPUSwapchainTexture(cmd, window_, &swapchain, &sw, &sh);
+  os::g_main_activity.set("drawing a frame");
+  if (!acquired || !swapchain) return;
   if (overlay_) overlay_->prepare(cmd);
   SDL_GPUColorTargetInfo target{};
   target.texture = swapchain;
@@ -777,7 +789,11 @@ void Renderer::poll_reads(bool wait_all) {
       ++it;
       continue;
     }
-    if (wait_all) SDL_WaitForGPUFences(device_, true, &fence, 1);
+    if (wait_all) {
+      os::g_main_activity.set("waiting for the GPU (readbacks)");
+      SDL_WaitForGPUFences(device_, true, &fence, 1);
+      os::g_main_activity.set("drawing a frame");
+    }
     gx::EfbReadback& r = *it->request;
     r.pixels.assign(std::size_t{gx::kEfbWidth} * gx::kEfbHeight, 0);
     if (const void* p = SDL_MapGPUTransferBuffer(device_, it->transfer, false)) {
@@ -844,7 +860,11 @@ void Renderer::render(const gx::Frame& f, Image* capture_image) {
       pending_reads_.push_back(std::move(r));
     }
     unfenced_reads_.clear();
-    if (urgent) SDL_WaitForGPUFences(device_, true, &raw, 1);
+    if (urgent) {
+      os::g_main_activity.set("waiting for the GPU (a readback)");
+      SDL_WaitForGPUFences(device_, true, &raw, 1);
+      os::g_main_activity.set("drawing a frame");
+    }
     if (capture_image) finish_capture(capture_image);
   }
   poll_reads(false);

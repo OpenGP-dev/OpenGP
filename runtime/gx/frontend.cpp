@@ -11,6 +11,7 @@
 #include <limits>
 
 #include "gx/texture.h"
+#include "os/activity.h"
 
 namespace gx {
 
@@ -201,7 +202,9 @@ u32 Frontend::efb_read(u32 address, u32 alpha_mode) {
       auto r = request(true);
       end_frame(false);
       const ScopeTimer readback_timer(stats_.readback_ns);
+      os::g_guest_wait.set("waiting for a readback of the picture");
       r->wait();
+      os::g_guest_wait.set(nullptr);
       peeks.current = std::move(r);
     }
   } else {

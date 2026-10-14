@@ -10,6 +10,7 @@
 #include "hw/di.h"
 #include "hw/vi.h"
 #include "machine.h"
+#include "os/activity.h"
 
 namespace app {
 
@@ -92,6 +93,11 @@ std::string describe_threads(opengp::Machine& machine, const FunctionNames& name
                   function_at(names, lr).c_str());
     backtrace(out, sp);
   }
+
+  // The host side: what the main thread (window, renderer) is doing, and
+  // whether the game's thread is waiting on it.
+  out += os::g_main_activity.describe("main thread");
+  out += os::g_guest_wait.describe("game thread");
 
   const u32 current = word(kCurrentThread);
   u32 t = word(kActiveThreads);
