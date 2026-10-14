@@ -178,8 +178,9 @@ TEST_CASE("a connection without a hello is not accepted") {
 }
 
 TEST_CASE("two cabinets with the same number on one computer") {
-  Cabinet first(1);
-  REQUIRE(run_until({&first}, [&] { return first.net.link_status().cabinet == 1; }));
+  Cabinet first(1), other(2);
+  // Once another cabinet hears the first, its beacons are running.
+  REQUIRE(run_until({&first, &other}, [&] { return other.net.link_status().found[1]; }));
   CHECK(first.net.link_status().error.empty());
   Cabinet second(1);
   REQUIRE(run_until({&second}, [&] { return !second.net.link_status().error.empty(); }));

@@ -46,8 +46,9 @@ struct Game {
   // Whether the game uses its camera (OpenGP plays it), before the game runs.
   std::function<void(bool on)> set_camera;
   // The cabinet's number for linking (1-4, or 0 for the game's own setting),
-  // before the game runs.
-  std::function<void(int number)> set_cabinet;
+  // and whether other cabinets have been found that the game is not linked
+  // with yet (asked while it starts), before the game runs.
+  std::function<void(int number, std::function<bool()> linking)> set_cabinet;
   // What the player is doing, read from guest memory while the game runs
   // (for Discord Rich Presence).
   std::function<void(const u8* base, GameStatus* status)> status;

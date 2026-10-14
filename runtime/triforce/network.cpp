@@ -366,6 +366,7 @@ struct Network::Socket {
   u16 game_port = 0;           // ... that one
   bool listening = false;
   int cabinet = 0;             // the cabinet at the other end of a connection
+  bool accepted = false;       // ... which it made
   std::vector<Incoming> incoming;
   u64 sent = 0, received = 0;  // bytes, for the log
 
@@ -412,18 +413,19 @@ class Network::Link {
   const GameTag& game() const { return game_; }
 
   // From the game's thread: its number (0 for none yet), the ports it
-  // listens on (bit k for 5000 + k) and the cabinets it is connected with
-  // (bit n for cabinet n).
+  // listens on (bit k for 5000 + k) and the cabinets it has connected to and
+  // that have connected to it (bit n for cabinet n).
   void set_cabinet(int cabinet) {
     std::lock_guard lock(mutex_);
     cabinet_ = cabinet;
   }
-  void set_state(u16 listening, u8 connected) {
+  void set_state(u16 listening, u8 outgoing, u8 incoming) {
     {
       std::lock_guard lock(mutex_);
       if (listening != listening_) changed_ = true;  // tell the others at once
       listening_ = listening;
-      connected_ = connected;
+      outgoing_ = outgoing;
+      incoming_ = incoming;
     }
     wake_.notify_all();
   }
@@ -443,7 +445,8 @@ class Network::Link {
     s.cabinet = cabinet_;
     for (int n = 1; n <= kCabinets; ++n) {
       s.found[n] = n != cabinet_ && found(n, now);
-      s.connected[n] = (connected_ >> n) & 1;
+      s.connected[n] = ((outgoing_ | incoming_) >> n) & 1;
+      s.linked[n] = ((outgoing_ & incoming_) >> n) & 1;
     }
     s.clash = clash_seen_ != Clock::time_point{} && now - clash_seen_ < kClashTimeout;
     s.error = error_;
@@ -588,7 +591,7 @@ class Network::Link {
   bool stop_ = false;
   int cabinet_ = 0;
   u16 listening_ = 0;
-  u8 connected_ = 0;
+  u8 outgoing_ = 0, incoming_ = 0;
   bool changed_ = false;
   std::array<Peer, kCabinets + 1> peers_{};
   Clock::time_point clash_seen_{};
@@ -639,13 +642,13 @@ int Network::own_cabinet() const { return cabinet_at(own_address_); }
 void Network::update_link() {
   if (!link_) return;
   u16 listening = 0;
-  u8 connected = 0;
+  u8 outgoing = 0, incoming = 0;
   for (const auto& s : sockets_) {
     if (!s || s->host == kNoSocket) continue;
     if (s->link_listener && s->listening) listening |= static_cast<u16>(1u << (s->game_port - kGamePort));
-    if (s->cabinet) connected |= static_cast<u8>(1u << s->cabinet);
+    if (s->cabinet) (s->accepted ? incoming : outgoing) |= static_cast<u8>(1u << s->cabinet);
   }
-  link_->set_state(listening, connected);
+  link_->set_state(listening, outgoing, incoming);
 }
 
 // Takes the connections waiting on a link listener and reads their hellos.
@@ -933,6 +936,7 @@ u32 Network::accept(u32 fd, u32 address, u32 length_address) {
   c->host = h;
   c->peer = from;
   c->cabinet = cabinet;
+  c->accepted = cabinet != 0;
   const std::span<u8> len = memory_(length_address);
   const std::span<u8> a = memory_(address);
   if (len.size() >= 4 && a.size() >= kGuestAddressSize) {

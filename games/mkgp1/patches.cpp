@@ -32,6 +32,18 @@ PPC_FUNC(acModifyMyIPaddr) {
   __imp__acModifyMyIPaddr(ctx, base);
 }
 
+// The LINK screen (as in GP 2), with its
+// timer at 805B8958.
+PPC_FUNC(BootPCBCheck_Init) {
+  __imp__BootPCBCheck_Init(ctx, base);
+  cabinet::on_link_screen_start(base, 0x805B8958u);
+}
+
+PPC_FUNC(fn_801B0BD4) {
+  cabinet::on_link_screen_frame(base, 0x805B8958u);
+  __imp__fn_801B0BD4(ctx, base);
+}
+
 // The wheel board's state, each frame: the camera's power (as in GP 2).
 PPC_FUNC(StrPcb_StateTick) {
   const gekko::u32 board = ctx.gpr[3];

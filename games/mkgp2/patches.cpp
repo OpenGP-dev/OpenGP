@@ -45,6 +45,18 @@ PPC_FUNC(acModifyMyIPaddr) {
   __imp__acModifyMyIPaddr(ctx, base);
 }
 
+// The LINK screen, where the game looks for the other cabinets as it starts:
+// its timer is at 806D0E1C (see cabinet.h).
+PPC_FUNC(BootPCBCheck_Init) {
+  __imp__BootPCBCheck_Init(ctx, base);
+  cabinet::on_link_screen_start(base, 0x806D0E1Cu);
+}
+
+PPC_FUNC(BootPCBCheck_Poll) {
+  cabinet::on_link_screen_frame(base, 0x806D0E1Cu);
+  __imp__BootPCBCheck_Poll(ctx, base);
+}
+
 // The wheel board's state, each frame: the camera's power.
 PPC_FUNC(StrPcb_StateTick) {
   const gekko::u32 board = ctx.gpr[3];

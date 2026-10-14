@@ -11,7 +11,9 @@
   join it. Both games link, each with its own kind. See
   [docs/playing.md](docs/playing.md#linked-cabinets).
 - The cabinets find each other by themselves, and connect only to cabinets playing the same game.
-  The Game tab shows who this cabinet is linked with.
+  A cabinet looks for the others as it starts: while others are running, it waits on its LINK
+  screen until it has linked with them (up to 15 seconds). The Game tab shows who this cabinet is
+  linked with.
 - If a cabinet stops in the middle of a game, the others stop with "Link error occurred", as arcade
   cabinets do: OpenGP restarts them after a few seconds.
 

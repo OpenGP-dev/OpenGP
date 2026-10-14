@@ -132,6 +132,7 @@ struct LinkStatus {
   int cabinet = 0;                  // this cabinet's number, 0 until the game has given itself one
   std::array<bool, 5> found{};      // by number: cabinets heard from in the last few seconds
   std::array<bool, 5> connected{};  // by number: cabinets with a connection open
+  std::array<bool, 5> linked{};     // by number: ... both ways (the games make one each way)
   bool clash = false;               // another cabinet has this one's number
   std::string error;                // why the link cannot run (a port in use), or ""
 };

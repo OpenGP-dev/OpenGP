@@ -456,8 +456,15 @@ int run(const Game& game, int argc, char** argv) {
   static std::shared_ptr<camera::Source> camera_source = start_camera(settings, &camera_info);
   if (camera_source) camera::attach(machine.network(), camera_source);
   if (game.set_camera) game.set_camera(camera_source != nullptr);
-  if (game.set_cabinet) game.set_cabinet(settings.cabinet);
   machine.network().enable_link({game.id, static_cast<u16>(settings.link_port), settings.lan});
+  if (game.set_cabinet) {
+    game.set_cabinet(settings.cabinet, [] {
+      const triforce::LinkStatus link = machine.network().link_status();
+      for (int n = 1; n <= 4; ++n)
+        if (link.found[n] && !link.linked[n]) return true;
+      return false;
+    });
+  }
   g_network = &machine.network();
   machine.gpu().frontend().set_widescreen(widescreen_side(settings.aspect, 0, 0));
 
