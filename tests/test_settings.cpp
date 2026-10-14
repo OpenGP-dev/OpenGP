@@ -50,6 +50,9 @@ TEST_CASE("settings: save and load round trip") {
   s.free_play = true;
   s.card = "Mario's \"best\" card";
   s.rich_presence = false;
+  s.cabinet = 3;
+  s.lan = true;
+  s.link_port = 30000;
   std::string error;
   REQUIRE_MESSAGE(app::save_settings(path.string(), s, &error), error);
   app::Settings loaded;
@@ -67,6 +70,11 @@ TEST_CASE("settings: partial files, clamping and errors") {
   CHECK(s.internal_resolution == 8);
   CHECK(s.volume == 100);
   CHECK(s.window_width == app::Settings{}.window_width);  // not in the file
+
+  write(path, "[link]\ncabinet = 9\nport = 80\n");
+  REQUIRE_MESSAGE(app::load_settings(path.string(), &s, &error), error);
+  CHECK(s.cabinet == 4);
+  CHECK(s.link_port == 1024);
 
   write(path, "[video]\naspect_ratio = \"5:4\"\n");
   CHECK_FALSE(app::load_settings(path.string(), &s, &error));

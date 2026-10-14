@@ -35,7 +35,7 @@ exclude = [\"*/aarch64-w64-mingw32/*\", \"*/armv7-w64-mingw32/*\", \"*/i686-w64-
   list(APPEND cxx_flags -D_CRT_SECURE_NO_WARNINGS)
   set(cxx_candidates)
   set(link_flags -static)
-  set(system_libs -ldbghelp -lkernel32 -luser32 -lgdi32 -lwinmm -limm32 -lole32 -loleaut32 -lversion -lws2_32
+  set(system_libs -ldbghelp -lkernel32 -luser32 -lgdi32 -lwinmm -limm32 -lole32 -loleaut32 -lversion -lws2_32 -liphlpapi
                   -luuid -ladvapi32 -lsetupapi -lshell32 -ldinput8)
   set(executable_suffix .exe)
   set(link_group true)

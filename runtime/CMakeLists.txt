@@ -74,7 +74,7 @@ target_link_libraries(opengp_machine
   PUBLIC ppc_runtime Threads::Threads
   PRIVATE opengp_warnings)
 if(WIN32)
-  target_link_libraries(opengp_machine PRIVATE winmm dbghelp ws2_32)
+  target_link_libraries(opengp_machine PRIVATE winmm dbghelp ws2_32 iphlpapi)
 else()
   # Shift JIS text from the games (os/printf.h); iconv is part of glibc, and
   # its own library on macOS.

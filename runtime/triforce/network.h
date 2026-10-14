@@ -8,9 +8,9 @@
 // Where a game's connections go:
 // - to a service registered for their address and port;
 // - to a host address routed for it (add_route);
-// - nowhere else yet: other connections are refused, and sockets bind to the
-//   loopback interface, so nothing is exposed to the network. Linked cabinets
-//   (milestone 12) will route the cabinets' addresses.
+// - to another cabinet, once linking is on (enable_link, below);
+// - nowhere else: other connections are refused. Sockets bind to the
+//   loopback interface, unless linking on the local network is on.
 //
 // Host sockets are non-blocking: the game polls them (select with a zero
 // timeout, once a frame), and a board command must not stop the game.
@@ -27,6 +27,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <span>
 #include <string>
 #include <string_view>
@@ -106,6 +107,36 @@ struct Endpoint {
   auto operator<=>(const Endpoint&) const = default;
 };
 
+// Linked cabinets (milestone 12). Up to four cabinets link, numbered 1-4 (the
+// games' PCB ID): cabinet n gives itself 192.168.29.150 + n - 1 and listens on
+// one of ports 5000-5008, and the others connect to it there. Each OpenGP
+// plays one cabinet. On the host, cabinet n's port 5000 + k is
+// `port` + 10 (n - 1) + k, so four can run on one computer, and its port
+// `port` + 10 (n - 1) + 9 takes the beacons with which the cabinets find each
+// other: twice a second, each tells the others its number, its game and the
+// ports it listens on, and a cabinet connects to another only on a port it
+// has said it listens on (so a connection is never left waiting for a cabinet
+// that is not there). Each connection starts with a hello that names the
+// cabinet and its game, so the one accepting it knows who it is, and only the
+// same game links.
+constexpr u16 kLinkPort = 28500;
+
+struct LinkOptions {
+  std::string game;      // the game's ID (GGPE02): only cabinets playing the same game link
+  u16 port = kLinkPort;  // the first host port (above)
+  bool lan = false;      // also link over the local network: listen on every interface, broadcast the beacons
+};
+
+// What the link sees, for the menu.
+struct LinkStatus {
+  bool on = false;                  // linking is enabled
+  int cabinet = 0;                  // this cabinet's number, 0 until the game has given itself one
+  std::array<bool, 5> found{};      // by number: cabinets heard from in the last few seconds
+  std::array<bool, 5> connected{};  // by number: cabinets with a connection open
+  bool clash = false;               // another cabinet has this one's number
+  std::string error;                // why the link cannot run (a port in use), or ""
+};
+
 // "a.b.c.d" in host byte order; false if `text` is not one.
 bool parse_ipv4(std::string_view text, u32* ip);
 std::string ipv4_string(u32 ip);
@@ -125,6 +156,10 @@ class Network {
   // Connections to `address` go to the host's `to` instead.
   void add_route(Endpoint address, Endpoint to);
 
+  // Links this cabinet with the others (see LinkOptions).
+  void enable_link(const LinkOptions& options);
+  LinkStatus link_status() const;  // thread-safe
+
   // Runs socket API command `command` (NET_*) with its parameters (the
   // command block's words after the command) and returns its result.
   u32 execute(u16 command, std::span<const u32> params);
@@ -142,6 +177,7 @@ class Network {
 
  private:
   struct Socket;
+  struct Link;
 
   u32 socket(u32 domain, u32 type);
   u32 closesocket(u32 fd);
@@ -157,6 +193,13 @@ class Network {
   u32 inet_addr(u32 text);
   void modify_my_ip_addr(u32 text);
 
+  u32 host_connect(Socket& s, u32 fd, Endpoint to, Endpoint host);
+  int own_cabinet() const;
+  void poll_link();
+  void receive_beacons();
+  void send_beacons();
+  void take_incoming(Socket& listener);
+
   Socket* find(u32 fd);
   u32 new_socket();
   std::string_view string_at(u32 address, std::size_t max_length);
@@ -170,6 +213,9 @@ class Network {
   std::atomic<bool> linked_{false};
   std::map<Endpoint, std::shared_ptr<Service>> services_;
   std::map<Endpoint, Endpoint> routes_;
+  std::unique_ptr<Link> link_;
+  mutable std::mutex status_mutex_;
+  LinkStatus status_;
 };
 
 }  // namespace triforce

@@ -77,4 +77,7 @@ void read(const gekko::u8* base, app::GameStatus* s) {
   if (chosen) read_race(base, kRace, on_track, s);
 }
 
+// The flag GP 2 keeps at 806D0DF1, read by the same overlay (801B1D90).
+bool link_error(const gekko::u8* base) { return base[0x805B8935] != 0; }
+
 }  // namespace game_status

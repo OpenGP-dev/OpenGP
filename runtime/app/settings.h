@@ -52,6 +52,11 @@ struct Settings {
   // [discord]
   bool rich_presence = true;  // show what the player is doing on their Discord profile
 
+  // [link] linked cabinets (read at start-up: changes take effect when the game restarts)
+  int cabinet = 0;          // this cabinet's number, 1-4, or 0 for the game's own setting (its test menu)
+  bool lan = false;         // link with cabinets on other computers on the local network too
+  int link_port = 28500;    // the first of the host ports the link uses (40 of them)
+
   bool operator==(const Settings&) const = default;
 };
 

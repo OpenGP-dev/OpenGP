@@ -82,4 +82,6 @@ void read(const gekko::u8* base, app::GameStatus* s) {
   if (chosen) read_race(base, kRace, on_track, s);
 }
 
+bool link_error(const gekko::u8* base) { return base[0x806D0DF1] != 0; }
+
 }  // namespace game_status

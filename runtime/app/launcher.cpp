@@ -62,7 +62,7 @@ constexpr const char* kUsage =
     "          [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]\n"
     "          [--input SCRIPT] [--input-file PATH] [--free-play] [--test-menu]\n"
     "          [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--game-log]\n"
-    "          [--camera off|webcam|test] [--version]\n";
+    "          [--camera off|webcam|test] [--cabinet 1-4] [--lan] [--version]\n";
 
 struct Options {
   std::vector<std::string> args;  // as given, for restarts (without --reboot and --frame-offset)
@@ -84,6 +84,8 @@ struct Options {
   std::optional<u32> scale;
   std::optional<int> volume;
   std::optional<CameraSource> camera;
+  std::optional<int> cabinet;
+  std::optional<bool> lan;
 };
 
 // Returns 0 to go on, or an exit code.
@@ -122,6 +124,15 @@ int parse_options(int argc, char** argv, Options& o) {
     else if (a == "--no-audio") o.use_audio = false;
     else if (a == "--game-log") o.game_log = true;
     else if (a == "--volume" && has_value) o.volume = std::clamp(std::atoi(argv[++i]), 0, 100);
+    else if (a == "--lan") o.lan = true;
+    else if (a == "--cabinet" && has_value) {
+      const int n = std::atoi(argv[++i]);
+      if (n < 1 || n > 4) {
+        std::fprintf(stderr, "cabinet %s: give a number from 1 to 4\n", argv[i]);
+        return 2;
+      }
+      o.cabinet = n;
+    }
     else if (a == "--aspect" && has_value) {
       AspectRatio aspect;
       if (!parse_aspect(argv[++i], &aspect)) {
@@ -165,6 +176,8 @@ void apply_options(const Options& o, Settings& s) {
   if (o.scale) s.internal_resolution = *o.scale;
   if (o.volume) s.volume = *o.volume;
   if (o.camera) s.camera = *o.camera;
+  if (o.cabinet) s.cabinet = *o.cabinet;
+  if (o.lan) s.lan = *o.lan;
 }
 
 // What to save: the settings file's values, except those changed (in the
@@ -188,6 +201,9 @@ Settings settings_to_save(const Settings& file, const Settings& start, const Set
   OPENGP_KEEP_CHANGE(camera);
   OPENGP_KEEP_CHANGE(webcam);
   OPENGP_KEEP_CHANGE(rich_presence);
+  OPENGP_KEEP_CHANGE(cabinet);
+  OPENGP_KEEP_CHANGE(lan);
+  OPENGP_KEEP_CHANGE(link_port);
 #undef OPENGP_KEEP_CHANGE
   return s;
 }
@@ -432,6 +448,8 @@ int run(const Game& game, int argc, char** argv) {
   static std::shared_ptr<camera::Source> camera_source = start_camera(settings, &camera_info);
   if (camera_source) camera::attach(machine.network(), camera_source);
   if (game.set_camera) game.set_camera(camera_source != nullptr);
+  if (game.set_cabinet) game.set_cabinet(settings.cabinet);
+  machine.network().enable_link({game.id, static_cast<u16>(settings.link_port), settings.lan});
   machine.gpu().frontend().set_widescreen(widescreen_side(settings.aspect, 0, 0));
 
   static audio::WavWriter wav;
@@ -624,6 +642,8 @@ int run(const Game& game, int argc, char** argv) {
     const bool log_discord = std::getenv("OPENGP_LOG_DISCORD") != nullptr;
     std::unique_ptr<RichPresence> rich_presence;
     auto next_status = std::chrono::steady_clock::now();
+    auto next_link_check = next_status;
+    std::optional<std::chrono::steady_clock::time_point> link_lost;  // when the game stopped with a link error
     MenuModel model;
     model.title = game.title;
     model.settings = &settings;
@@ -689,6 +709,7 @@ int run(const Game& game, int argc, char** argv) {
       }
       if (linked) pause_pressed = false;
       model.linked = linked;
+      model.link = machine.network().link_status();
       const SDL_WindowFlags window_flags = window ? SDL_GetWindowFlags(window) : 0;
       const bool background = window && ((window_flags & SDL_WINDOW_MINIMIZED) || !(window_flags & SDL_WINDOW_INPUT_FOCUS));
       const bool paused = !linked && (pause_pressed || (menu.is_open() && settings.pause_in_menu) ||
@@ -716,6 +737,24 @@ int run(const Game& game, int argc, char** argv) {
         rich_presence->update(status);
       }
       model.discord = rich_presence && rich_presence->connected();
+      // A linked game that loses its link (another cabinet stopped) stops
+      // with a link error until the cabinet is restarted, as an attendant
+      // would: OpenGP restarts it.
+      if (const auto now = std::chrono::steady_clock::now(); linked && game.link_error && now >= next_link_check) {
+        next_link_check = now + std::chrono::milliseconds(500);
+        if (!game.link_error(machine.base())) {
+          link_lost.reset();
+        } else if (!link_lost) {
+          link_lost = now;
+          menu.notify("The link to the other cabinets was lost: restarting");
+          std::fprintf(stderr, "[opengp] the link to the other cabinets was lost: restarting\n");
+        } else if (now - *link_lost >= std::chrono::seconds(4)) {
+          save();
+          os::Reboot fresh;
+          fresh.restart = false;
+          restart(o, user_dir, argv[0], fresh, machine.frame_offset() + machine.gpu().frames());
+        }
+      }
       if (window) {
         const bool hide = settings.fullscreen && !menu.is_open();
         if (hide != cursor_hidden) {

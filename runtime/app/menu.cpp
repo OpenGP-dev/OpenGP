@@ -283,6 +283,8 @@ void Menu::game_tab(MenuModel& m) {
   ImGui::TextWrapped("The game takes your photo for your character. Now: %s.", m.camera_info.c_str());
   hint("Changes take effect when the game restarts.");
 
+  link_section(m);
+
   ImGui::SeparatorText("Pause");
   ImGui::Checkbox("Pause while this menu is open", &s.pause_in_menu);
   ImGui::Checkbox("Pause when the window is unfocused", &s.pause_in_background);
@@ -303,6 +305,42 @@ void Menu::game_tab(MenuModel& m) {
     ImGui::AlignTextToFramePadding();
     hint("Open the Operator's Menu (Will restart the game)");
   }
+}
+
+// Linked cabinets: this one's number, the local network, and who it sees.
+void Menu::link_section(MenuModel& m) {
+  Settings& s = *m.settings;
+  const triforce::LinkStatus& link = m.link;
+  ImGui::SeparatorText("Linked cabinets");
+  static constexpr const char* kNumbers[] = {"The game's setting", "1", "2", "3", "4"};
+  ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
+  if (ImGui::BeginCombo("Cabinet number", kNumbers[std::clamp(s.cabinet, 0, 4)])) {
+    for (int n = 0; n <= 4; ++n)
+      if (ImGui::Selectable(kNumbers[n], n == s.cabinet)) s.cabinet = n;
+    ImGui::EndCombo();
+  }
+  ImGui::Checkbox("Link over the local network", &s.lan);
+
+  std::string linked, found;
+  for (int n = 1; n <= 4; ++n) {
+    if (link.connected[n]) linked += (linked.empty() ? "" : ", ") + std::to_string(n);
+    else if (link.found[n]) found += (found.empty() ? "" : ", ") + std::to_string(n);
+  }
+  if (!link.on || link.cabinet == 0) {
+    ImGui::TextWrapped("Not linked yet.");
+  } else if (!link.error.empty()) {
+    ImGui::TextWrapped("%s", link.error.c_str());
+  } else if (link.clash) {
+    ImGui::TextWrapped("Another cabinet is also number %d: give each one its own number.", link.cabinet);
+  } else if (!linked.empty()) {
+    ImGui::TextWrapped("This is cabinet %d, linked with %s.", link.cabinet, linked.c_str());
+  } else if (!found.empty()) {
+    ImGui::TextWrapped("This is cabinet %d. Found %s, linking...", link.cabinet, found.c_str());
+  } else {
+    ImGui::TextWrapped("This is cabinet %d, looking for other cabinets %s.", link.cabinet,
+                       s.lan ? "on this computer and the local network" : "on this computer");
+  }
+  hint("Give each OpenGP its own number. Changes take effect when the game restarts.");
 }
 
 void Menu::video_tab(MenuModel& m) {

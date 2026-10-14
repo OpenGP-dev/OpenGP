@@ -7,6 +7,7 @@
 
 #include "app/launcher.h"
 #include "arcade.h"
+#include "cabinet.h"
 #include "camera_use.h"
 #include "game_log.h"
 #include "status.h"
@@ -24,6 +25,8 @@ int main(int argc, char** argv) {
   game.test_menu = arcade::test_menu_reboot;
   game.set_game_log = game_log::enable;
   game.set_camera = camera_use::set;
+  game.set_cabinet = cabinet::set;
   game.status = game_status::read;
+  game.link_error = game_status::link_error;
   return app::run(game, argc, argv);
 }

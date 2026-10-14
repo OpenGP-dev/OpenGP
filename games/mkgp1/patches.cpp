@@ -3,6 +3,7 @@
 // Mario Kart Arcade GP (GGPE01): replacements for recompiled functions.
 
 #include "arcade.h"
+#include "cabinet.h"
 #include "camera_use.h"
 #include "ppc_recomp_shared.h"
 
@@ -21,6 +22,14 @@ PPC_FUNC(fn_8024DEDC) {
 PPC_FUNC(fn_8007A5CC) {
   __imp__fn_8007A5CC(ctx, base);
   camera_use::on_settings_loaded(base, 0x804B3B40u);
+  cabinet::on_settings_loaded(base, 0x804B3B40u);
+}
+
+// The media board's "this cabinet's address" (as in GP 2), with the
+// cabinets' list at 8036B790.
+PPC_FUNC(acModifyMyIPaddr) {
+  cabinet::on_modify_address(base, 0x804B3B40u, 0x8036B790u, &ctx.gpr[3]);
+  __imp__acModifyMyIPaddr(ctx, base);
 }
 
 // The wheel board's state, each frame: the camera's power (as in GP 2).

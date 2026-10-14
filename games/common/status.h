@@ -22,6 +22,12 @@ namespace game_status {
 // stale one is shown for a second at most.
 void read(const gekko::u8* base, app::GameStatus* status);
 
+// Whether the game has lost its link to the other cabinets: a linked game
+// that loses it (another cabinet stops) stops too, with "Please call an
+// attendant / Link error occurred" (DrawLinkErrorOverlay, shown while a flag
+// is set), until the cabinet is restarted.
+bool link_error(const gekko::u8* base);
+
 struct CharacterName {
   const char* name;
   const char* image;  // the art asset's key

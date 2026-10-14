@@ -11,7 +11,7 @@
 //                 [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]
 //                 [--input SCRIPT] [--input-file PATH] [--free-play] [--test-menu]
 //                 [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--game-log]
-//                 [--camera off|webcam|test] [--version]
+//                 [--camera off|webcam|test] [--cabinet 1-4] [--lan] [--version]
 //
 // Options override user/settings.toml for one run (see docs/building.md).
 #pragma once
@@ -45,9 +45,15 @@ struct Game {
   std::function<void(bool on)> set_game_log;
   // Whether the game uses its camera (OpenGP plays it), before the game runs.
   std::function<void(bool on)> set_camera;
+  // The cabinet's number for linking (1-4, or 0 for the game's own setting),
+  // before the game runs.
+  std::function<void(int number)> set_cabinet;
   // What the player is doing, read from guest memory while the game runs
   // (for Discord Rich Presence).
   std::function<void(const u8* base, GameStatus* status)> status;
+  // Whether the game has stopped because it lost its link to the other
+  // cabinets, read from guest memory while the game runs.
+  std::function<bool(const u8* base)> link_error;
 };
 
 // Runs the game; returns the process exit code.
