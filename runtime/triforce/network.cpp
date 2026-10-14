@@ -810,8 +810,11 @@ u32 Network::connect(u32 fd, u32 address, u32 length) {
               to.port, cabinet);
       return fail(SSC_ECONNREFUSED);
     }
+    // Whatever the host says, the game hears "refused": after one, it tries
+    // again later, but after another error (a network hiccup, or macOS's
+    // Local Network permission not given yet) it gives up on that cabinet.
     const Endpoint host{peer.ip, host_port(link_->options().port, cabinet, to.port)};
-    if (const u32 r = host_connect(*s, fd, to, host); r != SSC_SUCCESS) return fail(r);
+    if (host_connect(*s, fd, to, host) != SSC_SUCCESS) return fail(SSC_ECONNREFUSED);
     u8 hello[kHelloSize];
     write_hello(hello, own, link_->game());
     if (::send(s->host, reinterpret_cast<const char*>(hello), static_cast<int>(kHelloSize), kSendFlags) !=

@@ -120,7 +120,9 @@ when the game starts, so a change takes effect when it restarts.
   `opengp-mkgp2 --user-dir user2 --cabinet 2`.
 - **On a local network**, turn on **Link over the local network** on each computer
   (`[link] lan = true`, or `--lan`). The cabinets find each other by broadcasting on the network.
-  The first time, Windows asks whether OpenGP may use the network: allow it on private networks.
+  The first time, Windows asks whether OpenGP may use the network: allow it (on the kind of
+  network you are on, which Windows may call public). macOS asks whether OpenGP, or the Terminal
+  you start it from, may find devices on your local network: allow that too.
   The link uses ports 28500 to 28539 (TCP and UDP) on each computer; `[link] port` moves them
   (give every cabinet the same).
 
