@@ -17,6 +17,7 @@
 //   user/                   settings and saves
 #pragma once
 
+#include <atomic>
 #include <filesystem>
 #include <functional>
 #include <string>
@@ -59,7 +60,10 @@ struct Reporter {
 bool find_compiler(const Package& package, const std::string& requested, const Reporter& report, std::string* cxx,
                    std::string* error);
 
-// The game an image holds, if it is one of the package's; checks the ID only.
+// The game an image holds, if it is one of the package's: by the ID in its
+// header, else (a placeholder header) by its main.dol's SHA-1. Use
+// install_game, which checks the SHA-1 in any case, to tell whether it is the
+// supported release.
 const GameInfo* identify_image(const Package& package, const std::string& image);
 
 // The images found for each game: the ones given, else the one each game was
@@ -75,6 +79,9 @@ bool is_installed(const Package& package, const GameInfo& game);
 struct BuildOptions {
   unsigned jobs = 0;        // 0: one per CPU thread
   bool keep_build = false;  // keep the generated sources and objects (build/<id>/)
+  // Set from another thread to stop the build (the compiler runs that have
+  // started still finish); install_game then fails with "cancelled".
+  const std::atomic<bool>* cancel = nullptr;
 };
 
 // Builds the game from `image` into home/<executable>.

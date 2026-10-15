@@ -85,10 +85,10 @@ else()
   endif()
 endif()
 
-if(OPENGP_BUILD_VIDEO)
-  add_subdirectory(video)
+if(OPENGP_BUILD_VIDEO OR OPENGP_BUILD_INPUT)
+  include(${PROJECT_SOURCE_DIR}/cmake/sdl3.cmake)
 
-  # The player's input devices (SDL3, fetched by video/).
+  # The player's input devices.
   add_library(opengp_input STATIC input/host.cpp)
   target_link_libraries(opengp_input
     PUBLIC opengp_machine SDL3::SDL3
@@ -99,6 +99,10 @@ if(OPENGP_BUILD_VIDEO)
   target_link_libraries(opengp_webcam
     PUBLIC opengp_machine SDL3::SDL3
     PRIVATE opengp_warnings)
+endif()
+
+if(OPENGP_BUILD_VIDEO)
+  add_subdirectory(video)
 
   # Sound output (SDL3).
   add_library(opengp_audio STATIC audio/host.cpp)
