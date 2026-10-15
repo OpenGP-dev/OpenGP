@@ -46,6 +46,12 @@ first command word.
 | Read | DIMM game data, board status, and the execute and network buffers |
 | Write | Firmware, DIMM, network configuration |
 
+Reads from the game image may run past its end, and the bytes there read as zeros. The games
+read whole 32-byte blocks: GP 2's last file, `_koopa_fire2.dat` (Bowser's fire), ends 2 bytes
+before the image does, and loading it reads 20 bytes past the end. A read must not fail. The
+DVD library on the Triforce never asks the drive what went wrong, because its
+`DVDLowRequestError` only returns, so the game waits for that read forever.
+
 Status replies the game expects:
 - DIMM size: 512 MiB
 - Segaboot version

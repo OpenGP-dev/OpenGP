@@ -40,6 +40,10 @@
 - Widescreen: the rain in GP 2's DK Cup (rounds 3 and 4) covers the whole screen instead of
   stopping at the edges of the 4:3 picture, and so does the fade at the end of the attract mode's
   demo race.
+- GP 2 no longer freezes on the loading screen before a race with Bowser's **Flaming Tender**
+  item. Its file is the last one in the disc image, and loading it reads a few bytes past the
+  image's end, which OpenGP refused; the game then waited forever. Those bytes now read as zeros,
+  as on a cabinet, where the image sits in a larger memory. Any read that still fails is printed.
 - If the game's picture stops for 10 seconds while it is not paused, OpenGP writes a hang report,
   `user/hang-report.txt`: each of the game's threads with its call stack. See
   [docs/playing.md](docs/playing.md#if-the-game-freezes).
