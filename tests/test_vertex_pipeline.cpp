@@ -89,7 +89,8 @@ class Test {
 
   // Draws `draws` random primitives as one frame, with the EFB widened by
   // `side` pixels; returns the frame's hash.
-  u64 frame(u32 draws, u32 side) {
+  u64 frame(u32 draws, u32 side, bool game_like = false) {
+    game_like_ = game_like;
     frontend_.set_widescreen(side);
     for (u32 d = 0; d < draws; ++d) {
       if (d % 8 == 0) random_xf();
@@ -115,12 +116,12 @@ class Test {
 
   u64 vertices() const { return vertices_; }
 
-  // The benchmark's workload: what the busiest courses draw most (Arena
-  // Stadium's crowd and stands): indexed s16 positions, an RGBA8 colour and
-  // an s16 texture coordinate, unlit, one texture coordinate generator, in
-  // strips of 5-7 vertices and some longer ones. Returns the ns per vertex
+  // The benchmark's workload: what the busiest courses draw most (81% of
+  // Arena Stadium's vertices): indexed float positions, an RGBA8 colour and
+  // a float texture coordinate, unlit, one texture coordinate generator with
+  // dual texture matrices, in strips of 5-7 vertices and some longer ones. Returns the ns per vertex
   // of the fastest of `rounds` frames of `draws` draws.
-  double benchmark(u32 draws, u32 rounds) {
+  double benchmark(u32 draws, u32 rounds, u32 short_percent = 70) {
     bp(BP_EFB_TL, 0);
     bp(BP_EFB_WH, 639u | (479u << 10));
     bp(BP_COPY_Y_SCALE, 256);
@@ -131,19 +132,20 @@ class Test {
     xf(XF_ALPHA0_CTRL, 1 << 0);
     xf(XF_COLOR0_CTRL + 1, 0);
     xf(XF_ALPHA0_CTRL + 1, 0);
-    xf(XF_DUAL_TEX, 0);
+    xf(XF_DUAL_TEX, 1);  // as GP 2 has it
     xf(XF_NUM_TEXGENS, 1);
     xf(XF_TEXGEN, 5 << 7);  // regular, from texture coordinate 0
+    xf(XF_POST_TEXGEN, 0);
     xff(XF_PROJECTION + 0, 1.2f), xff(XF_PROJECTION + 1, 0.0f), xff(XF_PROJECTION + 2, 1.6f);
     xff(XF_PROJECTION + 3, 0.0f), xff(XF_PROJECTION + 4, -1.0001f), xff(XF_PROJECTION + 5, -0.5f);
     xf(XF_PROJECTION + 6, 0);
     cp_[0x50] = (3u << 9) | (3u << 13);  // position and colour 0, index16
     cp_[0x60] = 3;                        // texture coordinate 0, index16
-    cp_[0x70] = 1 | (3u << 1) | (6u << 4) | (5u << 14) | (1u << 21) | (3u << 22) | (8u << 25);
+    cp_[0x70] = 0x41377009;  // GP 2's: float positions and texture coordinates, RGBA8 colours
     std::vector<std::vector<u8>> streams;
     std::vector<u16> counts;
     for (u32 d = 0; d < draws; ++d) {
-      const u16 count = static_cast<u16>(rng_.chance(70) ? 5 + rng_.below(3) : 20 + rng_.below(40));
+      const u16 count = static_cast<u16>(rng_.chance(short_percent) ? 5 + rng_.below(3) : 20 + rng_.below(40));
       std::vector<u8> st;
       // Meshes index their arrays mostly in order.
       const u32 base = rng_.below(4000);
@@ -280,6 +282,15 @@ class Test {
     for (u32 sh : {4u, 13u, 22u}) b |= rng_.below(16) << sh;
     for (u32 sh : {5u, 14u, 23u}) c |= (rng_.below(2) | fmt(5) << 1) << sh;
     for (u32 sh : {0u, 9u, 18u, 27u}) c |= rng_.below(16) << sh;
+    if (game_like_ && rng_.chance(70)) {
+      // GP 2's usual layout: indexed or direct float positions, an RGBA8
+      // colour 0 (or none), a float texture coordinate 0 (or none).
+      lo = ((1 + rng_.below(3)) << 9) | ((rng_.chance(80) ? 1 + rng_.below(3) : 0) << 13);
+      hi = rng_.chance(85) ? 1 + rng_.below(3) : 0;
+      a = (a & ~0x1FFu) | 1 | (4u << 1) | (rng_.below(16) << 4);  // position: xyz, float
+      a = (a & ~(7u << 14)) | ((5 + rng_.below(3)) << 14);         // colour 0: RGBA8
+      a = (a & ~(0xFu << 21)) | (1u << 21) | (4u << 22);           // texture coordinate 0: st, float
+    }
     cp_[0x50] = lo;
     cp_[0x60] = hi;
     cp_[0x70 + vat] = a;
@@ -349,6 +360,7 @@ class Test {
   Output output_;
   Frontend frontend_{read, this};
   std::vector<u8> stream_;
+  bool game_like_ = false;
   u64 vertices_ = 0;
 };
 
@@ -357,16 +369,20 @@ class Test {
 TEST_CASE("the vertex pipeline's output does not change") {
 #if defined(__x86_64__) || defined(_M_X64)
   Test t(20261015);
-  u64 h[4];
+  u64 h[6];
   h[0] = t.frame(600, 0);    // 4:3
   h[1] = t.frame(600, 107);  // 21:9
   h[2] = t.frame(600, 0);
   h[3] = t.frame(600, 249);
+  h[4] = t.frame(600, 0, true);  // mostly the game's usual vertex layout
+  h[5] = t.frame(600, 107, true);
   CHECK(t.vertices() > 20000);
   CHECK(h[0] == 0xE000BF8D6FC61D45ull);
   CHECK(h[1] == 0x59003377BFFFE4D6ull);
   CHECK(h[2] == 0xAA71767EAA8654E9ull);
   CHECK(h[3] == 0x5B04D55130FBA291ull);
+  CHECK(h[4] == 0x344353EA177BDB73ull);
+  CHECK(h[5] == 0x8377997B4BF43976ull);
 #else
   MESSAGE("bit-exact values are for x86-64 only");
 #endif
@@ -376,4 +392,8 @@ TEST_CASE("the vertex pipeline's output does not change") {
 TEST_CASE("benchmark" * doctest::skip()) {
   Test t(7);
   std::printf("%.1f ns per vertex\n", t.benchmark(4000, 30));
+  Test t2(7);
+  std::printf("  strips of 5-7 vertices only: %.1f ns\n", t2.benchmark(4000, 30, 100));
+  Test t3(7);
+  std::printf("  strips of 20-59 vertices only: %.1f ns\n", t3.benchmark(4000, 30, 0));
 }
