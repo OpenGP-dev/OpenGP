@@ -179,6 +179,7 @@ class Renderer {
     std::shared_ptr<SDL_GPUFence> fence;
   };
   std::vector<PendingRead> unfenced_reads_, pending_reads_;
+  std::vector<SDL_GPUTransferBuffer*> read_buffers_;  // download buffers for the next readbacks
   struct Capture {
     SDL_GPUTransferBuffer* transfer = nullptr;
     u32 width = 0, height = 0;

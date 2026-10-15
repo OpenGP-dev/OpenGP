@@ -139,6 +139,7 @@ Renderer::~Renderer() {
   if (index_buffer_) SDL_ReleaseGPUBuffer(device_, index_buffer_);
   if (transfer_) SDL_ReleaseGPUTransferBuffer(device_, transfer_);
   poll_reads(true);
+  for (SDL_GPUTransferBuffer* b : read_buffers_) SDL_ReleaseGPUTransferBuffer(device_, b);
   if (window_) SDL_ReleaseWindowFromGPUDevice(device_, window_);
   SDL_DestroyGPUDevice(device_);
 }
@@ -746,10 +747,18 @@ void Renderer::read_efb(SDL_GPUCommandBuffer* cmd, std::shared_ptr<gx::EfbReadba
     t.num_levels = 1;
     target = SDL_CreateGPUTexture(device_, &t);
   }
-  SDL_GPUTransferBufferCreateInfo info{SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, w * h * 4, 0};
-  SDL_GPUTransferBuffer* transfer = SDL_CreateGPUTransferBuffer(device_, &info);
+  // Download buffers are kept for the next readbacks: creating one each time
+  // (once a frame on some courses) sometimes stalled the driver for 4-40 ms.
+  SDL_GPUTransferBuffer* transfer = nullptr;
+  if (!read_buffers_.empty()) {
+    transfer = read_buffers_.back();
+    read_buffers_.pop_back();
+  } else {
+    SDL_GPUTransferBufferCreateInfo info{SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, w * h * 4, 0};
+    transfer = SDL_CreateGPUTransferBuffer(device_, &info);
+  }
   if (!target || !transfer) {
-    if (transfer) SDL_ReleaseGPUTransferBuffer(device_, transfer);
+    if (transfer) read_buffers_.push_back(transfer);
     request->complete();  // with no pixels: peeks read zero
     return;
   }
@@ -807,7 +816,8 @@ void Renderer::poll_reads(bool wait_all) {
         }
       }
     }
-    SDL_ReleaseGPUTransferBuffer(device_, it->transfer);
+    if (read_buffers_.size() < 4) read_buffers_.push_back(it->transfer);
+    else SDL_ReleaseGPUTransferBuffer(device_, it->transfer);
     r.complete();
     it = pending_reads_.erase(it);
   }
