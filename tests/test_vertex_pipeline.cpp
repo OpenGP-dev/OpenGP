@@ -178,8 +178,11 @@ class Test {
         const u32 source = rng_.chance(70) ? 5 + rng_.below(8) : rng_.below(5);
         v = (rng_.below(2) << 1) | (rng_.below(2) << 2) | (source << 7);
       } else {
-        // Emboss and colour texgens too (types 1-3; 4-7 are not valid).
-        v = (static_cast<u32>(rng_.next()) & 0x3FF8E) | ((1 + rng_.below(3)) << 4);
+        // Emboss and colour texgens too (types 1-3; 4-7 are not valid). An
+        // emboss generator's source must be an earlier generator.
+        const u32 type = 1 + rng_.below(3);
+        v = (static_cast<u32>(rng_.next()) & 0x38F8E) | (type << 4);
+        if (type == 1) v = i ? v | (rng_.below(i) << 12) : (v & ~0x70u) | (2u << 4);
       }
       xf(XF_TEXGEN + i, v);
       xf(XF_POST_TEXGEN + i, rng_.below(64) | (rng_.below(2) << 8));
@@ -293,10 +296,10 @@ TEST_CASE("the vertex pipeline's output does not change") {
   h[2] = t.frame(600, 0);
   h[3] = t.frame(600, 249);
   CHECK(t.vertices() > 20000);
-  CHECK(h[0] == 0xF64E09C481BCE9D5ull);
-  CHECK(h[1] == 0x9E978B6EE596E1B0ull);
-  CHECK(h[2] == 0x3B177FC1C4B55A33ull);
-  CHECK(h[3] == 0xBBA605C1A5A63DE2ull);
+  CHECK(h[0] == 0xE000BF8D6FC61D45ull);
+  CHECK(h[1] == 0x59003377BFFFE4D6ull);
+  CHECK(h[2] == 0xAA71767EAA8654E9ull);
+  CHECK(h[3] == 0x5B04D55130FBA291ull);
 #else
   MESSAGE("bit-exact values are for x86-64 only");
 #endif
