@@ -107,6 +107,7 @@ class VertexLoader {
     return u64{addr} + bytes <= ram_size_ ? ram_ + addr : nullptr;
   }
   void load_normals(const u8*& src, InputVertex& v) const;
+  GX_INLINE void load_fast(const u8* src, InputVertex& v) const;
   GX_INLINE void load_colors(const u8*& src, InputVertex& v) const;
 
   // The CP words and memory the setup came from: setup() is skipped while
@@ -124,6 +125,11 @@ class VertexLoader {
   u32 tex_slots_[8] = {};  // the texture coordinates present, in order
   u32 num_tex_slots_ = 0;
   bool colors_present_ = false;
+  // GP 2's usual layout (81% of the vertices in its busiest courses), which
+  // load_fast() decodes with no format switches: no matrix indices or
+  // normals, a float xyz position, an RGBA8 colour 0 or none, and a float st
+  // texture coordinate 0 or none.
+  bool fast_ = false;
   u32 array_base_[16] = {}, array_stride_[16] = {};
   const u8* ram_ = nullptr;
   u32 ram_size_ = 0;
@@ -132,7 +138,37 @@ class VertexLoader {
   mutable u8 default_texmtx_[8] = {};
 };
 
+GX_INLINE void VertexLoader::load_fast(const u8* src, InputVertex& v) const {
+  constexpr std::array<u8, 4> kWhite{0xFF, 0xFF, 0xFF, 0xFF};
+  v.skip = false;
+  if (pos_.type == INDEX8 && *src == 0xFF) v.skip = true;
+  if (pos_.type == INDEX16 && be16(src) == 0xFFFF) v.skip = true;
+  if (const u8* p = fetch(pos_, ARRAY_POSITION, src, 12)) {
+    v.pos[0] = std::bit_cast<float>(be32(p));
+    v.pos[1] = std::bit_cast<float>(be32(p + 4));
+    v.pos[2] = std::bit_cast<float>(be32(p + 8));
+  } else {
+    v.skip = true;
+  }
+  if (color_[0].type != NOT_PRESENT) {
+    const u8* p = fetch(color_[0], ARRAY_COLOR0, src, 4);
+    v.color[0] = p ? std::array<u8, 4>{p[0], p[1], p[2], p[3]} : kWhite;
+    v.color[1] = kWhite;
+  }
+  if (num_tex_slots_) {
+    v.tex[0][0] = v.tex[0][1] = 0.0f;
+    if (const u8* p = fetch(tex_[0], ARRAY_TEX0, src, 8)) {
+      v.tex[0][0] = std::bit_cast<float>(be32(p));
+      v.tex[0][1] = std::bit_cast<float>(be32(p + 4));
+    }
+  }
+}
+
 GX_INLINE void VertexLoader::load(const u8* src, InputVertex& v) const {
+  if (fast_) {
+    load_fast(src, v);
+    return;
+  }
   // Matrix indices: from the vertex if present, else the XF registers (set
   // by begin()).
   if (matrix_flags_) {

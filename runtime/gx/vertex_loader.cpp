@@ -76,6 +76,12 @@ void VertexLoader::setup(const u32* cp, u8 vat, const u8* ram, u32 ram_size) {
     array_base_[i] = cp[0xA0 + i] & 0x03FFFFFF;
     array_stride_[i] = cp[0xB0 + i] & 0xFF;
   }
+
+  // Formats 4-7 are floats (colours: 5-7 are RGBA8).
+  fast_ = matrix_flags_ == 0 && pos_.type != NOT_PRESENT && pos_.format >= 4 && pos_.count == 3 &&
+          normal_.type == NOT_PRESENT && color_[1].type == NOT_PRESENT &&
+          (color_[0].type == NOT_PRESENT || color_[0].format >= 5) &&
+          (num_tex_slots_ == 0 || (num_tex_slots_ == 1 && tex_slots_[0] == 0 && tex_[0].format >= 4 && tex_[0].count == 2));
 }
 
 void VertexLoader::begin(u32 matrix_index_a, u32 matrix_index_b, InputVertex& v) const {
