@@ -172,6 +172,8 @@ class Frontend {
     u32 width, height;
     TexFormat format;
     u64 memory_hash;  // of the destination memory when copied
+    u64 last_used;    // frame it was last copied or sampled
+    bool xfb;
   };
   std::unordered_map<u32, CopiedTexture> copies_;
   // Hashes of guest memory ranges (address, size) taken this frame. Hashing

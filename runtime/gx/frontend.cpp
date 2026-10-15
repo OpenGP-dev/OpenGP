@@ -245,6 +245,27 @@ void Frontend::end_frame(bool present) {
         ++it;
       }
     }
+    // Release EFB copies whose memory the game has written over since: a
+    // texture lookup there no longer finds them (bind_texture), so they are
+    // dead. GP 2 makes its shadow light map at a new address each race (64 MB
+    // at 8x). A copy that is merely not sampled for a while stays.
+    if (frames_ % 60 == 0) {
+      for (auto it = copies_.begin(); it != copies_.end();) {
+        const CopiedTexture& c = it->second;
+        bool dead = false;
+        if (!c.xfb && c.last_used + 300 < frames_) {
+          const u32 size = texture_level_size(c.format, c.width, c.height);
+          const u8* mem = read_(context_, it->first, size);
+          dead = !mem || hash_bytes(mem, size) != c.memory_hash;
+        }
+        if (dead) {
+          f.releases.push_back(c.handle);
+          it = copies_.erase(it);
+        } else {
+          ++it;
+        }
+      }
+    }
   } else {
     f.xfb = 0;
   }
@@ -446,8 +467,10 @@ void Frontend::efb_copy(u32 trigger) {
       auto it = copies_.find(dest);
       if (it == copies_.end() || it->second.width != width || it->second.height != c.height) {
         if (it != copies_.end()) f.releases.push_back(it->second.handle);
-        it = copies_.insert_or_assign(dest, CopiedTexture{new_handle(), width, c.height, TexFormat::RGBA8, 0}).first;
+        it = copies_.insert_or_assign(dest, CopiedTexture{new_handle(), width, c.height, TexFormat::RGBA8, 0, 0, true})
+                 .first;
       }
+      it->second.last_used = frames_;
       c.dest = it->second.handle;
       f.copies.push_back(c);
       f.commands.push_back({Command::Type::Copy, static_cast<u32>(f.copies.size() - 1)});
@@ -469,10 +492,11 @@ void Frontend::efb_copy(u32 trigger) {
       auto it = copies_.find(dest);
       if (it == copies_.end() || it->second.width != width || it->second.height != c.height) {
         if (it != copies_.end()) f.releases.push_back(it->second.handle);
-        it = copies_.insert_or_assign(dest, CopiedTexture{new_handle(), width, c.height, tf, memory_hash}).first;
+        it = copies_.insert_or_assign(dest, CopiedTexture{new_handle(), width, c.height, tf, memory_hash, 0, false}).first;
       }
       it->second.format = tf;
       it->second.memory_hash = memory_hash;
+      it->second.last_used = frames_;
       c.dest = it->second.handle;
       f.copies.push_back(c);
       f.commands.push_back({Command::Type::Copy, static_cast<u32>(f.copies.size() - 1)});
@@ -771,6 +795,7 @@ TextureBinding Frontend::bind_texture(u32 map, s32* size) {
       const u32 copy_bytes = texture_level_size(it->second.format, width, height);
       const u8* mem = read_(context_, address, copy_bytes);
       if (mem && memory_hash(mem, address, copy_bytes) == it->second.memory_hash) {
+        it->second.last_used = frames_;
         binding.texture = it->second.handle;
         return binding;
       }
