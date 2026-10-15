@@ -54,6 +54,10 @@ add_executable(test_disc test_disc.cpp)
 target_link_libraries(test_disc PRIVATE opengp_machine doctest opengp_warnings)
 add_test(NAME disc COMMAND test_disc)
 
+add_executable(test_vertex_pipeline test_vertex_pipeline.cpp)
+target_link_libraries(test_vertex_pipeline PRIVATE opengp_machine doctest opengp_warnings)
+add_test(NAME vertex_pipeline COMMAND test_vertex_pipeline)
+
 add_executable(test_text test_text.cpp)
 target_link_libraries(test_text PRIVATE opengp_machine doctest opengp_warnings)
 add_test(NAME text COMMAND test_text)
