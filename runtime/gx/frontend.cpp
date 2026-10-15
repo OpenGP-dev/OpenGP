@@ -882,7 +882,7 @@ void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertice
   clip_.resize(count);
   skip_.resize(count);
   const u32 mia = xf_.reg(XF_MATRIX_INDEX_A), mib = xf_.reg(XF_MATRIX_INDEX_B);
-  TransformedVertex t;
+  TransformedVertex t{};  // an emboss generator may read a later, not yet written coordinate
   timer.transform_starts();
   add(stats_.vertices, count);
   xf_.prepare();
