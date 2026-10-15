@@ -4,11 +4,18 @@
 
 #include <algorithm>
 #include <bit>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+#include <intrin.h>
+#elif defined(__x86_64__) || defined(__i386__)
+#include <x86intrin.h>
+#endif
 
 #include "gx/texture.h"
 #include "os/activity.h"
@@ -62,18 +69,82 @@ u64 hash_bytes(const u8* p, std::size_t n, u64 seed = 0) {
   return h;
 }
 
+// The clock for the per-draw timers: the CPU's time-stamp counter where there
+// is one (invariant on the x86-64 CPUs OpenGP runs on), converted to ns at a
+// rate measured against steady_clock. Reading steady_clock (on Windows,
+// QueryPerformanceCounter) four times a draw cost about 0.5 ms a frame in the
+// busiest races.
+#if defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__) || defined(__i386__)
+inline u64 ticks() { return __rdtsc(); }
+#else
+inline u64 ticks() {
+  return static_cast<u64>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+#endif
+
+struct TickRate {
+  u64 tick0 = 0;
+  std::chrono::steady_clock::time_point time0;
+  std::atomic<double> ns_per_tick{1.0};
+
+  // Measures the rate since `tick0`.
+  void measure() {
+    const u64 t = ticks();
+    const double ns = std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - time0).count();
+    if (t > tick0 && ns > 0) ns_per_tick.store(ns / static_cast<double>(t - tick0), std::memory_order_relaxed);
+  }
+};
+
+TickRate& tick_rate() {
+  static TickRate* rate = [] {
+    auto* r = new TickRate;
+    r->tick0 = ticks();
+    r->time0 = std::chrono::steady_clock::now();
+    // A first estimate over a millisecond; end_frame() refines it over the run.
+    while (std::chrono::steady_clock::now() - r->time0 < std::chrono::milliseconds(1)) {}
+    r->measure();
+    return r;
+  }();
+  return *rate;
+}
+
+u64 ticks_to_ns(u64 t) {
+  return static_cast<u64>(static_cast<double>(t) * tick_rate().ns_per_tick.load(std::memory_order_relaxed));
+}
+
+// Adds to a counter that only the thread running the game writes (guest
+// threads take turns), so it needs no locked add.
+void add(std::atomic<u64>& counter, u64 v) {
+  counter.store(counter.load(std::memory_order_relaxed) + v, std::memory_order_relaxed);
+}
+
 // Adds the time from construction to destruction to a counter (ns).
 class ScopeTimer {
  public:
-  explicit ScopeTimer(std::atomic<u64>& total) : total_(total), start_(std::chrono::steady_clock::now()) {}
-  ~ScopeTimer() {
-    const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start_);
-    total_.fetch_add(static_cast<u64>(ns.count()), std::memory_order_relaxed);
-  }
+  explicit ScopeTimer(std::atomic<u64>& total) : total_(total), start_(ticks()) {}
+  ~ScopeTimer() { add(total_, ticks_to_ns(ticks() - start_)); }
 
  private:
   std::atomic<u64>& total_;
-  std::chrono::steady_clock::time_point start_;
+  u64 start_;
+};
+
+// A draw's time, and the part of it from the transform's start: three clock
+// reads a draw.
+class DrawTimer {
+ public:
+  explicit DrawTimer(Frontend::Stats& stats) : stats_(stats), start_(ticks()) {}
+  ~DrawTimer() {
+    const u64 end = ticks();
+    add(stats_.draw_ns, ticks_to_ns(end - start_));
+    if (transform_) add(stats_.transform_ns, ticks_to_ns(end - transform_));
+  }
+  void transform_starts() { transform_ = ticks(); }
+
+ private:
+  Frontend::Stats& stats_;
+  u64 start_, transform_ = 0;
 };
 
 u64 mix(u64 h, u64 v) { return (h ^ (v + 0x9E3779B97F4A7C15ull + (h << 6) + (h >> 2))) * 0xBF58476D1CE4E5B9ull; }
@@ -164,6 +235,7 @@ void Frontend::end_frame(bool present) {
     ++frames_;
     new_display_frame_ = true;
     peeks_[0].requested = peeks_[1].requested = false;
+    if (frames_ % 600 == 0) tick_rate().measure();
     // Evict textures not used for a while.
     for (auto it = textures_.begin(); it != textures_.end();) {
       if (it->second.last_used + 120 < frames_) {
@@ -760,7 +832,7 @@ u64 Frontend::memory_hash(const u8* data, u32 address, u32 size) {
 
 void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertices, const u32* cp) {
   if (!output_ || count == 0) return;
-  const ScopeTimer timer(stats_.draw_ns);
+  DrawTimer timer(stats_);
   Frame& f = frame();
 
   const u32 state = draw_state();
@@ -786,8 +858,8 @@ void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertice
   skip_.resize(count);
   const u32 mia = xf_.reg(XF_MATRIX_INDEX_A), mib = xf_.reg(XF_MATRIX_INDEX_B);
   TransformedVertex t;
-  const ScopeTimer transform_timer(stats_.transform_ns);
-  stats_.vertices.fetch_add(count, std::memory_order_relaxed);
+  timer.transform_starts();
+  add(stats_.vertices, count);
   xf_.prepare();
   for (u32 i = 0; i < count; ++i) {
     loader_.load(vertices.data() + std::size_t{i} * stride, input_, mia, mib);

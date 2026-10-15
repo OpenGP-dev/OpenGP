@@ -285,7 +285,8 @@ void Gpu::bp_write(u8 reg, u32 value) {
 }
 
 void Gpu::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertices) {
-  draws_.fetch_add(1, std::memory_order_relaxed);
+  // Only the thread running the game writes it: no locked add.
+  draws_.store(draws_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
   frontend_.draw(primitive, vat, count, vertices, decoder_.cp_regs());
 }
 
