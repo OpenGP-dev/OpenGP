@@ -58,6 +58,7 @@ bool GuestMemory::is_ram(u32 addr, u32 size) const {
 bool GuestMemory::init(u32 mem1_size, std::string* error) {
   shutdown();
   mem1_size_ = mem1_size;
+  g_mem1_size = mem1_size;
 
   void* reserved = mmap(nullptr, kReserveSize, PROT_NONE,
                         MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
@@ -144,6 +145,7 @@ const Win32Api& api() {
 bool GuestMemory::init(u32 mem1_size, std::string* error) {
   shutdown();
   mem1_size_ = mem1_size;
+  g_mem1_size = mem1_size;
   const Win32Api& w = api();
   if (!w.virtual_alloc2 || !w.map_view_of_file3) {
     set_error(error, "VirtualAlloc2/MapViewOfFile3 unavailable (Windows 10 1803+ required)");

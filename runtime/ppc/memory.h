@@ -23,6 +23,10 @@ inline constexpr u32 LOCKED_CACHE_SIZE = 0x4000;  // 16 KiB
 inline constexpr u32 IO_BASE = 0xCC000000;
 inline constexpr u32 GATHER_PIPE_BASE = 0xCC008000;
 
+// MEM1's size, for code that only has `base` (game hooks); set by
+// GuestMemory::init().
+inline u32 g_mem1_size = 0;
+
 class GuestMemory {
  public:
   GuestMemory() = default;
