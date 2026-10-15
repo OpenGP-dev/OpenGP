@@ -7,10 +7,12 @@
 #include <doctest.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <iterator>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "disc/disc.h"
@@ -115,6 +117,54 @@ TEST_CASE("files are found by their path in the disc's file system") {
     CHECK_FALSE(img.read_file("dir", &data));        // a directory
     CHECK_FALSE(img.read_file("dir/c.bin", &data));  // c.bin is after dir/
     CHECK_FALSE(img.read_file("missing", &data));
+  }
+  std::filesystem::remove(path);
+}
+
+TEST_CASE("a preloaded image reads the same from memory") {
+  // Over two of the preload's 4 MiB chunks, with a pattern that differs at
+  // every offset.
+  std::vector<gekko::u8> image((9 << 20) + 123);
+  for (std::size_t i = 0; i < image.size(); ++i) image[i] = static_cast<gekko::u8>(i * 7 + (i >> 11));
+  image[0] = 'G', image[1] = 'T', image[2] = 'S', image[3] = 'T', image[4] = '0', image[5] = '1';
+  put_be32(image, 0x1C, disc::GC_MAGIC);
+
+  const auto path = std::filesystem::temp_directory_path() / "opengp_test_preload.iso";
+  {
+    std::FILE* f = std::fopen(path.string().c_str(), "wb");
+    REQUIRE(f);
+    std::fwrite(image.data(), 1, image.size(), f);
+    std::fclose(f);
+  }
+  {
+    disc::Image img;
+    REQUIRE(img.open(path.string(), nullptr));
+    img.preload();
+    for (int i = 0; i < 500 && img.preloaded() < img.size(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    REQUIRE(img.preloaded() == img.size());
+    std::vector<gekko::u8> buf(5 << 20);
+    for (gekko::u64 offset : {gekko::u64{0}, gekko::u64{0x123457}, gekko::u64{(4 << 20) - 100}, gekko::u64{(9 << 20) - 5000}}) {
+      const gekko::u64 n = std::min<gekko::u64>(buf.size(), image.size() - offset);
+      REQUIRE(img.read(offset, buf.data(), n));
+      CHECK(std::equal(buf.begin(), buf.begin() + static_cast<std::ptrdiff_t>(n), image.begin() + static_cast<std::ptrdiff_t>(offset)));
+    }
+    // Past the end: the rest reads as zero, and the read says so.
+    gekko::u8 tail[8];
+    CHECK_FALSE(img.read(image.size() - 3, tail, sizeof(tail)));
+    CHECK(std::equal(tail, tail + 3, image.end() - 3));
+    CHECK(tail[3] == 0);
+    CHECK(tail[7] == 0);
+    // The game ID override still applies to reads from memory.
+    img.set_game_id("GZZZ01");
+    gekko::u8 id[6];
+    REQUIRE(img.read(0, id, sizeof(id)));
+    CHECK(std::string(reinterpret_cast<const char*>(id), 6) == "GZZZ01");
+  }
+  {
+    // Closing the image while it is still loading stops the preload.
+    disc::Image img;
+    REQUIRE(img.open(path.string(), nullptr));
+    img.preload();
   }
   std::filesystem::remove(path);
 }

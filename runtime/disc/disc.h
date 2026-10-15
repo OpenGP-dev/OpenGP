@@ -4,9 +4,12 @@
 // ship as such images; the media board serves reads from them.
 #pragma once
 
+#include <atomic>
 #include <cstdio>
+#include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "gekko/types.h"
@@ -33,6 +36,14 @@ class Image {
   bool read(u64 offset, void* dst, u64 size) const;
   u32 read_u32(u64 offset) const;  // big-endian
 
+  // Reads the whole image into memory on a background thread, as a Triforce
+  // media board holds it in its DIMM memory. Reads of the part loaded so far
+  // come from memory, the rest from the file. The games read the disc while
+  // they run (GP 2 streams its music during races), and a read the system's
+  // file cache doesn't have takes milliseconds, once more than a second.
+  void preload();
+  u64 preloaded() const { return loaded_.load(std::memory_order_acquire); }  // bytes in memory so far
+
   // The executable (sys/main.dol): its offset is in the disc header, and its
   // size follows from its section table.
   bool read_dol(std::vector<u8>* out) const;
@@ -58,6 +69,11 @@ class Image {
   bool id_override_ = false;
   std::string path_;
   mutable std::mutex mutex_;
+
+  std::unique_ptr<u8[]> memory_;   // the image, filled from the start by the preload thread
+  std::atomic<u64> loaded_{0};     // bytes of memory_ filled so far
+  std::atomic<bool> stop_{false};  // asks the preload thread to stop
+  std::thread preload_thread_;
 };
 
 // The SHA-1 of the image's main.dol, in hex ("" if it cannot be read).

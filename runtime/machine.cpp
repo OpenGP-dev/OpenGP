@@ -35,6 +35,7 @@ Machine::~Machine() {
 bool Machine::boot(const std::string& image_path, os::BootResult* boot, std::string* error) {
   if (!disc_.open(image_path, error)) return false;
   if (!game_id_.empty() && disc_.game_id() != game_id_) disc_.set_game_id(game_id_);
+  disc_.preload();
 
   // `sc` is only used (by the SDK and apploaders) to synchronise the caches:
   // the system call handler toggles HID0 and returns. Caches are not modelled.
