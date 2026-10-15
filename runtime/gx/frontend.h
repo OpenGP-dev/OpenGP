@@ -149,7 +149,8 @@ class Frontend {
   // Per-draw work
   VertexLoader loader_;
   InputVertex input_{};  // kept across vertices: absent normals reuse the last values
-  std::vector<std::array<float, 4>> clip_;  // GX clip-space positions of the current draw (for culling)
+  // GX clip-space positions of the current draw (for culling).
+  std::vector<std::array<float, 4>, UninitAllocator<std::array<float, 4>>> clip_;
   std::vector<u8> skip_;
 
   // State caching: rebuilt when registers change.

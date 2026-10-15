@@ -1129,6 +1129,21 @@ void Frontend::assemble(u8 primitive, u32 base, u16 count, const Viewport& vp) {
   const u32 cull = genmode_cull_mode(bp_[BP_GENMODE]);
   const bool flip = vp.ht > 0;  // a positive viewport height mirrors y, and with it the winding
 
+  // Triangles write their indices straight into room made for all of them
+  // (a vector insert per triangle was a measurable part of a draw).
+  u32 max_triangles = 0;
+  switch (primitive) {
+    case 0:
+    case 1: max_triangles = count / 4 * 2; break;
+    case 2: max_triangles = count / 3; break;
+    case 3:
+    case 4: max_triangles = count >= 3 ? count - 2u : 0u; break;
+    default: break;
+  }
+  const std::size_t first_index = f.indices.size();
+  f.indices.resize(first_index + std::size_t{max_triangles} * 3);
+  u32* out = f.indices.data() + first_index;
+
   auto tri = [&](u32 a, u32 b, u32 c) {
     if (skip_[a] || skip_[b] || skip_[c]) return;
     if (cull != 0) {
@@ -1144,7 +1159,8 @@ void Frontend::assemble(u8 primitive, u32 base, u16 count, const Viewport& vp) {
       const bool back = (nz <= 0.0f) != flip;
       if ((cull == 1 && !back) || (cull == 2 && back)) return;
     }
-    f.indices.insert(f.indices.end(), {base + a, base + b, base + c});
+    out[0] = base + a, out[1] = base + b, out[2] = base + c;
+    out += 3;
   };
 
   // Lines and points become quads of the configured width (in 1/6 pixels).
@@ -1222,6 +1238,7 @@ void Frontend::assemble(u8 primitive, u32 base, u16 count, const Viewport& vp) {
       break;
     default: break;
   }
+  if (max_triangles) f.indices.resize(static_cast<std::size_t>(out - f.indices.data()));
 }
 
 }  // namespace gx

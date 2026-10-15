@@ -181,7 +181,7 @@ struct UninitAllocator : std::allocator<T> {
 
 struct Frame {
   std::vector<Vertex, UninitAllocator<Vertex>> vertices;
-  std::vector<u32> indices;
+  std::vector<u32, UninitAllocator<u32>> indices;
   std::vector<PixelUniforms> uniforms;
   std::vector<DrawState> states;
   std::vector<DrawCmd> draws;
