@@ -13,7 +13,10 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
+#include <algorithm>
 #include <bit>
+#include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <memory>
 #include <vector>
@@ -46,8 +49,14 @@ constexpr u32 kArrayBase = 0x00100000;  // 16 CP arrays of 1 MiB from here
 constexpr u32 kArraySize = 1 << 20;
 
 struct Output : FrameOutput {
-  std::vector<std::unique_ptr<Frame>> frames;
+  std::vector<std::unique_ptr<Frame>> frames, spare;
   void submit(std::unique_ptr<Frame> frame) override { frames.push_back(std::move(frame)); }
+  std::unique_ptr<Frame> recycle() override {
+    if (spare.empty()) return nullptr;
+    auto f = std::move(spare.back());
+    spare.pop_back();
+    return f;
+  }
 };
 
 struct Hash {
@@ -105,6 +114,64 @@ class Test {
   }
 
   u64 vertices() const { return vertices_; }
+
+  // The benchmark's workload: what the busiest courses draw most (Arena
+  // Stadium's crowd and stands): indexed s16 positions, an RGBA8 colour and
+  // an s16 texture coordinate, unlit, one texture coordinate generator, in
+  // strips of 5-7 vertices and some longer ones. Returns the ns per vertex
+  // of the fastest of `rounds` frames of `draws` draws.
+  double benchmark(u32 draws, u32 rounds) {
+    bp(BP_EFB_TL, 0);
+    bp(BP_EFB_WH, 639u | (479u << 10));
+    bp(BP_COPY_Y_SCALE, 256);
+    bp(BP_EFB_ADDR, 0x00F00000 >> 5);
+    random_xf();
+    xf(XF_NUM_COLORS, 1);
+    xf(XF_COLOR0_CTRL, 1 << 0);  // material from the vertex, unlit
+    xf(XF_ALPHA0_CTRL, 1 << 0);
+    xf(XF_COLOR0_CTRL + 1, 0);
+    xf(XF_ALPHA0_CTRL + 1, 0);
+    xf(XF_DUAL_TEX, 0);
+    xf(XF_NUM_TEXGENS, 1);
+    xf(XF_TEXGEN, 5 << 7);  // regular, from texture coordinate 0
+    xff(XF_PROJECTION + 0, 1.2f), xff(XF_PROJECTION + 1, 0.0f), xff(XF_PROJECTION + 2, 1.6f);
+    xff(XF_PROJECTION + 3, 0.0f), xff(XF_PROJECTION + 4, -1.0001f), xff(XF_PROJECTION + 5, -0.5f);
+    xf(XF_PROJECTION + 6, 0);
+    cp_[0x50] = (3u << 9) | (3u << 13);  // position and colour 0, index16
+    cp_[0x60] = 3;                        // texture coordinate 0, index16
+    cp_[0x70] = 1 | (3u << 1) | (6u << 4) | (5u << 14) | (1u << 21) | (3u << 22) | (8u << 25);
+    std::vector<std::vector<u8>> streams;
+    std::vector<u16> counts;
+    for (u32 d = 0; d < draws; ++d) {
+      const u16 count = static_cast<u16>(rng_.chance(70) ? 5 + rng_.below(3) : 20 + rng_.below(40));
+      std::vector<u8> st;
+      // Meshes index their arrays mostly in order.
+      const u32 base = rng_.below(4000);
+      for (u32 v = 0; v < count; ++v)
+        for (u32 a = 0; a < 3; ++a) {
+          const u32 index = base + v;
+          st.push_back(static_cast<u8>(index >> 8));
+          st.push_back(static_cast<u8>(index));
+        }
+      streams.push_back(std::move(st));
+      counts.push_back(count);
+    }
+    double best = 1e30;
+    for (u32 r = 0; r < rounds; ++r) {
+      u64 vertices = 0;
+      const auto start = std::chrono::steady_clock::now();
+      for (u32 d = 0; d < draws; ++d) {
+        frontend_.draw(3, 0, counts[d], streams[d], cp_);  // triangle strip
+        vertices += counts[d];
+      }
+      bp(BP_TRIGGER_EFB_COPY, 1u << 14);
+      const double ns = std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - start).count();
+      best = std::min(best, ns / static_cast<double>(vertices));
+      for (auto& f : output_.frames) output_.spare.push_back(std::move(f));
+      output_.frames.clear();
+    }
+    return best;
+  }
 
  private:
   static const u8* read(void* context, u32 addr, u32 size) {
@@ -303,4 +370,10 @@ TEST_CASE("the vertex pipeline's output does not change") {
 #else
   MESSAGE("bit-exact values are for x86-64 only");
 #endif
+}
+
+// Not run by default: test_vertex_pipeline -tc=benchmark --no-skip
+TEST_CASE("benchmark" * doctest::skip()) {
+  Test t(7);
+  std::printf("%.1f ns per vertex\n", t.benchmark(4000, 30));
 }

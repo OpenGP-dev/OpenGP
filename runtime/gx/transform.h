@@ -62,7 +62,7 @@ class XfUnit {
   }
   // Transforms one vertex (after begin()). Defined below, for the draw loop
   // to inline: it runs for every vertex.
-  void transform(const InputVertex& in, TransformedVertex& out) const;
+  GX_INLINE void transform(const InputVertex& in, TransformedVertex& out) const;
 
  private:
   struct Channel {
@@ -88,7 +88,7 @@ class XfUnit {
   void transform_lit(const InputVertex& in, TransformedVertex& out) const;
   // Texture coordinate generator `i` of the types that need no normals or
   // lights (regular, colour).
-  void texgen(u32 i, const InputVertex& in, const u8 (*colors)[4], TransformedVertex& out) const;
+  GX_INLINE void texgen(u32 i, const InputVertex& in, const u8 (*colors)[4], TransformedVertex& out) const;
 
   // XF memory as raw words and as floats (padded: texture matrix rows can
   // reach past the position matrices).
@@ -107,7 +107,7 @@ class XfUnit {
   TexGen texgens_[8] = {};
 };
 
-inline void XfUnit::texgen(u32 i, const InputVertex& in, const u8 (*colors)[4], TransformedVertex& out) const {
+GX_INLINE void XfUnit::texgen(u32 i, const InputVertex& in, const u8 (*colors)[4], TransformedVertex& out) const {
   const TexGen& tg = texgens_[i];
   float dx, dy, dz;
   if (tg.type == 0) {  // regular: matrix times a source row
@@ -155,7 +155,7 @@ inline void XfUnit::texgen(u32 i, const InputVertex& in, const u8 (*colors)[4], 
   out.tex[i][0] = dx, out.tex[i][1] = dy, out.tex[i][2] = dz;
 }
 
-inline void XfUnit::transform(const InputVertex& in, TransformedVertex& out) const {
+GX_INLINE void XfUnit::transform(const InputVertex& in, TransformedVertex& out) const {
   if (lighting_ || normals_) {
     transform_lit(in, out);
     return;

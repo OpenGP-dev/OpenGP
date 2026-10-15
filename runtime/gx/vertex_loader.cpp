@@ -8,33 +8,9 @@ namespace gx {
 
 namespace {
 
-u8 expand4(u32 v) { return static_cast<u8>(v * 17); }
-u8 expand5(u32 v) { return static_cast<u8>((v << 3) | (v >> 2)); }
-u8 expand6(u32 v) { return static_cast<u8>((v << 2) | (v >> 4)); }
-
 constexpr std::array<u8, 4> kWhite{0xFF, 0xFF, 0xFF, 0xFF};
 
 }  // namespace
-
-std::array<u8, 4> VertexLoader::read_color(const u8* p, u32 format) {
-  switch (format) {
-    case 0: {  // RGB565
-      const u32 v = be16(p);
-      return {expand5(v >> 11), expand6((v >> 5) & 0x3F), expand5(v & 0x1F), 0xFF};
-    }
-    case 1:  // RGB888
-    case 2:  // RGB888x
-      return {p[0], p[1], p[2], 0xFF};
-    case 3:  // RGBA4444
-      return {expand4(p[0] >> 4), expand4(p[0] & 0xF), expand4(p[1] >> 4), expand4(p[1] & 0xF)};
-    case 4: {  // RGBA6666
-      const u32 v = (u32{p[0]} << 16) | (u32{p[1]} << 8) | p[2];
-      return {expand6(v >> 18), expand6((v >> 12) & 0x3F), expand6((v >> 6) & 0x3F), expand6(v & 0x3F)};
-    }
-    default:  // RGBA8888
-      return {p[0], p[1], p[2], p[3]};
-  }
-}
 
 void VertexLoader::setup(const u32* cp, u8 vat, const u8* ram, u32 ram_size) {
   // The words the setup depends on: the vertex descriptor, this attribute
@@ -135,27 +111,6 @@ void VertexLoader::load_normals(const u8*& src, InputVertex& v) const {
       read_vec(p + 3 * step, v.normal[1]);
       read_vec(p + 6 * step, v.normal[2]);
     }
-  }
-}
-
-void VertexLoader::load_colors(const u8*& src, InputVertex& v) const {
-  // Colour 0 feeds channel 0 and colour 1 channel 1 when both are present; a
-  // lone colour 1 feeds channel 0. Missing colours are white.
-  std::array<u8, 4> colors[2] = {kWhite, kWhite};
-  bool present[2] = {false, false};
-  for (u32 i = 0; i < 2; ++i) {
-    if (color_[i].type == NOT_PRESENT) continue;
-    if (const u8* p = fetch(color_[i], ARRAY_COLOR0 + i, src, kColorSize[color_[i].format])) {
-      colors[i] = read_color(p, color_[i].format);
-      present[i] = true;
-    }
-  }
-  if (present[0]) {
-    v.color[0] = colors[0];
-    v.color[1] = present[1] ? colors[1] : kWhite;
-  } else {
-    v.color[0] = present[1] ? colors[1] : kWhite;
-    v.color[1] = kWhite;
   }
 }
 

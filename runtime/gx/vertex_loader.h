@@ -19,6 +19,14 @@
 
 #include "gx/regs.h"
 
+// For the per-vertex functions: compilers judge them too big to inline into
+// the draw loop on their own.
+#if defined(_MSC_VER) && !defined(__clang__)
+#define GX_INLINE __forceinline
+#else
+#define GX_INLINE inline __attribute__((always_inline))
+#endif
+
 namespace gx {
 
 struct InputVertex {
@@ -53,7 +61,7 @@ class VertexLoader {
   // Decodes one vertex from `src` (after begin()). Attributes the vertex
   // lacks keep their previous values in `v` (normals), or get defaults
   // (colours: white; texture coordinates: 0).
-  void load(const u8* src, InputVertex& v) const;
+  GX_INLINE void load(const u8* src, InputVertex& v) const;
 
   bool has_normal() const { return normal_.type != 0; }
 
@@ -73,7 +81,7 @@ class VertexLoader {
 
   static u16 be16(const u8* p) { return static_cast<u16>((p[0] << 8) | p[1]); }
   static u32 be32(const u8* p) { return (u32{p[0]} << 24) | (u32{p[1]} << 16) | (u32{p[2]} << 8) | p[3]; }
-  static float component(const u8* p, u32 format, float scale) {
+  GX_INLINE static float component(const u8* p, u32 format, float scale) {
     switch (format) {
       case 0: return p[0] * scale;
       case 1: return static_cast<s8>(p[0]) * scale;
@@ -83,11 +91,11 @@ class VertexLoader {
     }
   }
   static u32 index_size(u32 type) { return type == INDEX8 ? 1 : type == INDEX16 ? 2 : 0; }
-  static std::array<u8, 4> read_color(const u8* p, u32 format);
+  GX_INLINE static std::array<u8, 4> read_color(const u8* p, u32 format);
 
   // Returns the attribute's data: in the stream (direct) or in the array
   // (indexed). Advances `src` past what the stream holds.
-  const u8* fetch(const Attr& a, u32 array, const u8*& src, u32 bytes) const {
+  GX_INLINE const u8* fetch(const Attr& a, u32 array, const u8*& src, u32 bytes) const {
     if (a.type == DIRECT) {
       const u8* p = src;
       src += bytes;
@@ -99,7 +107,7 @@ class VertexLoader {
     return u64{addr} + bytes <= ram_size_ ? ram_ + addr : nullptr;
   }
   void load_normals(const u8*& src, InputVertex& v) const;
-  void load_colors(const u8*& src, InputVertex& v) const;
+  GX_INLINE void load_colors(const u8*& src, InputVertex& v) const;
 
   // The CP words and memory the setup came from: setup() is skipped while
   // they stay the same (most draws).
@@ -124,7 +132,7 @@ class VertexLoader {
   mutable u8 default_texmtx_[8] = {};
 };
 
-inline void VertexLoader::load(const u8* src, InputVertex& v) const {
+GX_INLINE void VertexLoader::load(const u8* src, InputVertex& v) const {
   // Matrix indices: from the vertex if present, else the XF registers (set
   // by begin()).
   if (matrix_flags_) {
@@ -159,6 +167,51 @@ inline void VertexLoader::load(const u8* src, InputVertex& v) const {
       v.tex[i][0] = component(p, t.format, t.scale);
       if (t.count == 2) v.tex[i][1] = component(p + step, t.format, t.scale);
     }
+  }
+}
+
+GX_INLINE std::array<u8, 4> VertexLoader::read_color(const u8* p, u32 format) {
+  auto expand4 = [](u32 v) { return static_cast<u8>(v * 17); };
+  auto expand5 = [](u32 v) { return static_cast<u8>((v << 3) | (v >> 2)); };
+  auto expand6 = [](u32 v) { return static_cast<u8>((v << 2) | (v >> 4)); };
+  switch (format) {
+    case 0: {  // RGB565
+      const u32 v = be16(p);
+      return {expand5(v >> 11), expand6((v >> 5) & 0x3F), expand5(v & 0x1F), 0xFF};
+    }
+    case 1:  // RGB888
+    case 2:  // RGB888x
+      return {p[0], p[1], p[2], 0xFF};
+    case 3:  // RGBA4444
+      return {expand4(p[0] >> 4), expand4(p[0] & 0xF), expand4(p[1] >> 4), expand4(p[1] & 0xF)};
+    case 4: {  // RGBA6666
+      const u32 v = (u32{p[0]} << 16) | (u32{p[1]} << 8) | p[2];
+      return {expand6(v >> 18), expand6((v >> 12) & 0x3F), expand6((v >> 6) & 0x3F), expand6(v & 0x3F)};
+    }
+    default:  // RGBA8888
+      return {p[0], p[1], p[2], p[3]};
+  }
+}
+
+GX_INLINE void VertexLoader::load_colors(const u8*& src, InputVertex& v) const {
+  // Colour 0 feeds channel 0 and colour 1 channel 1 when both are present; a
+  // lone colour 1 feeds channel 0. Missing colours are white.
+  constexpr std::array<u8, 4> kWhite{0xFF, 0xFF, 0xFF, 0xFF};
+  std::array<u8, 4> colors[2] = {kWhite, kWhite};
+  bool present[2] = {false, false};
+  for (u32 i = 0; i < 2; ++i) {
+    if (color_[i].type == NOT_PRESENT) continue;
+    if (const u8* p = fetch(color_[i], ARRAY_COLOR0 + i, src, kColorSize[color_[i].format])) {
+      colors[i] = read_color(p, color_[i].format);
+      present[i] = true;
+    }
+  }
+  if (present[0]) {
+    v.color[0] = colors[0];
+    v.color[1] = present[1] ? colors[1] : kWhite;
+  } else {
+    v.color[0] = present[1] ? colors[1] : kWhite;
+    v.color[1] = kWhite;
   }
 }
 
