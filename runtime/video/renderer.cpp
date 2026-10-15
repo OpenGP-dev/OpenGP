@@ -124,6 +124,7 @@ Renderer::~Renderer() {
   if (!device_) return;
   SDL_WaitForGPUIdle(device_);
   for (auto& [h, t] : textures_) SDL_ReleaseGPUTexture(device_, t.texture);
+  for (PooledTexture& t : texture_pool_) SDL_ReleaseGPUTexture(device_, t.texture);
   for (auto& [k, p] : tev_pipelines_) SDL_ReleaseGPUGraphicsPipeline(device_, p);
   for (auto& [k, p] : clear_pipelines_) SDL_ReleaseGPUGraphicsPipeline(device_, p);
   for (auto& [k, s] : samplers_) SDL_ReleaseGPUSampler(device_, s);
@@ -466,15 +467,19 @@ bool Renderer::upload(SDL_GPUCommandBuffer* cmd, const gx::Frame& f) {
     SDL_UploadToGPUBuffer(copy, &src, &region, true);
   }
   for (const gx::TextureUpload& up : f.uploads) {
-    SDL_GPUTextureCreateInfo t{};
-    t.type = SDL_GPU_TEXTURETYPE_2D;
-    t.format = kColorFormat;
-    t.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-    t.width = up.width;
-    t.height = up.height;
-    t.layer_count_or_depth = 1;
-    t.num_levels = up.levels;
-    SDL_GPUTexture* tex = SDL_CreateGPUTexture(device_, &t);
+    SDL_GPUTexture* tex = pooled_texture(up.width, up.height, up.levels);
+    const bool reused = tex != nullptr;
+    if (!tex) {
+      SDL_GPUTextureCreateInfo t{};
+      t.type = SDL_GPU_TEXTURETYPE_2D;
+      t.format = kColorFormat;
+      t.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+      t.width = up.width;
+      t.height = up.height;
+      t.layer_count_or_depth = 1;
+      t.num_levels = up.levels;
+      tex = SDL_CreateGPUTexture(device_, &t);
+    }
     if (!tex) continue;
     u32 offset = vbytes + ibytes + static_cast<u32>(up.offset);
     for (u32 l = 0, w = up.width, h = up.height; l < up.levels; ++l) {
@@ -485,12 +490,14 @@ bool Renderer::upload(SDL_GPUCommandBuffer* cmd, const gx::Frame& f) {
       region.w = w;
       region.h = h;
       region.d = 1;
-      SDL_UploadToGPUTexture(copy, &src, &region, false);
+      // A reused texture gets new memory if the GPU might still be reading
+      // it (cycle, with the first level only: cycling replaces all of them).
+      SDL_UploadToGPUTexture(copy, &src, &region, reused && l == 0);
       offset += w * h * 4;
       w = std::max(1u, w / 2);
       h = std::max(1u, h / 2);
     }
-    textures_[up.handle] = {tex, up.width, up.height};
+    textures_[up.handle] = {tex, up.width, up.height, up.levels, true};
   }
   SDL_EndGPUCopyPass(copy);
   return true;
@@ -881,9 +888,40 @@ void Renderer::render(const gx::Frame& f, Image* capture_image) {
 
   for (u32 h : f.releases) {
     if (auto it = textures_.find(h); it != textures_.end()) {
-      SDL_ReleaseGPUTexture(device_, it->second.texture);
+      release_texture(it->second);
       textures_.erase(it);
     }
+  }
+  ++frames_rendered_;
+}
+
+SDL_GPUTexture* Renderer::pooled_texture(u32 width, u32 height, u32 levels) {
+  // Released a few frames ago at least, so that the GPU is done with it.
+  for (auto it = texture_pool_.begin(); it != texture_pool_.end(); ++it) {
+    if (it->width == width && it->height == height && it->levels == levels && it->released + 4 <= frames_rendered_) {
+      SDL_GPUTexture* t = it->texture;
+      texture_pool_bytes_ -= it->bytes;
+      texture_pool_.erase(it);
+      return t;
+    }
+  }
+  return nullptr;
+}
+
+void Renderer::release_texture(const Texture& t) {
+  if (!t.texture) return;
+  if (!t.uploaded) {
+    SDL_ReleaseGPUTexture(device_, t.texture);
+    return;
+  }
+  const u64 bytes = u64{t.width} * t.height * 4 * 4 / 3;  // with its mipmaps
+  texture_pool_.push_back({t.texture, t.width, t.height, t.levels, frames_rendered_, bytes});
+  texture_pool_bytes_ += bytes;
+  constexpr u64 kPoolBytes = 256ull << 20;
+  while (texture_pool_bytes_ > kPoolBytes && !texture_pool_.empty()) {
+    SDL_ReleaseGPUTexture(device_, texture_pool_.front().texture);
+    texture_pool_bytes_ -= texture_pool_.front().bytes;
+    texture_pool_.pop_front();
   }
 }
 

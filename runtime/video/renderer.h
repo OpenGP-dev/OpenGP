@@ -125,6 +125,8 @@ class Renderer {
   struct Texture {
     SDL_GPUTexture* texture = nullptr;
     u32 width = 0, height = 0;  // host size (EFB copies: scaled)
+    u32 levels = 1;
+    bool uploaded = false;  // a decoded texture (not an EFB copy target)
   };
 
   SDL_GPUGraphicsPipeline* tev_pipeline(gx::PipelineKey key);
@@ -193,6 +195,20 @@ class Renderer {
   std::unordered_map<u32, SDL_GPUGraphicsPipeline*> clear_pipelines_;
   std::unordered_map<u64, SDL_GPUSampler*> samplers_;
   std::unordered_map<u32, Texture> textures_;
+  // Released decoded textures, kept for reuse by later textures of the same
+  // size: creating one costs a command buffer submission in SDL's Vulkan
+  // backend (about 75 us), and a course start creates dozens.
+  struct PooledTexture {
+    SDL_GPUTexture* texture;
+    u32 width, height, levels;
+    u64 released;  // frame
+    u64 bytes;
+  };
+  std::deque<PooledTexture> texture_pool_;
+  u64 texture_pool_bytes_ = 0;
+  u64 frames_rendered_ = 0;
+  SDL_GPUTexture* pooled_texture(u32 width, u32 height, u32 levels);
+  void release_texture(const Texture& t);
 
   SDL_GPUBuffer* vertex_buffer_ = nullptr;
   SDL_GPUBuffer* index_buffer_ = nullptr;
