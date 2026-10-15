@@ -87,6 +87,9 @@ class Decoder {
   DisplayListReader read_dl_;
   void* context_;
   std::array<u32, 256> cp_{};
+  // vertex_size() per attribute table (0: not worked out since the last CP
+  // register write). Every primitive needs it.
+  mutable std::array<u32, 8> vertex_sizes_{};
   u64 commands_ = 0;
   u64 unknown_ = 0;
 };

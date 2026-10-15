@@ -27,6 +27,8 @@ u32 index_size(u32 type) { return type == INDEX8 ? 1 : type == INDEX16 ? 2 : 0; 
 }  // namespace
 
 u32 Decoder::vertex_size(u8 vat) const {
+  u32& cached = vertex_sizes_[vat & 7];
+  if (cached) return cached;
   const u32 lo = cp_[CP_VCD_LO];
   const u32 hi = cp_[CP_VCD_HI];
   const u32 a = cp_[CP_VAT_A + (vat & 7)];
@@ -65,6 +67,7 @@ u32 Decoder::vertex_size(u8 vat) const {
     if (type == DIRECT) size += (bits(tex[i].word, tex[i].shift, 1) ? 2 : 1) * kComponentSize[bits(tex[i].word, tex[i].shift + 1, 3)];
     else size += index_size(type);
   }
+  cached = size;  // never 0: a vertex has a position
   return size;
 }
 
@@ -94,6 +97,7 @@ std::size_t Decoder::run(std::span<const u8> data, bool in_display_list) {
           length = 6;
           if (left < length) return pos;
           cp_[p[1]] = be32(p + 2);
+          vertex_sizes_.fill(0);
           sink_.cp_write(p[1], be32(p + 2));
           break;
         case GX_LOAD_XF_REG: {

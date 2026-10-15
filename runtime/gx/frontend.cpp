@@ -886,8 +886,10 @@ void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertice
   timer.transform_starts();
   add(stats_.vertices, count);
   xf_.prepare();
+  loader_.begin(mia, mib, input_);
+  xf_.begin(t);
   for (u32 i = 0; i < count; ++i) {
-    loader_.load(vertices.data() + std::size_t{i} * stride, input_, mia, mib);
+    loader_.load(vertices.data() + std::size_t{i} * stride, input_);
     xf_.transform(input_, t);
     Vertex& v = f.vertices[base + i];
     vp.apply(t.clip, v.pos);
