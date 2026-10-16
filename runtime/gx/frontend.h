@@ -63,7 +63,13 @@ class Frontend {
   //     full width.
   //   * Scissors, clears and copies that span the whole width do so in the
   //     wide EFB, so full-screen copies (and the displayed frame) are wide.
-  void set_widescreen(u32 side) { requested_side_.store(side, std::memory_order_relaxed); }
+  void set_widescreen(u32 side) {
+    requested_side_.store(side, std::memory_order_relaxed);
+    g_widescreen_side.store(side, std::memory_order_relaxed);
+  }
+  // The side asked for last, for game code that needs the picture's shape
+  // (games/*/patches.cpp).
+  static inline std::atomic<u32> g_widescreen_side{0};
 
   // Command stream input (see gx::Decoder). `cp` is the CP register file.
   void bp_write(u8 reg, u32 value);

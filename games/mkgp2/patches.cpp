@@ -5,6 +5,7 @@
 #include "arcade.h"
 #include "cabinet.h"
 #include "camera_use.h"
+#include "gx/frontend.h"
 #include "ppc_recomp_shared.h"
 #include "sdk_hle.h"
 
@@ -72,6 +73,20 @@ PPC_FUNC(StrPcb_StateTick) {
 PPC_FUNC(DVDConvertPathToEntrynum) {
   static constexpr sdk_hle::DvdFs kFs{-0x4EB8, -0x4EC4, -0x4EC0, -0x4EB4, 0x804F4738u};
   sdk_hle::convert_path_to_entrynum(ctx, base, kFs, __imp__DVDConvertPathToEntrynum);
+}
+
+// Builds a camera's culling frustum (CObj+0x3034) from its field of view
+// (f1) and aspect (f2), for CObj_UpdatePerspParam, Scene3D_SetupProjection
+// and Scene3D_Init. The game culls objects, and spreads effects that fill the
+// screen, against the 4:3 picture's frustum: in widescreen, objects in the
+// side strips were missing and popped in at the 4:3 edges. Widen it to the
+// picture's width (the projection, made elsewhere, is unchanged).
+PPC_FUNC(fn_80138184) {
+  if (const gekko::u32 side = gx::Frontend::g_widescreen_side.load(std::memory_order_relaxed)) {
+    const float aspect = static_cast<float>(ctx.fpr[2].d0());
+    ctx.fpr[2].set0(aspect * (static_cast<float>(640 + 2 * side) / 640.0f));
+  }
+  __imp__fn_80138184(ctx, base);
 }
 
 }  // namespace guest
