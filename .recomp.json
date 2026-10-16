@@ -1,0 +1,20 @@
+{
+  "$schema": "https://recomp.fyi/schema/v1.json",
+  "game": "Mario Kart Arcade GP 2",
+  "wikidata": "Q9029138",
+  "system": "Arcade",
+  "type": "recomp",
+  "original": { "region": "World", "serial": "GGPE02" },
+  "project": "OpenGP",
+  "status": "released",
+  "targets": ["Windows", "Linux", "macOS"],
+  "toolchain": ["gekkorecomp", "decomp-toolkit"],
+  "approach": "Static recompilation of the Gekko (PowerPC) code to C++, with a runtime standing in for the Triforce hardware and an SDL3 GPU renderer",
+  "maintainers": [{ "name": "OpenGP-dev", "link": "https://github.com/OpenGP-dev" }],
+  "help": [
+    "Playtesting on Linux and macOS",
+    "Linked cabinets over a real local network",
+    "Steering wheels and force feedback"
+  ],
+  "notes": "Also runs the first game, Mario Kart Arcade GP (2005), on the same runtime. Races at 60 fps in 4:3 or widescreen at up to 8x resolution, with keyboard, gamepad or wheel, Mario Cards, a webcam as the cabinet camera, up to four linked cabinets for Versus races, pause when playing solo, and Discord Rich Presence. The installer builds the games on the player's own computer."
+}
