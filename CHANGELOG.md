@@ -35,8 +35,29 @@
 - OpenGP talks to the Discord app through its local connection, without Discord's SDK, and sends
   nothing anywhere else. `OPENGP_LOG_DISCORD=1` prints what it shows.
 
+### Smoother
+
+From a profile of a whole playthrough of GP 2:
+
+- The busiest courses (Arena and Waluigi Stadium, the Mario courses, the flyovers before a race)
+  drop far fewer frames. OpenGP transforms the game's vertices on the CPU, over 80,000 a frame
+  there; each now takes about 40% less time, with exactly the same results.
+- Shorter pauses when loading between scenes and at the start of a course: the game's file name
+  lookup, memory copies and fills are done natively.
+- The game image is held in memory, as on a cabinet: no more stutters, or the odd freeze of a
+  second, while the game streams its music from the disc during a race.
+- No more 4-40 ms renderer stalls in races where the game reads the picture back (Arena and
+  Waluigi Stadium, the Mario courses), and shorter stalls when many textures load at once.
+- Fixed a memory leak: every race kept a 64 MB texture at 8x (one of the game's shadow maps).
+- The per-draw timers cost about half a millisecond a frame in busy races, even when nothing
+  was measuring; they are now nearly free.
+
 ### Fixes
 
+- The rainbows of GP 2's Rainbow Coaster and Rainbow Downhill no longer nearly vanish at high
+  internal resolutions: they fade in with distance as they should.
+- Widescreen: GP 2 no longer leaves out objects in the side strips (scenery, item boxes, a blimp)
+  that then popped in at the edges of the 4:3 picture.
 - Widescreen: the rain in GP 2's DK Cup (rounds 3 and 4) covers the whole screen instead of
   stopping at the edges of the 4:3 picture, and so does the fade at the end of the attract mode's
   demo race.
