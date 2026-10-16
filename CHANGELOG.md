@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-10-16)
+
+This release links cabinets for Versus races, on one computer or a local network, and shows what
+you are playing on Discord. It comes with installer packages for Windows, Linux and macOS.
 
 ### Linked cabinets (milestone 12)
 
@@ -48,7 +51,7 @@
   `user/hang-report.txt`: each of the game's threads with its call stack. See
   [docs/playing.md](docs/playing.md#if-the-game-freezes).
 
-## 0.3.0 (2026-10-01)
+## 0.3.0 (2026-10-12)
 
 This release adds the cabinet's camera, from a webcam, and a pause. It is source only, with no
 installer packages: build it as [docs/building.md](docs/building.md) explains. It has been
@@ -92,7 +95,7 @@ built and tested on Windows; the Linux and macOS builds have not been tested sin
 
 Still missing before 1.0 are linked cabinets (milestone 12).
 
-## 0.2.0 (2026-09-26)
+## 0.2.0 (2026-10-06)
 
 This release adds installer packages for Windows, Linux and macOS. You download a package and put
 your disc images in it, and its installer builds the games on your computer. The packages contain
@@ -130,7 +133,7 @@ Still missing are the NamCam2 camera, linked cabinets, which are next in milesto
 macOS packages. Until the packages are signed, open a macOS package once with right-click and
 Open, as [docs/packaging.md](docs/packaging.md) describes.
 
-## 0.1.0 (2026-09-26)
+## 0.1.0 (2026-10-04)
 
 The first release: both Mario Kart Arcade GP games are playable from start to finish.
 
