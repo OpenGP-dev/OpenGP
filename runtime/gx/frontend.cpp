@@ -815,6 +815,7 @@ TextureBinding Frontend::bind_texture(u32 map, s32* size) {
   if (auto it = textures_.find(key); it != textures_.end()) {
     it->second.last_used = frames_;
     binding.texture = it->second.handle;
+    binding.native_lod = it->second.native_lod;
     return binding;
   }
 
@@ -835,7 +836,9 @@ TextureBinding Frontend::bind_texture(u32 map, s32* size) {
     h = std::max(1u, h / 2);
   }
   f.uploads.push_back(up);
-  textures_.emplace(key, CachedTexture{up.handle, frames_});
+  binding.native_lod =
+      levels > 1 && fades_with_distance(reinterpret_cast<const u32*>(f.texels.data() + up.offset), width, height, levels);
+  textures_.emplace(key, CachedTexture{up.handle, frames_, binding.native_lod});
   if (dumping_)
     std::fprintf(stderr, "[gx]  texture %u: %08X format %u %ux%u, %u levels%s\n", up.handle, address,
                  static_cast<u32>(format), width, height, levels, from_tmem ? " (TMEM)" : "");

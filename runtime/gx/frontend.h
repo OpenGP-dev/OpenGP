@@ -165,6 +165,7 @@ class Frontend {
   struct CachedTexture {
     u32 handle;
     u64 last_used;
+    bool native_lod;  // see TextureBinding::native_lod
   };
   std::unordered_map<u64, CachedTexture> textures_;
   // EFB copies, by destination address.

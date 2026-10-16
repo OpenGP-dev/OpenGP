@@ -2,6 +2,7 @@
 
 #include "gx/texture.h"
 
+#include <algorithm>
 #include <cstring>
 
 namespace gx {
@@ -235,6 +236,25 @@ TexFormat copy_texture_format(CopyFormat format) {
     case CopyFormat::XFB: return TexFormat::RGBA8;
     default: return TexFormat::I8;  // R8, A8, G8, B8
   }
+}
+
+bool fades_with_distance(const u32* texels, u32 width, u32 height, u32 levels) {
+  // Level 0 nearly all transparent (99%), a smaller level visible (1%).
+  auto transparent = [](const u32* level, std::size_t n) {
+    std::size_t clear = 0;
+    for (std::size_t i = 0; i < n; ++i) clear += (level[i] >> 24) == 0;
+    return clear;
+  };
+  const std::size_t n0 = std::size_t{width} * height;
+  if (transparent(texels, n0) * 100 < n0 * 99) return false;
+  const u32* level = texels + n0;
+  for (u32 l = 1, w = std::max(1u, width / 2), h = std::max(1u, height / 2); l < levels; ++l) {
+    const std::size_t n = std::size_t{w} * h;
+    if ((n - transparent(level, n)) * 100 >= n) return true;
+    level += n;
+    w = std::max(1u, w / 2), h = std::max(1u, h / 2);
+  }
+  return false;
 }
 
 }  // namespace gx

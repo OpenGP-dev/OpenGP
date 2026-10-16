@@ -131,7 +131,7 @@ class Renderer {
 
   SDL_GPUGraphicsPipeline* tev_pipeline(gx::PipelineKey key);
   SDL_GPUGraphicsPipeline* clear_pipeline(bool color, bool alpha, bool depth);
-  SDL_GPUSampler* sampler(u32 mode0, u32 mode1);
+  SDL_GPUSampler* sampler(u32 mode0, u32 mode1, bool native_lod);
   SDL_GPUShader* shader(const ShaderCode& code, bool fragment, u32 samplers, u32 uniforms);
   bool resize_efb(u32 width);
   bool upload(SDL_GPUCommandBuffer* cmd, const gx::Frame& frame);

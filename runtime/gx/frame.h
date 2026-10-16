@@ -74,6 +74,10 @@ struct TextureBinding {
   u32 texture = 0;  // texture handle; 0 = nothing bound
   u32 mode0 = 0;    // TX_SETMODE0: wrap, filter, LOD bias
   u32 mode1 = 0;    // TX_SETMODE1: LOD range
+  // The mip levels aren't downscaled copies of each other but an effect (GP
+  // 2's rainbows fade in with distance this way): choose them as at the
+  // game's resolution, not the internal one.
+  bool native_lod = false;
   bool operator==(const TextureBinding&) const = default;
 };
 

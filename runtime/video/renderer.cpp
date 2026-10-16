@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -393,8 +394,11 @@ SDL_GPUGraphicsPipeline* Renderer::clear_pipeline(bool color, bool alpha, bool d
   return pipeline;
 }
 
-SDL_GPUSampler* Renderer::sampler(u32 mode0, u32 mode1) {
-  const u64 key = (u64{mode0 & 0x1FFFFF} << 16) | (mode1 & 0xFFFF);
+SDL_GPUSampler* Renderer::sampler(u32 mode0, u32 mode1, bool native_lod) {
+  // Mip levels chosen as at the game's resolution: the internal resolution's
+  // finer pixels would choose them log2(scale) levels lower.
+  const u32 lod_scale = native_lod && field(mode0, 5, 2) != 0 ? scale_ : 1;
+  const u64 key = (u64{mode0 & 0x1FFFFF} << 16) | (mode1 & 0xFFFF) | (u64{lod_scale} << 40);
   if (auto it = samplers_.find(key); it != samplers_.end()) return it->second;
   auto wrap = [](u32 w) {
     return w == 0 ? SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE
@@ -408,7 +412,7 @@ SDL_GPUSampler* Renderer::sampler(u32 mode0, u32 mode1) {
   s.mag_filter = field(mode0, 4, 1) ? SDL_GPU_FILTER_LINEAR : SDL_GPU_FILTER_NEAREST;
   s.min_filter = field(mode0, 7, 1) ? SDL_GPU_FILTER_LINEAR : SDL_GPU_FILTER_NEAREST;
   s.mipmap_mode = mip == 2 ? SDL_GPU_SAMPLERMIPMAPMODE_LINEAR : SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
-  s.mip_lod_bias = static_cast<float>(static_cast<s8>(field(mode0, 9, 8))) / 32.0f;
+  s.mip_lod_bias = static_cast<float>(static_cast<s8>(field(mode0, 9, 8))) / 32.0f + std::log2(static_cast<float>(lod_scale));
   if (mip == 0) {
     s.min_lod = s.max_lod = 0.0f;
   } else {
@@ -560,7 +564,7 @@ void Renderer::draw(const gx::Frame& f, const gx::DrawCmd& d) {
     const gx::TextureBinding& t = s.textures[i];
     auto it = t.texture ? textures_.find(t.texture) : textures_.end();
     bindings[i].texture = it != textures_.end() ? it->second.texture : white_;
-    bindings[i].sampler = sampler(t.mode0, t.mode1);
+    bindings[i].sampler = sampler(t.mode0, t.mode1, t.native_lod);
   }
   SDL_BindGPUFragmentSamplers(pass_, 0, bindings, 8);
   if (s.uniforms != pushed_uniforms_) {
