@@ -188,6 +188,9 @@ void Gpu::cp_reg_write(u32 offset, u16 v) {
 }
 
 void Gpu::on_gather_burst() {
+  // Before taking the hardware's lock: while the game waits for the
+  // renderer, the machine's timers and other devices go on.
+  frontend_.wait_for_output();
   std::lock_guard lock(hw_.mutex());
   if (cp_ctrl_ & CTRL_GP_LINK) {
     // Linked: the CPU is writing into the FIFO the GPU reads.

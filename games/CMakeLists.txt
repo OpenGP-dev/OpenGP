@@ -6,6 +6,7 @@
 #   recomp.toml        the recompiler's settings, patches and hooks
 #   config/symbols.txt the decomp-toolkit symbol list
 #   patches.cpp        hand-written replacements for recompiled functions
+#   status.cpp         what the player is doing, for Discord (common/status.h)
 # The launcher's main() and the code the games share are in common/. The
 # installer (tools/installer) builds a game from the same files.
 
@@ -58,6 +59,7 @@ endfunction()
 set(OPENGP_GAMES_COMMON
   ${CMAKE_CURRENT_SOURCE_DIR}/common/main.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/common/arcade.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/common/cabinet.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/common/camera_use.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/common/game_log.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/common/sdk_hle.cpp)
@@ -92,7 +94,7 @@ function(opengp_game dir)
   target_link_libraries(${dir}_recomp PUBLIC ppc_runtime)
   opengp_generated_code_options(${dir}_recomp)
 
-  add_executable(${executable} ${src}/patches.cpp ${OPENGP_GAMES_COMMON})
+  add_executable(${executable} ${src}/patches.cpp ${src}/status.cpp ${OPENGP_GAMES_COMMON})
   target_link_libraries(${executable} PRIVATE ${dir}_recomp opengp_app opengp_warnings)
   target_include_directories(${executable} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/common)
   target_compile_definitions(${executable} PRIVATE

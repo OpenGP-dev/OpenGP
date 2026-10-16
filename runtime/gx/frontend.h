@@ -49,6 +49,10 @@ class Frontend {
   // Where finished frames go. Without an output, only register state is
   // tracked (no vertex or texture work is done).
   void set_output(FrameOutput* output) { output_ = output; }
+  // Waits while the output is too far behind (see FrameOutput::wait_for_room).
+  void wait_for_output() {
+    if (output_) output_->wait_for_room();
+  }
 
   // Widescreen: widens the EFB by `side` pixels on the left and right, from
   // the next frame on (0: the game's 4:3). Thread-safe.
@@ -102,6 +106,7 @@ class Frontend {
   u32 efb_width() const { return kEfbWidth + 2 * side_; }
   bool widen_2d(u32 first_vertex);
   void extend_edges(u32 first_vertex);
+  void widen_overlay(u32 first_vertex, const DrawState& state);
   PixelFormat pixel_format() const { return static_cast<PixelFormat>(bits(bp_[BP_ZCOMPARE], 0, 3)); }
 
   TextureBinding bind_texture(u32 map, s32* size);

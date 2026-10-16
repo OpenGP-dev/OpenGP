@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(OpenGP VERSION 0.3.0 LANGUAGES C CXX)
+project(OpenGP VERSION 0.4.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -11,6 +11,7 @@ option(OPENGP_BUILD_GAMES "Build the games whose executables are present in orig
 option(OPENGP_GENERATED_DEBUG_INFO "Emit debug info for recompiled game code (slow, large)" OFF)
 option(OPENGP_TRACE_CALLS "Track guest call stacks in recompiled code (for debugging)" OFF)
 option(OPENGP_BUILD_VIDEO "Build the renderer (fetches SDL3 and glslang if not installed)" ON)
+option(OPENGP_BUILD_INPUT "Build the controller and webcam libraries without the renderer (for the launcher, which builds OpenGP's libraries as part of itself)" OFF)
 option(OPENGP_PACKAGE "Build the installer package: the runtime as libraries plus the installer, which builds the games on the player's machine (see docs/packaging.md)" OFF)
 
 if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")

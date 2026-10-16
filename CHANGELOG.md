@@ -1,6 +1,57 @@
 # Changelog
 
-## 0.3.0 (2026-10-01)
+## 0.4.0 (2026-10-16)
+
+This release links cabinets for Versus races, on one computer or a local network, and shows what
+you are playing on Discord. It comes with installer packages for Windows, Linux and macOS.
+
+### Linked cabinets (milestone 12)
+
+- Up to four cabinets link for Versus races, as in an arcade: copies of OpenGP on one computer,
+  or on computers on a local network. Give each its own **Cabinet number** in the menu's Game tab
+  (`[link] cabinet`, or `--cabinet N`); on a local network, also turn on **Link over the local
+  network** (`[link] lan`, or `--lan`). Start a game on one cabinet, and players on the others
+  join it. Both games link, each with its own kind. See
+  [docs/playing.md](docs/playing.md#linked-cabinets).
+- The cabinets find each other by themselves, and connect only to cabinets playing the same game.
+  A cabinet looks for the others as it starts: while others are running, it waits on its LINK
+  screen until it has linked with them (up to 15 seconds). The Game tab shows who this cabinet is
+  linked with.
+- If a cabinet stops in the middle of a game, the others stop with "Link error occurred", as arcade
+  cabinets do: OpenGP restarts them after a few seconds.
+
+### Controls
+
+- **Use the controls in the background too** (Controls tab) lets every OpenGP window read the
+  controls, active or not, to drive several copies on one computer at once: gamepads everywhere,
+  the keyboard on Windows.
+
+### Discord Rich Presence (milestone 15)
+
+- While Discord runs on the same computer, your profile shows what you are playing, as "Playing
+  OpenGP": the game, and whether you are choosing a character or a course (or having your photo
+  taken); in a race, the cup, round and course, your character, your place and the lap, with the
+  race's time; then the place you finished, with the cup's trophy for a win. Both games, with their
+  own names for everything and pictures of the characters and courses. It is on by default; turn it
+  off in the menu's Game tab (**Show what you're playing**) or with `[discord] rich_presence` in
+  `user/settings.toml`. See [docs/playing.md](docs/playing.md#discord).
+- OpenGP talks to the Discord app through its local connection, without Discord's SDK, and sends
+  nothing anywhere else. `OPENGP_LOG_DISCORD=1` prints what it shows.
+
+### Fixes
+
+- Widescreen: the rain in GP 2's DK Cup (rounds 3 and 4) covers the whole screen instead of
+  stopping at the edges of the 4:3 picture, and so does the fade at the end of the attract mode's
+  demo race.
+- GP 2 no longer freezes on the loading screen before a race with Bowser's **Flaming Tender**
+  item. Its file is the last one in the disc image, and loading it reads a few bytes past the
+  image's end, which OpenGP refused; the game then waited forever. Those bytes now read as zeros,
+  as on a cabinet, where the image sits in a larger memory. Any read that still fails is printed.
+- If the game's picture stops for 10 seconds while it is not paused, OpenGP writes a hang report,
+  `user/hang-report.txt`: each of the game's threads with its call stack. See
+  [docs/playing.md](docs/playing.md#if-the-game-freezes).
+
+## 0.3.0 (2026-10-12)
 
 This release adds the cabinet's camera, from a webcam, and a pause. It is source only, with no
 installer packages: build it as [docs/building.md](docs/building.md) explains. It has been
@@ -44,7 +95,7 @@ built and tested on Windows; the Linux and macOS builds have not been tested sin
 
 Still missing before 1.0 are linked cabinets (milestone 12).
 
-## 0.2.0 (2026-09-26)
+## 0.2.0 (2026-10-06)
 
 This release adds installer packages for Windows, Linux and macOS. You download a package and put
 your disc images in it, and its installer builds the games on your computer. The packages contain
@@ -82,7 +133,7 @@ Still missing are the NamCam2 camera, linked cabinets, which are next in milesto
 macOS packages. Until the packages are signed, open a macOS package once with right-click and
 Open, as [docs/packaging.md](docs/packaging.md) describes.
 
-## 0.1.0 (2026-09-26)
+## 0.1.0 (2026-10-04)
 
 The first release: both Mario Kart Arcade GP games are playable from start to finish.
 

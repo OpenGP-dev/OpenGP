@@ -46,12 +46,14 @@ struct Image {
   std::vector<u8> rgba;
 };
 
-// Hands frames from the guest thread to the render thread. submit() blocks
-// while the renderer is `max_pending` frames behind, which paces the game.
+// Hands frames from the guest thread to the render thread. wait_for_room()
+// blocks while the renderer is `max_pending` frames behind, which paces the
+// game.
 class FrameQueue final : public gx::FrameOutput {
  public:
   explicit FrameQueue(std::size_t max_pending = 2) : max_pending_(max_pending) {}
   void submit(std::unique_ptr<gx::Frame> frame) override;
+  void wait_for_room() override;
   std::unique_ptr<gx::Frame> recycle() override;
   // Waits up to `timeout_ms` for a frame; returns nullptr if none came.
   std::unique_ptr<gx::Frame> pop(int timeout_ms);

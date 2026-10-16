@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -17,7 +18,9 @@
 #include <thread>
 #include <vector>
 
+#include "app/hang_watch.h"
 #include "app/paths.h"
+#include "app/rich_presence.h"
 #include "app/settings.h"
 #include "audio/wav.h"
 #include "camera/namcam.h"
@@ -26,6 +29,7 @@
 #include "hw/vi.h"
 #include "input/script.h"
 #include "machine.h"
+#include "os/activity.h"
 #include "os/atomic_file.h"
 #include "os/crash.h"
 #include "os/printf.h"
@@ -59,7 +63,7 @@ constexpr const char* kUsage =
     "          [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]\n"
     "          [--input SCRIPT] [--input-file PATH] [--free-play] [--test-menu]\n"
     "          [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--game-log]\n"
-    "          [--camera off|webcam|test] [--version]\n";
+    "          [--camera off|webcam|test] [--cabinet 1-4] [--lan] [--version]\n";
 
 struct Options {
   std::vector<std::string> args;  // as given, for restarts (without --reboot and --frame-offset)
@@ -81,6 +85,8 @@ struct Options {
   std::optional<u32> scale;
   std::optional<int> volume;
   std::optional<CameraSource> camera;
+  std::optional<int> cabinet;
+  std::optional<bool> lan;
 };
 
 // Returns 0 to go on, or an exit code.
@@ -119,6 +125,15 @@ int parse_options(int argc, char** argv, Options& o) {
     else if (a == "--no-audio") o.use_audio = false;
     else if (a == "--game-log") o.game_log = true;
     else if (a == "--volume" && has_value) o.volume = std::clamp(std::atoi(argv[++i]), 0, 100);
+    else if (a == "--lan") o.lan = true;
+    else if (a == "--cabinet" && has_value) {
+      const int n = std::atoi(argv[++i]);
+      if (n < 1 || n > 4) {
+        std::fprintf(stderr, "cabinet %s: give a number from 1 to 4\n", argv[i]);
+        return 2;
+      }
+      o.cabinet = n;
+    }
     else if (a == "--aspect" && has_value) {
       AspectRatio aspect;
       if (!parse_aspect(argv[++i], &aspect)) {
@@ -162,6 +177,8 @@ void apply_options(const Options& o, Settings& s) {
   if (o.scale) s.internal_resolution = *o.scale;
   if (o.volume) s.volume = *o.volume;
   if (o.camera) s.camera = *o.camera;
+  if (o.cabinet) s.cabinet = *o.cabinet;
+  if (o.lan) s.lan = *o.lan;
 }
 
 // What to save: the settings file's values, except those changed (in the
@@ -184,8 +201,19 @@ Settings settings_to_save(const Settings& file, const Settings& start, const Set
   OPENGP_KEEP_CHANGE(card);
   OPENGP_KEEP_CHANGE(camera);
   OPENGP_KEEP_CHANGE(webcam);
+  OPENGP_KEEP_CHANGE(rich_presence);
+  OPENGP_KEEP_CHANGE(cabinet);
+  OPENGP_KEEP_CHANGE(lan);
+  OPENGP_KEEP_CHANGE(link_port);
 #undef OPENGP_KEEP_CHANGE
   return s;
+}
+
+// The machine's network, so that the other cabinets hear when this one stops:
+// the process ends with std::_Exit, without destructors.
+triforce::Network* g_network = nullptr;
+void stop_link() {
+  if (g_network) g_network->stop_link();
 }
 
 // The reboot the game asked for (set on the guest thread; the main thread
@@ -203,6 +231,7 @@ std::atomic<bool> g_reboot_requested{false};
     std::fprintf(stderr, "[opengp] cannot write %s\n", path.string().c_str());
     std::_Exit(1);
   }
+  stop_link();
   std::vector<std::string> args = o.args;
   args.push_back("--reboot");
   args.push_back(path.string());
@@ -428,6 +457,16 @@ int run(const Game& game, int argc, char** argv) {
   static std::shared_ptr<camera::Source> camera_source = start_camera(settings, &camera_info);
   if (camera_source) camera::attach(machine.network(), camera_source);
   if (game.set_camera) game.set_camera(camera_source != nullptr);
+  machine.network().enable_link({game.id, static_cast<u16>(settings.link_port), settings.lan});
+  if (game.set_cabinet) {
+    game.set_cabinet(settings.cabinet, [] {
+      const triforce::LinkStatus link = machine.network().link_status();
+      for (int n = 1; n <= 4; ++n)
+        if (link.found[n] && !link.linked[n]) return true;
+      return false;
+    });
+  }
+  g_network = &machine.network();
   machine.gpu().frontend().set_widescreen(widescreen_side(settings.aspect, 0, 0));
 
   static audio::WavWriter wav;
@@ -490,6 +529,7 @@ int run(const Game& game, int argc, char** argv) {
   ppc::g_hooks.fatal = [](const char* message) { std::fprintf(stderr, "[opengp] fatal: %s\n", message); };
   static const auto status_on_crash = print_status;
   os::install_crash_handler(machine.base(), [] { status_on_crash("crash"); });
+  app::start_hang_watch(machine, names, user_dir / "hang-report.txt");
   os::start_profiler_from_env();
 
   std::thread([timeout_s = o.timeout_s, status_s = o.status_s, print_status] {
@@ -501,6 +541,7 @@ int run(const Game& game, int argc, char** argv) {
       std::this_thread::sleep_until(wake);
       if (clock::now() >= deadline) {
         print_status("timeout");
+        stop_link();
         std::fflush(stdout);
         std::_Exit(0);
       }
@@ -586,6 +627,7 @@ int run(const Game& game, int argc, char** argv) {
     auto quit = [&save, &print_status](const char* why) {
       save();
       print_status(why);
+      stop_link();
       std::fflush(stdout);
       std::_Exit(0);
     };
@@ -614,6 +656,13 @@ int run(const Game& game, int argc, char** argv) {
     bool cursor_hidden = false;
     auto last_present = std::chrono::steady_clock::now();
     bool pause_pressed = false;  // paused with the pause control
+    // Discord Rich Presence: when playing in a window (not in headless runs,
+    // unless OPENGP_LOG_DISCORD=1 asks for what it would show).
+    const bool log_discord = std::getenv("OPENGP_LOG_DISCORD") != nullptr;
+    std::unique_ptr<RichPresence> rich_presence;
+    auto next_status = std::chrono::steady_clock::now();
+    auto next_link_check = next_status;
+    std::optional<std::chrono::steady_clock::time_point> link_lost;  // when the game stopped with a link error
     MenuModel model;
     model.title = game.title;
     model.settings = &settings;
@@ -634,6 +683,7 @@ int run(const Game& game, int argc, char** argv) {
         std::lock_guard lock(g_reboot_mutex);
         restart(o, user_dir, argv[0], next_boot(*g_pending_reboot), machine.frame_offset() + machine.gpu().frames());
       }
+      os::g_main_activity.set("handling the window's events");
       SDL_Event e;
       while (SDL_PollEvent(&e)) {
         switch (e.type) {
@@ -679,6 +729,7 @@ int run(const Game& game, int argc, char** argv) {
       }
       if (linked) pause_pressed = false;
       model.linked = linked;
+      model.link = machine.network().link_status();
       const SDL_WindowFlags window_flags = window ? SDL_GetWindowFlags(window) : 0;
       const bool background = window && ((window_flags & SDL_WINDOW_MINIMIZED) || !(window_flags & SDL_WINDOW_INPUT_FOCUS));
       const bool paused = !linked && (pause_pressed || (menu.is_open() && settings.pause_in_menu) ||
@@ -696,6 +747,34 @@ int run(const Game& game, int argc, char** argv) {
       }
       settings.card = applied.card = machine.cards().held();  // the game may have given the player a new card
       apply_settings();
+      if (!settings.rich_presence || !game.status || !(window || log_discord)) {
+        rich_presence.reset();
+      } else if (const auto now = std::chrono::steady_clock::now(); now >= next_status) {
+        next_status = now + std::chrono::seconds(1);
+        if (!rich_presence) rich_presence = std::make_unique<RichPresence>(game.title, log_discord);
+        GameStatus status;
+        game.status(machine.base(), &status);
+        rich_presence->update(status);
+      }
+      model.discord = rich_presence && rich_presence->connected();
+      // A linked game that loses its link (another cabinet stopped) stops
+      // with a link error until the cabinet is restarted, as an attendant
+      // would: OpenGP restarts it.
+      if (const auto now = std::chrono::steady_clock::now(); linked && game.link_error && now >= next_link_check) {
+        next_link_check = now + std::chrono::milliseconds(500);
+        if (!game.link_error(machine.base())) {
+          link_lost.reset();
+        } else if (!link_lost) {
+          link_lost = now;
+          menu.notify("The link to the other cabinets was lost: restarting");
+          std::fprintf(stderr, "[opengp] the link to the other cabinets was lost: restarting\n");
+        } else if (now - *link_lost >= std::chrono::seconds(4)) {
+          save();
+          os::Reboot fresh;
+          fresh.restart = false;
+          restart(o, user_dir, argv[0], fresh, machine.frame_offset() + machine.gpu().frames());
+        }
+      }
       if (window) {
         const bool hide = settings.fullscreen && !menu.is_open();
         if (hide != cursor_hidden) {
@@ -706,6 +785,7 @@ int run(const Game& game, int argc, char** argv) {
       }
 
       const auto wait_start = std::chrono::steady_clock::now();
+      os::g_main_activity.set("waiting for the game's next frame");
       auto frame = queue.pop(8);
       g_wait_ns.fetch_add(elapsed_ns(wait_start));
       if (!frame) {
@@ -731,6 +811,7 @@ int run(const Game& game, int argc, char** argv) {
       }
       video::Image shot;
       const auto render_start = std::chrono::steady_clock::now();
+      os::g_main_activity.set("drawing a frame");
       renderer.render(*frame, shoot ? &shot : nullptr);
       g_render_ns.fetch_add(elapsed_ns(render_start));
       if (frame->xfb) {

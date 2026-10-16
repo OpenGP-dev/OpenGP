@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Disc images: SHA-1 (known answers from FIPS 180) and finding the executable.
+// Disc images: SHA-1 (known answers from FIPS 180), finding the executable,
+// and files by their path.
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -65,6 +68,53 @@ TEST_CASE("the executable is found from the disc header and its section table") 
     CHECK(dol.size() == 0x160);
     CHECK(std::vector<gekko::u8>(dol.begin(), dol.end()) ==
           std::vector<gekko::u8>(image.begin() + 0x2000, image.begin() + 0x2160));
+  }
+  std::filesystem::remove(path);
+}
+
+TEST_CASE("files are found by their path in the disc's file system") {
+  // Root: a.bin, dir/ (b.bin), c.bin. Entries at 0x1000, names after them.
+  std::vector<gekko::u8> image(0x3000, 0);
+  image[0] = 'G', image[1] = 'T', image[2] = 'S', image[3] = 'T', image[4] = '0', image[5] = '1';
+  put_be32(image, 0x1C, disc::GC_MAGIC);
+  const char names[] = "a.bin\0dir\0b.bin\0c.bin";
+  const gekko::u32 fst = 0x1000, count = 5, name_table = fst + count * 12;
+  put_be32(image, 0x424, fst);
+  put_be32(image, 0x428, count * 12 + sizeof(names));
+  auto entry = [&](gekko::u32 i, bool dir, gekko::u32 name, gekko::u32 a, gekko::u32 b) {
+    put_be32(image, fst + i * 12, (dir ? 0x01000000u : 0) | name);
+    put_be32(image, fst + i * 12 + 4, a);
+    put_be32(image, fst + i * 12 + 8, b);
+  };
+  entry(0, true, 0, 0, count);        // root: 5 entries
+  entry(1, false, 0, 0x2000, 3);      // a.bin
+  entry(2, true, 6, 0, 4);            // dir/, its entries end before 4
+  entry(3, false, 10, 0x2010, 2);     // dir/b.bin
+  entry(4, false, 16, 0x2020, 4);     // c.bin
+  std::copy(std::begin(names), std::end(names), image.begin() + name_table);
+  for (int i = 0; i < 0x30; ++i) image[0x2000 + i] = static_cast<gekko::u8>(0x80 + i);
+
+  const auto path = std::filesystem::temp_directory_path() / "opengp_test_fst.iso";
+  {
+    std::FILE* f = std::fopen(path.string().c_str(), "wb");
+    REQUIRE(f);
+    std::fwrite(image.data(), 1, image.size(), f);
+    std::fclose(f);
+  }
+  {
+    disc::Image img;
+    REQUIRE(img.open(path.string(), nullptr));
+    std::vector<gekko::u8> data;
+    REQUIRE(img.read_file("a.bin", &data));
+    CHECK(data == std::vector<gekko::u8>{0x80, 0x81, 0x82});
+    REQUIRE(img.read_file("dir/b.bin", &data));
+    CHECK(data == std::vector<gekko::u8>{0x90, 0x91});
+    REQUIRE(img.read_file("c.bin", &data));
+    CHECK(data == std::vector<gekko::u8>{0xA0, 0xA1, 0xA2, 0xA3});
+    CHECK_FALSE(img.read_file("b.bin", &data));      // only inside dir/
+    CHECK_FALSE(img.read_file("dir", &data));        // a directory
+    CHECK_FALSE(img.read_file("dir/c.bin", &data));  // c.bin is after dir/
+    CHECK_FALSE(img.read_file("missing", &data));
   }
   std::filesystem::remove(path);
 }

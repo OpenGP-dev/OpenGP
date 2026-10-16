@@ -13,6 +13,7 @@
 namespace camera_use {
 
 void set(bool on);
+bool on();
 
 // Call after start-up has read the settings, with the settings block's address.
 void on_settings_loaded(gekko::u8* base, gekko::u32 settings);

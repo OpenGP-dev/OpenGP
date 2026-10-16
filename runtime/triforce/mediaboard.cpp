@@ -327,9 +327,21 @@ bool MediaBoard::read(u32 offset, u32 address, u32 length) {
     return true;
   }
 
-  // The game image.
+  // The game image. The DIMM holds it in more memory than it needs, so a read
+  // that runs past its end gets zeros there instead of failing. The games
+  // read whole 32-byte blocks: GP 2's last file, Bowser's fire, ends 2 bytes
+  // before the image does, and loading it reads 20 bytes past the end. A
+  // failed read would hang the game: the DVD library on the Triforce never
+  // asks the drive what went wrong (its DVDLowRequestError does nothing).
   u8* dst = guest(address, length);
-  return dst && disc_.read(offset, dst, length);
+  if (!dst) return false;
+  const u32 n = offset < disc_.size() ? static_cast<u32>(std::min<u64>(length, disc_.size() - offset)) : 0;
+  std::memset(dst + n, 0, length - n);
+  if (n && !disc_.read(offset, dst, n)) {
+    mb_error("cannot read the game image at %08X (length %08X)", offset, n);
+    return false;
+  }
+  return true;
 }
 
 void MediaBoard::write(u32 offset, u32 address, u32 length) {

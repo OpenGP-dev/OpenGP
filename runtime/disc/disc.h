@@ -24,7 +24,7 @@ class Image {
   Image(const Image&) = delete;
   Image& operator=(const Image&) = delete;
 
-  // Opens an image and checks the GameCube magic word.
+  // Opens an image (`path` in UTF-8) and checks the GameCube magic word.
   bool open(const std::string& path, std::string* error);
   bool is_open() const { return file_ != nullptr; }
 
@@ -36,6 +36,11 @@ class Image {
   // The executable (sys/main.dol): its offset is in the disc header, and its
   // size follows from its section table.
   bool read_dol(std::vector<u8>* out) const;
+
+  // A file on the disc, by its path in the disc's file system ("mnTitle.tpl",
+  // "sub/name.dat"; case-sensitive). Returns false if there is no such file.
+  bool find_file(const std::string& path, u64* offset, u32* size) const;
+  bool read_file(const std::string& path, std::vector<u8>* out) const;
 
   // Treats the image as having this game ID: reads of the header's first six
   // bytes return it. For images whose header has a placeholder ID (some

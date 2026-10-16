@@ -17,6 +17,7 @@
 #include "app/settings.h"
 #include "input/host.h"
 #include "triforce/card_folder.h"
+#include "triforce/network.h"
 #include "video/renderer.h"
 
 struct SDL_Window;
@@ -34,6 +35,8 @@ struct MenuModel {
   std::function<std::vector<std::string>()> webcams;  // lists the webcams' names
   std::string camera_info;           // the camera this run uses
   bool linked = false;               // linked to another cabinet: no pausing
+  triforce::LinkStatus link;         // what the link to other cabinets sees
+  bool discord = false;              // Discord is connected (for Rich Presence)
   std::function<void()> quit;
   std::function<void()> test_menu;  // restarts into the game's test menu (if it has one)
 };
@@ -80,6 +83,7 @@ class Menu final : public video::Overlay {
 
   void apply_scale(float scale);
   void game_tab(MenuModel& m);
+  void link_section(MenuModel& m);
   void video_tab(MenuModel& m);
   void sound_tab(MenuModel& m);
   void controls_tab(MenuModel& m);

@@ -304,6 +304,9 @@ side (107 for 16:9), with the game's 640 pixels in the middle:
   menu backgrounds are drawn as (a run of draws of the same height, each starting where the last
   ended). Other 2D that reaches the game's screen edge (a banner running off the side) gets quads
   out to the wide edge that repeat its edge texels.
+- Some full-screen overlays are drawn in 3D: a flat quad facing the camera (all its vertices at the
+  same depth) that spans exactly the game's width, such as GP 2's rain. They are widened like 2D,
+  and a repeating texture carries on across the added sides, so the pattern keeps its size.
 - Scissors, clears and EFB copies that span the game's width span the wide EFB, so a full-screen
   copy (and the copy to the XFB, which is displayed) is as much wider. CPU reads of the EFB see
   the game's part.
@@ -336,7 +339,8 @@ phase shift for 3D sound).
 The games' executables only describe the game (`app::Game`: its ID, its recompiled module, how to
 turn free play on); `app::run` does the rest:
 - the command line and the player's settings (`settings.h`: `user/settings.toml`);
-- booting, the status line, crash reports;
+- booting, the status line, crash reports, and hang reports (`hang_watch.h`: when no frame comes for
+  10 seconds, each guest thread's call stack, from its stack's back chain);
 - the window (fullscreen, and the aspect ratio and internal resolution that follow its size), the
   controls, the sound;
 - the menu (`menu.h`): Dear ImGui, drawn by the renderer over the presented picture
@@ -378,12 +382,28 @@ The games reach the media board's network through board commands (socket, connec
 send, recv...). `triforce::Network` numbers the sockets 1-63 as the board does and backs each with
 a host socket, or with a `Service` that OpenGP plays itself: a connection to a service's address
 runs in-process, with no host network. Host sockets are non-blocking; the games poll them once a
-frame. For now only services are reachable: other connections are refused, and binds go to the
-loopback interface (linked cabinets will route the cabinets' addresses, M12).
+frame. Besides services, connections reach other cabinets (below) and routes added for tests;
+others are refused, and binds go to the loopback interface.
 
-`Network::linked()` says whether the game has linked to another cabinet since start-up: a routed
-connection made, or one accepted on a listening socket (services don't count). The launcher
-pauses only a game that has not: other cabinets need a linked one to keep running (M12).
+Linked cabinets (M12): `Network::enable_link` makes each OpenGP one cabinet, numbered 1-4 like
+the games' PCB ID (`app::Game::set_cabinet` sets the game's own setting, `games/common/cabinet.cpp`).
+Cabinet n is at 192.168.29.150 + n - 1 and listens on one of ports 5000-5008; on the host, its
+port 5000 + k is `[link] port` + 10 (n - 1) + k, so four run on one computer, and port + 10 (n - 1)
++ 9 takes UDP beacons. Twice a second each cabinet sends the others (on this computer, and with
+`lan` to every network's broadcast address and to each cabinet found there) its number, its game
+and the ports it listens on, and a last one when it stops. The beacons have a thread of their own
+and start as soon as the game has its number, because the game looks for the others for only a
+moment as it starts (below): they must be known by then. A game's connection to another cabinet goes to the host port only once that cabinet has said it
+listens there, so a connection never waits for a cabinet that is not there, and it starts with a
+16-byte hello naming the cabinet and the game: the cabinet accepting it hands it to its game only
+then, as a connection from the other cabinet's address. With `lan` off, everything stays on the
+loopback interface. `Network::link_status()` is what the menu shows.
+
+`Network::linked()` says whether the game has linked to another cabinet since start-up: a
+connection to one made, or one accepted (services don't count). The launcher pauses only a game
+that has not: other cabinets need a linked one to keep running (M12). A linked game that
+loses its link stops with a link error until the cabinet restarts (`app::Game::link_error`
+reads the flag); the launcher restarts it.
 
 The camera is such a service (`camera::NamCam`, at 192.168.29.104-107 port 80): it answers the
 game's `GET /img.jpg` with a 320x240 JPEG from its `camera::Source`, encoded by `camera/jpeg.cpp`
@@ -393,9 +413,24 @@ scaled. The launcher starts the source the settings ask for and tells the game w
 camera (`app::Game::set_camera`), which sets the game's own "camera use" setting at start-up
 (`games/common/camera_use.cpp`).
 
+### Discord Rich Presence (`runtime/discord/`, `games/*/status.cpp`)
+
+Each game reads what the player is doing from its globals (`game_status::read` in
+`games/<game>/status.cpp`) into an `app::GameStatus`: the scene (start-up, the attract mode, the
+menus, a race, the race over, the test menu) and, once chosen, the character, cup, course, place
+and lap. The scene is the game's own `g_currentSceneState`, which it sets at every scene change
+for linked cabinets to compare; the race globals have the same names and meanings in both games,
+and the names of their characters, cups and courses are the games' own (`games/common/status.h`).
+
+Once a second the launcher reads the status, and `app::RichPresence` (`app/rich_presence.h`) turns
+it into Discord's two lines and pictures. `discord::Presence` sends them from a thread of its own
+over Discord's local connection (`discord/ipc.h`: a named pipe or a Unix socket carrying framed
+JSON; no Discord SDK), connecting while Discord runs, reconnecting when it restarts, and staying
+within Discord's rate limit. The pictures are art assets in OpenGP's Discord application, uploaded
+there from the games' textures; nothing from the games is in the code.
+
 ## What comes next
 
 | Area | Plan |
 |------|------|
 | GPU | Remaining GX features as games need them (depth textures, z-freeze, destination alpha with blending, logic ops) |
-| Network | Routes for the cabinets' addresses on the socket API's host sockets, for linking cabinets (M12) |

@@ -130,6 +130,11 @@ bool load_settings(const std::string& path, Settings* settings, std::string* err
     return false;
   }
   s.webcam = camera["webcam"].value_or(s.webcam);
+  s.rich_presence = root["discord"]["rich_presence"].value_or(s.rich_presence);
+  const auto link = root["link"];
+  s.cabinet = std::clamp(link["cabinet"].value_or(s.cabinet), 0, 4);
+  s.lan = link["lan"].value_or(s.lan);
+  s.link_port = std::clamp(link["port"].value_or(s.link_port), 1024, 65535 - 40);
   *settings = std::move(s);
   return true;
 }
@@ -181,7 +186,28 @@ bool save_settings(const std::string& path, const Settings& s, std::string* erro
       << "\"\n"
          "# The webcam's name, or \"\" for the first one.\n"
          "webcam = "
-      << quoted(s.webcam) << "\n";
+      << quoted(s.webcam)
+      << "\n"
+         "\n"
+         "[discord]\n"
+         "# Show what you are playing (character, cup, course, place) on your Discord profile, while\n"
+         "# Discord runs on this computer.\n"
+         "rich_presence = "
+      << (s.rich_presence ? "true" : "false")
+      << "\n"
+         "\n"
+         "[link]\n"
+         "# Linked cabinets: give each OpenGP its own number, 1 to 4 (0 keeps the game's own setting).\n"
+         "cabinet = "
+      << s.cabinet
+      << "\n"
+         "# Also link with cabinets on other computers on the local network.\n"
+         "lan = "
+      << (s.lan ? "true" : "false")
+      << "\n"
+         "# The first of the 40 ports the link uses on this computer.\n"
+         "port = "
+      << s.link_port << "\n";
   const std::string text = out.str();
   if (!os::write_file_atomically(path, text.data(), text.size())) {
     if (error) *error = "cannot write " + path;

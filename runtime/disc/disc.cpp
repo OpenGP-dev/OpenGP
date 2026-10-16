@@ -2,7 +2,15 @@
 
 #include "disc/disc.h"
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
+
+#include <algorithm>
 #include <cstring>
+#include <string_view>
 
 #include "disc/sha1.h"
 
@@ -15,6 +23,19 @@ int seek64(std::FILE* f, u64 offset) {
   return _fseeki64(f, static_cast<long long>(offset), SEEK_SET);
 #else
   return fseeko(f, static_cast<off_t>(offset), SEEK_SET);
+#endif
+}
+
+std::FILE* open_utf8(const std::string& path) {
+#ifdef _WIN32
+  // fopen would read the name in the system's code page.
+  const int n = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, nullptr, 0);
+  if (n <= 0) return nullptr;
+  std::wstring wide(static_cast<std::size_t>(n), L'\0');
+  MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, wide.data(), n);
+  return _wfopen(wide.c_str(), L"rb");
+#else
+  return std::fopen(path.c_str(), "rb");
 #endif
 }
 
@@ -39,7 +60,7 @@ bool Image::open(const std::string& path, std::string* error) {
     file_ = nullptr;
     return false;
   };
-  file_ = std::fopen(path.c_str(), "rb");
+  file_ = open_utf8(path);
   if (!file_) return fail("cannot open");
   if (std::fseek(file_, 0, SEEK_END) != 0) return fail("cannot seek");
   size_ = tell64(file_);
@@ -91,6 +112,66 @@ bool Image::read_dol(std::vector<u8>* out) const {
   }
   out->resize(end);
   return read(dol, out->data(), end);
+}
+
+bool Image::find_file(const std::string& path, u64* offset, u32* size) const {
+  // The file system table (FST): its offset and size are in the disc header.
+  // 12-byte entries, the root directory first, then the names. An entry is a
+  // flags byte (1: directory), its name's offset (24 bits), then for a file
+  // its offset and size, and for a directory its parent and the index past
+  // its last entry.
+  const u64 fst = read_u32(0x424);
+  const u32 fst_size = read_u32(0x428);
+  if (fst == 0 || fst_size < 12 || fst + fst_size > size_) return false;
+  std::vector<u8> table(fst_size);
+  if (!read(fst, table.data(), fst_size)) return false;
+  auto be32 = [&](u32 at) {
+    return (u32{table[at]} << 24) | (u32{table[at + 1]} << 16) | (u32{table[at + 2]} << 8) | table[at + 3];
+  };
+  const u32 count = be32(8);
+  if (count == 0 || u64{count} * 12 > fst_size) return false;
+  const u32 names = count * 12;
+  auto name = [&](u32 entry) -> std::string_view {
+    const u32 at = names + (be32(entry * 12) & 0xFFFFFF);
+    if (at >= fst_size) return {};
+    const char* s = reinterpret_cast<const char*>(table.data() + at);
+    return std::string_view(s, strnlen(s, fst_size - at));
+  };
+
+  // Walk the path one name at a time, within the current directory's entries.
+  u32 first = 1, end = count;
+  std::string_view rest = path;
+  while (!rest.empty()) {
+    const std::size_t slash = rest.find('/');
+    const std::string_view part = rest.substr(0, slash);
+    rest = slash == std::string_view::npos ? std::string_view() : rest.substr(slash + 1);
+    bool found = false;
+    for (u32 i = first; i < end;) {
+      const bool dir = table[i * 12] == 1;
+      const u32 next = dir ? std::min(be32(i * 12 + 8), end) : i + 1;
+      if (name(i) == part) {
+        if (dir == rest.empty()) return false;  // a directory where a file was asked for, or the reverse
+        if (!dir) {
+          *offset = be32(i * 12 + 4);
+          *size = be32(i * 12 + 8);
+          return u64{*offset} + *size <= size_;
+        }
+        first = i + 1, end = next, found = true;
+        break;
+      }
+      i = next > i ? next : i + 1;
+    }
+    if (!found) return false;
+  }
+  return false;
+}
+
+bool Image::read_file(const std::string& path, std::vector<u8>* out) const {
+  u64 offset;
+  u32 size;
+  if (!find_file(path, &offset, &size)) return false;
+  out->resize(size);
+  return read(offset, out->data(), size);
 }
 
 std::string dol_sha1(const Image& img) {

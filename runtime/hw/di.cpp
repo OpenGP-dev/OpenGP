@@ -118,6 +118,9 @@ void DiDevice::execute() {
     length_ = 0;
     sr_ |= SR_TCINT;
   } else {
+    // Said out loud: on the Triforce, a failed command hangs the game.
+    std::fprintf(stderr, "[di] command %08X %08X %08X failed (address %08X, length %08X)\n", cmd_[0], cmd_[1],
+                 cmd_[2], mar_, length_);
     sr_ |= SR_DEINT;
   }
   update_interrupts();

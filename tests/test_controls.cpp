@@ -86,6 +86,8 @@ TEST_CASE("changed bindings survive saving") {
   CHECK(in.capture_event(e));
   CHECK_FALSE(in.capturing());
   in.set_force_feedback(0.5f);
+  CHECK_FALSE(in.background_input());
+  in.set_background_input(true);
 
   REQUIRE_MESSAGE(in.save(&error), error);
   HostInput again;
@@ -96,6 +98,7 @@ TEST_CASE("changed bindings survive saving") {
   CHECK(again.bindings(Kind::Joystick, control("gas")) == Names{"-axis2", "axis3+"});
   CHECK(again.bindings(Kind::Joystick, control("brake")) == Names{"hat0up"});
   CHECK(again.force_feedback() == doctest::Approx(0.5f));
+  CHECK(again.background_input());
 
   // The comments at the top are kept.
   std::ifstream f(path);

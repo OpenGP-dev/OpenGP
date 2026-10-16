@@ -46,6 +46,12 @@ first command word.
 | Read | DIMM game data, board status, and the execute and network buffers |
 | Write | Firmware, DIMM, network configuration |
 
+Reads from the game image may run past its end, and the bytes there read as zeros. The games
+read whole 32-byte blocks: GP 2's last file, `_koopa_fire2.dat` (Bowser's fire), ends 2 bytes
+before the image does, and loading it reads 20 bytes past the end. A read must not fail. The
+DVD library on the Triforce never asks the drive what went wrong, because its
+`DVDLowRequestError` only returns, so the game waits for that read forever.
+
 Status replies the game expects:
 - DIMM size: 512 MiB
 - Segaboot version
@@ -57,8 +63,9 @@ Network sockets (`Socket`, `Bind`, `Connect`, ...) are used by the camera and fo
 cabinets. `triforce/network.cpp` runs them (milestone 11, from Dolphin's media board): each game
 socket is a host socket, or a connection to a service OpenGP answers itself (the camera). Host
 sockets are non-blocking, since the games poll them once a frame (`select` with a zero timeout);
-only connecting waits, up to the game's timeout. Until linked cabinets (milestone 12), connections
-to other addresses are refused and binds go to the loopback interface. Details the games rely on:
+only connecting waits, up to the game's timeout. Connections to other cabinets go to the
+OpenGPs playing them (milestone 12, below); others are refused, and binds go to the loopback
+interface. Details the games rely on:
 - A reply's second word is the result, stored little endian, except `InetAddr`'s, which the game
   reads without swapping: the address in network byte order.
 - Addresses are VxWorks' `sockaddr_in` (length, family, port and address in network byte order,
@@ -84,7 +91,37 @@ addresses):
   branch `feature/ammb-async-connect` (not merged) makes connect, send, receive and accept
   non-blocking.
 - With sockets working, GP 2's link starts after the device check even on a lone cabinet: it
-  listens on port 5000 and tries each other cabinet's ports 5008 down to 5000 (refused for now).
+  listens on port 5000 and tries each other cabinet's ports 5008 down to 5000, over and over.
+
+### Linked cabinets (milestone 12)
+
+- The PCB ID is read in `GameBoot_Init` (`0x80075324`), which gives the cabinet its address
+  inline (`acModifyMyIPaddr` at `0x80075A98`, from the table of the cabinets' and cameras'
+  address strings at `0x803FD910`; GP `0x8036B790`) before it returns; `PcbIdToIpAndModify` does
+  the same from the test menu. OpenGP sets its cabinet number when the game calls
+  `acModifyMyIPaddr` (`games/common/cabinet.cpp`).
+- `TCPListen_Poll` (`0x800876B0`) listens on port 5000 + k, k counting up to 8 and round again
+  each time it listens anew, which is why the others try ports 5008 to 5000 in turn
+  (`TCPConn_Poll`, `0x80086BC0`). Both `acConnect` and `acAccept` are asynchronous: the game polls
+  `acPollResponse` once a frame, then reads the result.
+- A cabinet looks for the others only as it starts, during its LINK screen: `BootPCBCheck_Init`
+  (`0x800847E0`) sets a 3600-frame timer (`0x806D0E1C`) and `BootPCBCheck_Poll` (`0x800845DC`)
+  counts it down, ending it early once all four cabinets' slots have answered (GP: `0x801B0DB8`,
+  `0x801B0BD4`, timer `0x805B8958`). After that it only accepts the others' connections, and
+  connects back to a cabinet that connected to it. So a cabinet started later links to those
+  already running. OpenGP skips the wait (about a second and a half of looking, a port tried every
+  100 ms), unless the beacons have found other cabinets that the game is not linked with yet: then
+  it waits until it is, up to 15 seconds, trying again after a connection that failed on the way
+  (`games/common/cabinet.cpp`).
+- Each pair of linked cabinets has two connections, one made by each, and each carries data one
+  way. Messages are a 16-bit type, a 16-bit size (including the 4-byte header) and the data
+  (`TCPConn_PeekRxMessage`); a cabinet's first message is 120 bytes in GP 2 (GP: 96 and 80).
+- Starting a game on one cabinet ("Number of entry", "Waiting for other challenger") makes the
+  others show "Waiting for entry!"; players who join race in Versus mode, the cabinets moving
+  from scene to scene together (the class, the characters, the items, the race).
+- When a cabinet stops, the others stop their game with "Please call an attendant / Link error
+  occurred" (`DrawLinkErrorOverlay`, `0x80085A34`, drawn while `0x806D0DF1` is set; GP: the
+  same overlay at `0x801B1D90` with `0x805B8935`) until restarted.
 
 With `--game-log`, the games print their network library's messages, which name each media
 board result (`AC_MEDIACMD_ERR_CANNOT_OPEN`, ...) and describe it in Japanese.

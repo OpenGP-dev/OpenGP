@@ -11,6 +11,7 @@
 #include <limits>
 
 #include "gx/texture.h"
+#include "os/activity.h"
 
 namespace gx {
 
@@ -201,7 +202,9 @@ u32 Frontend::efb_read(u32 address, u32 alpha_mode) {
       auto r = request(true);
       end_frame(false);
       const ScopeTimer readback_timer(stats_.readback_ns);
+      os::g_guest_wait.set("waiting for a readback of the picture");
       r->wait();
+      os::g_guest_wait.set(nullptr);
       peeks.current = std::move(r);
     }
   } else {
@@ -801,8 +804,12 @@ void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertice
   const u32 first = static_cast<u32>(f.indices.size());
   assemble(primitive, base, count, vp);
   if (side_ && f.indices.size() > first) {
-    if (xf_.perspective()) run_.active = false;
-    else if (!widen_2d(base)) extend_edges(base);
+    if (xf_.perspective()) {
+      run_.active = false;
+      widen_overlay(base, f.states[state]);
+    } else if (!widen_2d(base)) {
+      extend_edges(base);
+    }
   }
   const u32 added = static_cast<u32>(f.indices.size()) - first;
 
@@ -938,6 +945,84 @@ void Frontend::extend_edges(u32 first_vertex) {
   };
   if (lo <= 0.5f && lo > -side) extend(lo, -1.0f);
   if (hi >= width - 0.5f && hi < width + side) extend(hi, 1.0f);
+}
+
+// Widescreen, for 3D (perspective) draws: a full-screen overlay drawn with
+// the 3D projection (a flat draw facing the camera, so every vertex has the
+// same w) that spans exactly the game's width, such as GP 2's rain and the
+// fade at the end of its attract mode's demo race, is widened to the wide EFB
+// as 2D is. (Large particles near the camera also face it, but don't end at
+// the game's screen edges.) If its textures repeat, its texture coordinates
+// carry on across the added sides, so the pattern keeps its size; otherwise
+// it is stretched.
+void Frontend::widen_overlay(u32 first_vertex, const DrawState& state) {
+  Frame& f = frame();
+  const u32 end = static_cast<u32>(f.vertices.size());
+  const float w = f.vertices[first_vertex].pos[3];
+  if (!(w > 0.0f)) return;
+  float lo = std::numeric_limits<float>::max(), hi = std::numeric_limits<float>::lowest();
+  for (u32 i = first_vertex; i < end; ++i) {
+    const float* p = f.vertices[i].pos;
+    if (std::abs(p[3] - w) > w * 1e-5f) return;
+    lo = std::min(lo, p[0] / w), hi = std::max(hi, p[0] / w);
+  }
+  // In game pixels.
+  const float half_width = static_cast<float>(efb_width()) * 0.5f, side = static_cast<float>(side_);
+  const float width = static_cast<float>(kEfbWidth);
+  const float left = (lo + 1.0f) * half_width - side, right = (hi + 1.0f) * half_width - side;
+  if (std::abs(left) > 1.0f || std::abs(right - width) > 1.0f) return;
+  const float scale = static_cast<float>(efb_width()) / width;
+
+  // Flat at one depth, the draw's texture coordinates are affine in its NDC
+  // x and y: each one's slope in x, from the three vertices that span the
+  // largest triangle, and checked against the others.
+  bool carry = true;
+  for (const TextureBinding& t : state.textures)
+    if (t.texture && (t.mode0 & 3) == 0) carry = false;  // clamped in s
+  const u32 texgens = xf_.num_texgens();
+  float slope[8][3] = {};
+  if (carry && texgens > 0) {
+    auto ndc = [&](u32 i, u32 axis) { return f.vertices[i].pos[axis] / w; };
+    u32 a = first_vertex, b = first_vertex, c = first_vertex;
+    float best = 0.0f;
+    for (u32 i = first_vertex; i < end; ++i) {
+      const float dx = ndc(i, 0) - ndc(a, 0), dy = ndc(i, 1) - ndc(a, 1), d = dx * dx + dy * dy;
+      if (d > best) best = d, b = i;
+    }
+    best = 0.0f;
+    const float bx = ndc(b, 0) - ndc(a, 0), by = ndc(b, 1) - ndc(a, 1);
+    for (u32 i = first_vertex; i < end; ++i) {
+      const float d = std::abs(bx * (ndc(i, 1) - ndc(a, 1)) - by * (ndc(i, 0) - ndc(a, 0)));
+      if (d > best) best = d, c = i;
+    }
+    const float cx = ndc(c, 0) - ndc(a, 0), cy = ndc(c, 1) - ndc(a, 1);
+    const float det = bx * cy - cx * by;
+    if (std::abs(det) < 1e-6f) {
+      carry = false;
+    } else {
+      for (u32 t = 0; t < texgens && carry; ++t) {
+        for (u32 k = 0; k < 3 && carry; ++k) {
+          const float a0 = f.vertices[a].tex[t][k];
+          const float vb = f.vertices[b].tex[t][k] - a0, vc = f.vertices[c].tex[t][k] - a0;
+          const float sx = (vb * cy - vc * by) / det, sy = (bx * vc - cx * vb) / det;
+          for (u32 i = first_vertex; i < end && carry; ++i) {
+            const float expected = a0 + sx * (ndc(i, 0) - ndc(a, 0)) + sy * (ndc(i, 1) - ndc(a, 1));
+            if (std::abs(f.vertices[i].tex[t][k] - expected) > 1e-3f * (1.0f + std::abs(expected))) carry = false;
+          }
+          slope[t][k] = sx;
+        }
+      }
+    }
+  }
+  for (u32 i = first_vertex; i < end; ++i) {
+    Vertex& v = f.vertices[i];
+    if (carry) {
+      const float dx = v.pos[0] / w * (scale - 1.0f);
+      for (u32 t = 0; t < texgens; ++t)
+        for (u32 k = 0; k < 3; ++k) v.tex[t][k] += slope[t][k] * dx;
+    }
+    v.pos[0] *= scale;
+  }
 }
 
 void Frontend::assemble(u8 primitive, u32 base, u16 count, const Viewport& vp) {

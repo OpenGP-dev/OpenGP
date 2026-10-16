@@ -236,6 +236,7 @@ bool install_game(const Package& package, const GameInfo& game, const std::strin
     if (error) *error = msg;
     return false;
   };
+  auto cancelled = [&] { return options.cancel && options.cancel->load(); };
   const fs::path work = package.home / "build" / game.id;
   std::error_code ec;
   fs::remove_all(work, ec);
@@ -258,6 +259,7 @@ bool install_game(const Package& package, const GameInfo& game, const std::strin
   if (!os::write_file_atomically(utf8(dol_path), dol.data(), dol.size())) return fail("cannot write " + utf8(dol_path));
 
   // 2. Recompile it.
+  if (cancelled()) return fail("cancelled");
   report.line("Recompiling " + game.title);
   recomp::Config config;
   if (!config.load(utf8(game.dir / "recomp.toml"), &err)) return fail(err);
@@ -271,12 +273,14 @@ bool install_game(const Package& package, const GameInfo& game, const std::strin
   if (!program.build(rdol, &symbols, config, &err)) return fail(err);
   if (!recomp::generate(program, config.output_directory, nullptr, &err)) return fail(err);
   fs::remove(dol_path, ec);
+  if (cancelled()) return fail("cancelled");
 
   // 3. Compile: the hand-written sources first (quick, so problems show at once),
   // then the generated ones.
   const fs::path common = package.sdk / "games" / "common";
-  std::vector<fs::path> sources = {common / "main.cpp",     common / "arcade.cpp",  common / "camera_use.cpp",
-                                   common / "game_log.cpp", common / "sdk_hle.cpp", game.dir / "patches.cpp"};
+  std::vector<fs::path> sources = {common / "main.cpp",     common / "arcade.cpp",     common / "cabinet.cpp",
+                                   common / "camera_use.cpp", common / "game_log.cpp", common / "sdk_hle.cpp",
+                                   game.dir / "patches.cpp",  game.dir / "status.cpp"};
   std::vector<fs::path> generated;
   for (const auto& entry : fs::directory_iterator(work / "generated"))
     if (entry.path().extension() == ".cpp") generated.push_back(entry.path());
@@ -313,8 +317,9 @@ bool install_game(const Package& package, const GameInfo& game, const std::strin
       compile_error = utf8(sources[i]) + ":\n" + r.output;
       return false;
     }
-    return true;
+    return !cancelled();
   });
+  if (cancelled()) return fail("cancelled");
   if (!compiled) return fail("compiling failed: " + compile_error);
 
   // 4. Link, to a temporary name first (the game may be running).

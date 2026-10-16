@@ -283,11 +283,19 @@ void Menu::game_tab(MenuModel& m) {
   ImGui::TextWrapped("The game takes your photo for your character. Now: %s.", m.camera_info.c_str());
   hint("Changes take effect when the game restarts.");
 
+  link_section(m);
+
   ImGui::SeparatorText("Pause");
   ImGui::Checkbox("Pause while this menu is open", &s.pause_in_menu);
   ImGui::Checkbox("Pause when the window is unfocused", &s.pause_in_background);
   if (m.linked) hint("When linked to another cabinet, Pausing is disabled.");
   else if (const std::string keys = pause_keys(m); !keys.empty()) hint("%s pauses and resumes the game.", keys.c_str());
+
+  ImGui::SeparatorText("Discord");
+  ImGui::Checkbox("Show what you're playing", &s.rich_presence);
+  if (s.rich_presence)
+    hint("%s", m.discord ? "On your Discord profile: the game, character, cup, course and place."
+                         : "Discord isn't running on this computer.");
 
   ImGui::SeparatorText("Arcade");
   ImGui::Checkbox("Free play", &s.free_play);
@@ -297,6 +305,42 @@ void Menu::game_tab(MenuModel& m) {
     ImGui::AlignTextToFramePadding();
     hint("Open the Operator's Menu (Will restart the game)");
   }
+}
+
+// Linked cabinets: this one's number, the local network, and who it sees.
+void Menu::link_section(MenuModel& m) {
+  Settings& s = *m.settings;
+  const triforce::LinkStatus& link = m.link;
+  ImGui::SeparatorText("Linked cabinets");
+  static constexpr const char* kNumbers[] = {"The game's setting", "1", "2", "3", "4"};
+  ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
+  if (ImGui::BeginCombo("Cabinet number", kNumbers[std::clamp(s.cabinet, 0, 4)])) {
+    for (int n = 0; n <= 4; ++n)
+      if (ImGui::Selectable(kNumbers[n], n == s.cabinet)) s.cabinet = n;
+    ImGui::EndCombo();
+  }
+  ImGui::Checkbox("Link over the local network", &s.lan);
+
+  std::string linked, found;
+  for (int n = 1; n <= 4; ++n) {
+    if (link.connected[n]) linked += (linked.empty() ? "" : ", ") + std::to_string(n);
+    else if (link.found[n]) found += (found.empty() ? "" : ", ") + std::to_string(n);
+  }
+  if (!link.on || link.cabinet == 0) {
+    ImGui::TextWrapped("Not linked yet.");
+  } else if (!link.error.empty()) {
+    ImGui::TextWrapped("%s", link.error.c_str());
+  } else if (link.clash) {
+    ImGui::TextWrapped("Another cabinet is also number %d: give each one its own number.", link.cabinet);
+  } else if (!linked.empty()) {
+    ImGui::TextWrapped("This is cabinet %d, linked with %s.", link.cabinet, linked.c_str());
+  } else if (!found.empty()) {
+    ImGui::TextWrapped("This is cabinet %d. Found %s, linking...", link.cabinet, found.c_str());
+  } else {
+    ImGui::TextWrapped("This is cabinet %d, looking for other cabinets %s.", link.cabinet,
+                       s.lan ? "on this computer and the local network" : "on this computer");
+  }
+  hint("Give each OpenGP its own number. Changes take effect when the game restarts.");
 }
 
 void Menu::video_tab(MenuModel& m) {
@@ -403,6 +447,11 @@ void Menu::controls_tab(MenuModel& m) {
     float deadzone = in.deadzone(kind) * 100.0f;
     if (ImGui::SliderFloat("Stick Deadzone", &deadzone, 0.0f, 50.0f, "%.0f%%")) in.set_deadzone(kind, deadzone / 100.0f);
   }
+  bool background = in.background_input();
+  if (ImGui::Checkbox("Use the controls in the background too", &background)) in.set_background_input(background);
+  hint("%s", input::HostInput::background_keyboard()
+                 ? "Every OpenGP window reacts, active or not: for driving several copies at once."
+                 : "Gamepads reach every OpenGP window, active or not (the keyboard only the active one).");
   if (ImGui::Button("Restore defaults")) in.restore_defaults();
   hint("Saved in %s", in.path().c_str());
 }

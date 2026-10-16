@@ -3,6 +3,7 @@
 // Mario Kart Arcade GP 2 (GGPE02): replacements for recompiled functions.
 
 #include "arcade.h"
+#include "cabinet.h"
 #include "camera_use.h"
 #include "ppc_recomp_shared.h"
 
@@ -34,6 +35,26 @@ PPC_FUNC(fn_80289B54) {
 PPC_FUNC(GameBoot_Init) {
   __imp__GameBoot_Init(ctx, base);
   camera_use::on_settings_loaded(base, 0x805986C0u);
+  cabinet::on_settings_loaded(base, 0x805986C0u);
+}
+
+// The media board's "this cabinet's address" (acModifyMyIPaddr), which
+// start-up calls with its address from the cabinets' list (803FD910).
+PPC_FUNC(acModifyMyIPaddr) {
+  cabinet::on_modify_address(base, 0x805986C0u, 0x803FD910u, &ctx.gpr[3]);
+  __imp__acModifyMyIPaddr(ctx, base);
+}
+
+// The LINK screen, where the game looks for the other cabinets as it starts:
+// its timer is at 806D0E1C (see cabinet.h).
+PPC_FUNC(BootPCBCheck_Init) {
+  __imp__BootPCBCheck_Init(ctx, base);
+  cabinet::on_link_screen_start(base, 0x806D0E1Cu);
+}
+
+PPC_FUNC(BootPCBCheck_Poll) {
+  cabinet::on_link_screen_frame(base, 0x806D0E1Cu);
+  __imp__BootPCBCheck_Poll(ctx, base);
 }
 
 // The wheel board's state, each frame: the camera's power.

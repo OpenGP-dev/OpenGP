@@ -74,7 +74,7 @@ target_link_libraries(opengp_machine
   PUBLIC ppc_runtime Threads::Threads
   PRIVATE opengp_warnings)
 if(WIN32)
-  target_link_libraries(opengp_machine PRIVATE winmm dbghelp ws2_32)
+  target_link_libraries(opengp_machine PRIVATE winmm dbghelp ws2_32 iphlpapi)
 else()
   # Shift JIS text from the games (os/printf.h); iconv is part of glibc, and
   # its own library on macOS.
@@ -85,10 +85,10 @@ else()
   endif()
 endif()
 
-if(OPENGP_BUILD_VIDEO)
-  add_subdirectory(video)
+if(OPENGP_BUILD_VIDEO OR OPENGP_BUILD_INPUT)
+  include(${PROJECT_SOURCE_DIR}/cmake/sdl3.cmake)
 
-  # The player's input devices (SDL3, fetched by video/).
+  # The player's input devices.
   add_library(opengp_input STATIC input/host.cpp)
   target_link_libraries(opengp_input
     PUBLIC opengp_machine SDL3::SDL3
@@ -99,6 +99,10 @@ if(OPENGP_BUILD_VIDEO)
   target_link_libraries(opengp_webcam
     PUBLIC opengp_machine SDL3::SDL3
     PRIVATE opengp_warnings)
+endif()
+
+if(OPENGP_BUILD_VIDEO)
+  add_subdirectory(video)
 
   # Sound output (SDL3).
   add_library(opengp_audio STATIC audio/host.cpp)
@@ -137,10 +141,18 @@ if(OPENGP_PACKAGE)
   target_compile_definitions(opengp_settings PRIVATE OPENGP_PACKAGE)
 endif()
 
+# Discord Rich Presence: Discord's local connection (no SDK), and what it
+# shows for the games.
+add_library(opengp_discord STATIC discord/ipc.cpp discord/presence.cpp app/rich_presence.cpp)
+target_include_directories(opengp_discord PUBLIC .)
+target_link_libraries(opengp_discord
+  PUBLIC gekko_isa Threads::Threads
+  PRIVATE opengp_warnings)
+
 # The launcher the games share: settings, window, sound, controls, menu.
-add_library(opengp_app STATIC app/launcher.cpp)
+add_library(opengp_app STATIC app/launcher.cpp app/hang_watch.cpp)
 target_link_libraries(opengp_app
-  PUBLIC opengp_machine opengp_settings
+  PUBLIC opengp_machine opengp_settings opengp_discord
   PRIVATE opengp_warnings)
 target_compile_definitions(opengp_app PRIVATE OPENGP_VERSION="${PROJECT_VERSION}")
 if(OPENGP_BUILD_VIDEO)
