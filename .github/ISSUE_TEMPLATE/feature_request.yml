@@ -1,0 +1,13 @@
+name: Feature request
+description: An idea for OpenGP.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: The roadmap in README.md lists what is planned; check it first.
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you would like, and why
+    validations:
+      required: true

@@ -4,10 +4,33 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request cancels the older run, except
+# on main, where every commit gets its run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# Every job runs for pushes, and for pull requests only from forks: a branch of
+# this repository has already run on its push.
 jobs:
+  game-data:
+    name: No game data
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Check the tracked files
+        run: python3 tools/check_game_data.py
+
   linux:
     name: Linux (${{ matrix.compiler }})
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -30,7 +53,7 @@ jobs:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       # SDL3 (fetched and built by the renderer) needs X11 and audio headers.
       - name: Install Ninja and SDL3's dependencies
         run: >
@@ -46,9 +69,11 @@ jobs:
 
   macos:
     name: macOS (Apple Clang)
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: macos-15
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Install Ninja
         run: brew install ninja
       - name: Configure
@@ -60,9 +85,11 @@ jobs:
 
   windows:
     name: Windows (clang-cl)
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: windows-latest
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       # tools/devshell.ps1 is the same environment setup used for local builds:
       # the Visual Studio x64 environment plus LLVM's clang-cl (preinstalled on
       # the runner). Each step is a new shell, so everything runs in one step.

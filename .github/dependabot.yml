@@ -1,0 +1,9 @@
+# Keeps the GitHub Actions the workflows use (pinned by commit) up to date.
+# The native dependencies (SDL3, Dear ImGui, glslang, SPIRV-Cross, llvm-mingw,
+# doctest, toml++) are pinned by hash in the CMake files and updated by hand.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

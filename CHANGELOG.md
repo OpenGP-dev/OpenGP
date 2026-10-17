@@ -51,6 +51,18 @@ From a profile of a whole playthrough of GP 2:
 - Every source file with code ported from Dolphin now says so itself, with Dolphin's copyright, not
   only its header.
 
+### For contributors
+
+- `CONTRIBUTING.md` (the no-game-data rule, licences, testing), `SECURITY.md`, and issue forms
+  that ask for the version, the system and the hang report, and never for game files.
+- CI checks every push for anything that looks like game data (`tools/check_game_data.py`: game
+  file types, binaries, large files, a copy of a supported `main.dol`).
+- CI and package workflows: actions pinned by commit and kept current by Dependabot, read-only
+  tokens, time limits on jobs and tests, no duplicate runs, and a release job that only ever adds
+  packages (with a `SHA256SUMS` file) to a draft release.
+- `.gitattributes` keeps line endings LF on every platform, and `.gitignore` covers more build,
+  editor and dump files.
+
 ## 0.4.0 (2026-10-16)
 
 This release links cabinets for Versus races, on one computer or a local network, and shows what

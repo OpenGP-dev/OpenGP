@@ -272,6 +272,7 @@ calibration and a switch test); hold F1 and press F2 again to leave it.
 ## If the game freezes
 
 If the game's picture stops for 10 seconds while it is not paused, OpenGP writes where the game's
-threads are to `user/hang-report.txt` (and the console). Please send that file with the report:
-it shows what the game was waiting for.
+threads are to `user/hang-report.txt` (and the console). Please attach that file to a
+[bug report](https://github.com/OpenGP-dev/OpenGP/issues/new/choose): it shows what the game was
+waiting for. Never attach files from the games.
 
