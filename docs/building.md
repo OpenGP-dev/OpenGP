@@ -33,7 +33,9 @@ ctest --preset clang-cl
 ```
 
 `tools/devshell.ps1` looks for LLVM in `$env:OPENGP_LLVM`, then `%LOCALAPPDATA%\Programs\LLVM`,
-then `C:\Program Files\LLVM`, then Visual Studio's bundled Clang.
+then `C:\Program Files\LLVM`, then the Clang of a Visual Studio installation that has the Clang
+component. Without a standalone LLVM it uses that installation's environment, even when a newer
+Visual Studio without Clang is installed too. It stops if clang-cl is older than 16.
 
 MinGW-w64 GCC also works (`$env:CC='gcc'; $env:CXX='g++'; cmake --preset default`), but clang-cl
 is the supported configuration and what CI uses.

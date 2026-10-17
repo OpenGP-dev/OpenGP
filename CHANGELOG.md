@@ -62,6 +62,9 @@ From a profile of a whole playthrough of GP 2:
   packages (with a `SHA256SUMS` file) to a draft release.
 - `.gitattributes` keeps line endings LF on every platform, and `.gitignore` covers more build,
   editor and dump files.
+- `tools/devshell.ps1` finds the Visual Studio installation that has Clang when a newer one
+  without it is also installed, checks for Clang 16 or later, and leaves the PowerShell session's
+  settings as they were.
 
 ## 0.4.0 (2026-10-16)
 
