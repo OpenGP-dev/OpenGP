@@ -40,7 +40,7 @@ HOME = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROFILES = os.path.join(HOME, 'user', 'profiles')
 
 FLAGS = [(1, 'paused'), (2, 'menu'), (4, 'background'), (8, 'linked'), (16, 'hitch'), (32, 'mark'),
-         (64, 'capture'), (128, 'thumb'), (256, 'vsync'), (512, 'fullscreen')]
+         (64, 'capture'), (128, 'thumb'), (256, 'vsync'), (512, 'fullscreen'), (1024, 'paced')]
 
 
 def flag_text(v):
@@ -285,8 +285,9 @@ def cmd_summary(prof, _args):
     settings = [e for e in prof.events if e['e'] == 'settings']
     if settings:
         st = settings[-1]
-        print('settings ', 'aspect %s, internal %s, vsync %s, fullscreen %s, camera %s' % (
-            st.get('aspect'), st.get('internal_resolution'), st.get('vsync'), st.get('fullscreen'), st.get('camera')))
+        print('settings ', 'aspect %s, internal %s, vsync %s, even pacing %s, fullscreen %s, camera %s' % (
+            st.get('aspect'), st.get('internal_resolution'), st.get('vsync'), st.get('even_pacing', False),
+            st.get('fullscreen'), st.get('camera')))
     efb = [e for e in prof.events if e['e'] == 'efb']
     if efb:
         print('efb      ', ', '.join('%dpx wide at %dx (from frame %d)' % (e['width'], e['scale'], e['f']) for e in efb[-3:]))

@@ -51,6 +51,7 @@ class Profiler {
     gekko::u32 scale = 1;          // the internal resolution in use
     gekko::u64 queue_ns = 0;       // the main thread's wait for the frame
     gekko::u32 queue_depth = 0;    // frames waiting after it
+    gekko::u64 pace_ns = 0;        // ... holding it until its retrace (even frame pacing)
     double audio_queue_ms = 0;
     gekko::u64 audio_underruns = 0;  // so far
   };

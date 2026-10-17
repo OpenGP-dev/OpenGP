@@ -140,6 +140,7 @@ Json settings_json(const Settings& s) {
       .add("aspect", aspect_name(s.aspect))
       .add("internal_resolution", s.internal_resolution)
       .add("vsync", s.vsync)
+      .add("even_pacing", s.even_pacing)
       .add("volume", s.volume)
       .add("free_play", s.free_play)
       .add("pause_in_menu", s.pause_in_menu)
@@ -428,6 +429,7 @@ void Profiler::on_frame(const gx::Frame& frame, const FrameInfo& info) {
   r.live_textures = renderer_.live_textures();
   r.queue_us = us(info.queue_ns);
   r.queue_depth = info.queue_depth;
+  r.pace_us = us(info.pace_ns);
   const u64 now_ns = static_cast<u64>(
       std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
   r.latency_us = g.finished_ns ? us(now_ns - g.finished_ns) : 0;
@@ -440,7 +442,8 @@ void Profiler::on_frame(const gx::Frame& frame, const FrameInfo& info) {
   r.flags = (info.paused ? profile::kPaused : 0) | (info.menu_open ? profile::kMenuOpen : 0) |
             (info.background ? profile::kBackground : 0) | (info.linked ? profile::kLinked : 0) |
             (info.settings && info.settings->vsync ? profile::kVsync : 0) |
-            (info.settings && info.settings->fullscreen ? profile::kFullscreen : 0);
+            (info.settings && info.settings->fullscreen ? profile::kFullscreen : 0) |
+            (info.settings && info.settings->even_pacing ? profile::kEvenPacing : 0);
   const u32 changed = r.flags ^ last_flags_;
   auto edge = [&](u32 flag, const char* on, const char* off) {
     if (frames_ && (changed & flag)) session_.event((r.flags & flag) ? on : off);

@@ -955,10 +955,12 @@ int run(const Game& game, int argc, char** argv) {
       os::g_main_activity.set("drawing a frame");
       renderer.render(*frame, shoot ? &shot : nullptr, capture_images.get(), !paced);
       g_render_ns.fetch_add(elapsed_ns(render_start));
+      u64 pace_ns = 0;
       if (paced) {
         // After the last frame's retrace too: one frame a retrace.
         const u64 due = vi->next_retrace_ns(std::max(frame->finished_ns, shown_ns));
-        g_wait_ns.fetch_add(renderer.redraw(due));
+        pace_ns = renderer.redraw(due);
+        g_wait_ns.fetch_add(pace_ns);
         if (due) shown_ns = due;
       }
       if (frame->xfb) {
@@ -974,6 +976,7 @@ int run(const Game& game, int argc, char** argv) {
         info.scale = renderer.scale();
         info.queue_ns = queue_ns;
         info.queue_depth = static_cast<u32>(queue.pending());
+        info.pace_ns = pace_ns;
         if (g_audio_out) {
           info.audio_queue_ms = g_audio_out->queue_ms();
           info.audio_underruns = g_audio_out->underruns();

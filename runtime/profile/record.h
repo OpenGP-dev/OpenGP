@@ -25,13 +25,14 @@ enum FrameFlag : gekko::u32 {
   kThumbnail = 1u << 7,   // a thumbnail was asked for (it is of this frame or the next)
   kVsync = 1u << 8,
   kFullscreen = 1u << 9,
+  kEvenPacing = 1u << 10,
 };
 
 #define OPENGP_FRAME_FIELDS(X)                                                                                  \
   X(frame, "displayed frame number, counted from power-on (across the game's restarts)")                       \
   X(retrace, "VI retraces so far (59.94 a second)")                                                             \
   X(flags, "1 paused, 2 menu open, 4 window in the background, 8 linked, 16 hitch, 32 mark (F8), "              \
-           "64 capture (F9), 128 thumbnail, 256 vsync, 512 fullscreen")                                          \
+           "64 capture (F9), 128 thumbnail, 256 vsync, 512 fullscreen, 1024 even pacing")                        \
   X(scene, "the game's scene number (see the scene events)")                                                    \
   X(race, "in a race: position | lap << 8 | laps << 16 | started << 24 | finished << 25")                       \
   X(guest_us, "game: time since its previous frame (its frame time)")                                           \
@@ -83,7 +84,8 @@ enum FrameFlag : gekko::u32 {
   X(present_us, "time since the previous frame was presented")                                                  \
   X(audio_queue_ms10, "sound output queue, in tenths of a millisecond")                                         \
   X(audio_underruns, "times the sound ran dry since the previous frame")                                        \
-  X(exceptions, "interrupts delivered to the game since the previous frame")
+  X(exceptions, "interrupts delivered to the game since the previous frame")                                    \
+  X(pace_us, "main thread: holding the frame until the game's retrace (even frame pacing)")
 
 struct FrameRecord {
   gekko::u64 t_us = 0;  // when it was presented, since the profile started
