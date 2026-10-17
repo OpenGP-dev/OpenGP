@@ -125,7 +125,7 @@ marked as such in the source. Vendored third-party code in `thirdparty/` keeps i
 | M10 | What the GP 2 decomp ([mkgp2-decomp](https://github.com/naari3/mkgp2-decomp)) knows: its function names in both games' symbol maps, and the games' own debug messages (`--game-log`), for working on M11 and M12 (**done**, 0.3.0) | yes |
 | M11 | The NamCam2 camera from a webcam: player photos. The camera is an HTTP server on the media board's network, so this starts the network (the socket API on host sockets) (**done**, 0.3.0) | yes |
 | M12 | Linked cabinets: the rest of the media board's network, several instances racing each other on one PC or a LAN (**done** ahead of 1.0, 0.4.0) | yes |
-| 1.0 | Release: the installer package with linked cabinets and the camera | yes |
+| 1.0 | Release: the installer package with linked cabinets and the camera, after a full audit of the code, build, packages, documents and licences, and its fixes | yes |
 | M14 | Pause: freeze the game (its threads, sound and timers) from the menu or a button; the arcade games have no pause of their own. Only when playing solo: a game linked to other cabinets (M12) keeps running (**done** ahead of 1.0, 0.3.0) | yes |
 | M15 | Discord Rich Presence: the character, course and race position, read from the game's state (the decomp's names) and sent over Discord's local connection, without Discord's SDK (**done** ahead of 1.0, 0.4.0) | yes |
 

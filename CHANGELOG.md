@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 (not released yet)
+
+1.0 follows a full audit of OpenGP: its code, build, installer packages, documents and licences.
+This section lists everything that has changed since 0.4.0, including each fix from the audit as
+it lands. 1.0 is released once all of them are done and tested.
 
 ### Even frame pacing
 
