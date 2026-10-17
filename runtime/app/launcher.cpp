@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -95,7 +96,7 @@ struct Options {
   bool profile = false;
   fs::path profile_dir;
   fs::path profile_resume;  // a recording to go on with (after a restart)
-  int profile_rate = 500, profile_thumbs = 120;
+  int profile_rate = 500, profile_thumbs = 120, profile_thumb_width = 480;
   std::set<u64> capture_frames;  // frames to capture (see app/capture.h)
 };
 
@@ -143,7 +144,12 @@ int parse_options(int argc, char** argv, Options& o) {
     else if (a == "--profile") o.profile = true;
     else if (a == "--profile-dir" && has_value) o.profile_dir = os::utf8_path(argv[++i]);
     else if (a == "--profile-rate" && has_value) o.profile_rate = std::clamp(std::atoi(argv[++i]), 0, 10000);
-    else if (a == "--profile-thumbs" && has_value) o.profile_thumbs = std::max(std::atoi(argv[++i]), 0);
+    else if (a == "--profile-thumbs" && has_value) {
+      // FRAMES, or FRAMESxWIDTH for bigger pictures (1x960: every frame, to look for flicker).
+      const char* v = argv[++i];
+      o.profile_thumbs = std::max(std::atoi(v), 0);
+      if (const char* x = std::strchr(v, 'x')) o.profile_thumb_width = std::clamp(std::atoi(x + 1), 64, 3840);
+    }
     else if (a == "--capture-frame" && has_value) o.capture_frames.insert(std::strtoull(argv[++i], nullptr, 10));
     else if (a == "--cabinet" && has_value) {
       const int n = std::atoi(argv[++i]);
@@ -662,7 +668,7 @@ int run(const Game& game, int argc, char** argv) {
     std::fflush(stdout);
 
     // Profiling: from the start (--profile), or with F10 or the menu.
-    static Profiler profiler(machine, game, renderer, {o.profile_rate, o.profile_thumbs, 480});
+    static Profiler profiler(machine, game, renderer, {o.profile_rate, o.profile_thumbs, static_cast<gekko::u32>(o.profile_thumb_width)});
     g_profiler = &profiler;
     profiler.set_describe([window, &o, argc, argv] {
       profile::JsonArray args;
