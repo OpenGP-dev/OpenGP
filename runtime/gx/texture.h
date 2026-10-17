@@ -7,8 +7,9 @@
 // each padded to whole blocks. Paletted formats (C4, C8, C14X2) look their
 // colours up in a TLUT loaded into texture memory (TMEM).
 //
-// Decoders ported from Dolphin's TextureDecoder_Generic.cpp (Copyright
-// Dolphin Emulator Project, GPL-2.0-or-later).
+// Decoders ported from Dolphin's TextureDecoder_Generic.cpp,
+// TextureDecoder_Util.h and LookUpTables.h (Copyright Dolphin Emulator
+// Project, GPL-2.0-or-later).
 #pragma once
 
 #include <span>

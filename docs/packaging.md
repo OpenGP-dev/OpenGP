@@ -71,7 +71,8 @@ sdk/lib/                the runtime as static libraries, with SDL3 and Dear ImGu
 sdk/games/<game>/       game.toml, recomp.toml, config/symbols.txt, patches.cpp
 sdk/games/common/       the launcher's main() and the code the games share
 ISO/                    for your images
-docs/, README.md, LICENSE, CHANGELOG.md
+licenses/               the licences of the third-party code in the package
+docs/, README.md, LICENSE, CHANGELOG.md, THIRD-PARTY-NOTICES.md
 ```
 
 After installing, the folder also holds the games, `opengp-<game>[.exe]`, and `user/`. On Windows

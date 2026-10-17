@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Register semantics follow Dolphin (Source/Core/Core/HW/*), Copyright
+// Dolphin Emulator Project, GPL-2.0-or-later.
 
 #include "hw/hardware.h"
 

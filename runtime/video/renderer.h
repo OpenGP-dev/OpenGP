@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// The renderer: draws gx::Frames with SDL3's GPU API (Vulkan, and later
-// D3D12/Metal) and shows their external framebuffer in a window.
+// The renderer: draws gx::Frames with SDL3's GPU API (Vulkan, or Metal on
+// macOS) and shows their external framebuffer in a window.
 //
 //   * The EFB is a colour + depth render target (640x528, times the
 //     internal resolution scale; wider for widescreen, see gx/frame.h).
@@ -146,6 +146,8 @@ class Renderer {
   void present(SDL_GPUCommandBuffer* cmd, const Texture* xfb, float aspect);
   void capture(SDL_GPUCommandBuffer* cmd, const Texture& xfb);
   void finish_capture(Image* image);
+  // EFB peeks follow the design of Dolphin's FramebufferManager and
+  // EFBInterface: depth is scaled by 2^24 and clamped to 24 bits.
   void read_efb(SDL_GPUCommandBuffer* cmd, std::shared_ptr<gx::EfbReadback> request);
   void poll_reads(bool wait_all);
   void grow_buffer(SDL_GPUBuffer*& buffer, u32& capacity, u32 needed, u32 usage);

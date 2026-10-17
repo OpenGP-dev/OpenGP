@@ -102,12 +102,17 @@ To play, you will need your own copy of the game:
   build reads it from there.
 - [docs/game-files.md](docs/game-files.md) explains how to prepare them.
 
-Mario Kart is a trademark of Nintendo. This project is not affiliated with Nintendo, Namco
-(Bandai Namco) or Sega.
+Mario Kart and Mario Card are trademarks of Nintendo and Namco; Pac-Man and Tamagotchi are
+trademarks of Bandai Namco; other names belong to their owners. This project is not affiliated
+with or endorsed by Nintendo, Bandai Namco or Sega.
 
-OpenGP is licensed under the **GPL-3.0** (see [LICENSE](LICENSE)). Parts of the runtime are ported
-from the [Dolphin emulator](https://github.com/dolphin-emu/dolphin) (GPL-2.0-or-later) and are
-marked as such in the source. Vendored third-party code in `thirdparty/` keeps its own license.
+OpenGP is Copyright (C) 2026 the OpenGP contributors and is licensed under the **GPL-3.0-or-later**
+(see [LICENSE](LICENSE)). Its source code is at <https://github.com/OpenGP-dev/OpenGP>. Parts of the
+runtime and tools are ported from the [Dolphin emulator](https://github.com/dolphin-emu/dolphin)
+(GPL-2.0-or-later) and are marked as such in the source. The third-party code OpenGP and its
+packages include keeps its own licence: SDL 3 (zlib), Dear ImGui and toml++ (MIT), the boot ROM
+fonts in `thirdparty/gc-fonts` (Dolphin's free replacements, based on Droid Sans, Apache-2.0) and
+others, all listed with their licences in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## Roadmap
 
