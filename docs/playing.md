@@ -98,11 +98,16 @@ race. OpenGP can use a webcam for it. In the menu's Game tab, **Photos from** is
   the middle. On macOS, the system asks once whether OpenGP may use the camera.
 - **Test pattern**: colour bars, for trying it without a webcam.
 
-The camera is set up when the game starts, so a change takes effect when the game restarts. If the
-webcam cannot be opened, the game runs without its camera and says why on the console. In
+The camera is set up when the game starts, so a change takes effect when the game restarts. If
+there is no webcam, the game runs without its camera and says so on the console. In
 `user/settings.toml` the setting is `[camera] source` (`"off"`, `"webcam"` or `"test"`) with
 `webcam` (the webcam's name, `""` for the first), and `--camera off|webcam|test` sets it for one
-run. The webcam's light stays on while the game runs with it.
+run.
+
+The webcam is on only while the game uses it: while your photo is taken, for a moment as the game
+starts (it checks its camera), and on the test menu's camera page. Its light goes off a few
+seconds later. If the webcam can't be opened then (another program is using it, say), the photo
+is grey and the console says why.
 
 ## Linked cabinets
 

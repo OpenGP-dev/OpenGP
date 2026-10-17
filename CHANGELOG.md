@@ -68,6 +68,9 @@ From a profile of a whole playthrough of GP 2:
 - If the game's picture stops for 10 seconds while it is not paused, OpenGP writes a hang report,
   `user/hang-report.txt`: each of the game's threads with its call stack. See
   [docs/playing.md](docs/playing.md#if-the-game-freezes).
+- The webcam is on only while the game uses it: while your photo is taken, for a moment as the
+  game starts, and on the test menu's camera page. It used to stay on, light and all, for as long
+  as the game ran, taking about 5% of a CPU core for pictures nothing used.
 
 ## 0.3.0 (2026-10-01)
 

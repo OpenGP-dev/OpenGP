@@ -1,14 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// A webcam as the camera's picture source, through SDL3's camera API. A
-// thread takes the webcam's frames as they come and keeps the newest, cropped
-// to 4:3 around its centre and scaled down to 320x240.
+// A webcam as the camera's picture source, through SDL3's camera API. The
+// webcam is on only while the game asks for pictures (its start-up check, the
+// player's photo, the test menu's camera page): the first request turns it on,
+// and it goes off a few seconds after the last. While it is on, a thread takes
+// its frames as they come and keeps the newest, cropped to 4:3 around its
+// centre and scaled down to 320x240. Until its first frame comes (a fraction
+// of a second) there is no picture, and the camera sends a grey one.
 //
 // Some systems ask the player first (macOS): until they allow it, and if they
 // don't, there are no pictures.
 #pragma once
 
-#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -30,21 +35,27 @@ class Webcam final : public Source {
   // The webcams' names. Starts SDL's camera support (call on the main thread).
   static std::vector<std::string> names();
 
-  // Opens the webcam called `name`, or the first one for "" or if there is
-  // none of that name, and starts taking pictures. Call on the main thread.
-  bool open(const std::string& name, std::string* error);
+  // Chooses the webcam called `name`, or the first one for "" or if there is
+  // none of that name. It stays off until the game asks for a picture. Call
+  // on the main thread.
+  bool choose(const std::string& name, std::string* error);
   const std::string& name() const { return name_; }
 
+  // Also turns the webcam on, or keeps it on.
   bool picture(u8* rgb) override;
 
  private:
   void run();
+  SDL_Camera* open();
 
-  SDL_Camera* camera_ = nullptr;
   std::string name_;
   std::thread thread_;
-  std::atomic<bool> stop_{false};
   std::mutex mutex_;
+  std::condition_variable wake_;  // the webcam is wanted, or the thread is to stop
+  // Guarded by mutex_:
+  bool stop_ = false;
+  bool on_ = false;
+  std::chrono::steady_clock::time_point asked_;  // the game's latest request
   std::vector<u8> latest_;  // kPictureSize bytes once there is a picture
 };
 

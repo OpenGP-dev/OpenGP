@@ -356,7 +356,7 @@ std::shared_ptr<camera::Source> start_camera(const Settings& s, std::string* des
 #ifdef OPENGP_VIDEO
       auto webcam = std::make_shared<camera::Webcam>();
       std::string error;
-      if (webcam->open(s.webcam, &error)) {
+      if (webcam->choose(s.webcam, &error)) {
         *description = "webcam, " + webcam->name();
         return webcam;
       }

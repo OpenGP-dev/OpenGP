@@ -408,8 +408,9 @@ reads the flag); the launcher restarts it.
 The camera is such a service (`camera::NamCam`, at 192.168.29.104-107 port 80): it answers the
 game's `GET /img.jpg` with a 320x240 JPEG from its `camera::Source`, encoded by `camera/jpeg.cpp`
 (baseline 4:2:0, which the games' own decoder reads). The sources are a test pattern and
-`camera::Webcam` (SDL3's camera API), whose thread keeps the newest frame cropped to 4:3 and
-scaled. The launcher starts the source the settings ask for and tells the game whether it has a
+`camera::Webcam` (SDL3's camera API), which its thread opens when the game asks for a picture
+and closes 5 seconds after the last; while it is open, the thread keeps the newest frame cropped
+to 4:3 and scaled. The launcher starts the source the settings ask for and tells the game whether it has a
 camera (`app::Game::set_camera`), which sets the game's own "camera use" setting at start-up
 (`games/common/camera_use.cpp`).
 

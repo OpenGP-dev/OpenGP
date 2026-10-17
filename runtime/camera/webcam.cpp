@@ -10,9 +10,24 @@
 #include <cstring>
 #include <tuple>
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <objbase.h>
+#endif
+
 namespace camera {
 
 namespace {
+
+// How long the webcam stays on after the game's last request for a picture.
+// While the game shows the pictures it asks for one every few frames.
+constexpr auto kStayOn = std::chrono::seconds(5);
 
 bool start_sdl_camera() { return SDL_WasInit(SDL_INIT_CAMERA) || SDL_InitSubSystem(SDL_INIT_CAMERA); }
 
@@ -63,12 +78,28 @@ void crop_and_scale(const SDL_Surface* frame, u8* out) {
   }
 }
 
+// The webcam called `name`, or the first one if there is none of that name;
+// 0 if there are no webcams.
+SDL_CameraID find(const std::string& name) {
+  int count = 0;
+  SDL_CameraID* ids = SDL_GetCameras(&count);
+  SDL_CameraID id = 0;
+  for (int i = 0; ids && i < count && !id; ++i)
+    if (const char* n = SDL_GetCameraName(ids[i]); n && name == n) id = ids[i];
+  if (!id && ids && count > 0) id = ids[0];
+  SDL_free(ids);
+  return id;
+}
+
 }  // namespace
 
 Webcam::~Webcam() {
-  stop_ = true;
+  {
+    std::lock_guard lock(mutex_);
+    stop_ = true;
+  }
+  wake_.notify_all();
   if (thread_.joinable()) thread_.join();
-  if (camera_) SDL_CloseCamera(camera_);
 }
 
 std::vector<std::string> Webcam::names() {
@@ -83,69 +114,105 @@ std::vector<std::string> Webcam::names() {
   return names;
 }
 
-bool Webcam::open(const std::string& name, std::string* error) {
+bool Webcam::choose(const std::string& name, std::string* error) {
   if (!start_sdl_camera()) {
     *error = std::string("no camera support: ") + SDL_GetError();
     return false;
   }
-  int count = 0;
-  SDL_CameraID* ids = SDL_GetCameras(&count);
-  SDL_CameraID id = 0;
-  for (int i = 0; ids && i < count && !id; ++i)
-    if (const char* n = SDL_GetCameraName(ids[i]); n && name == n) id = ids[i];
-  if (!id && ids && count > 0) id = ids[0];
-  SDL_free(ids);
+  const SDL_CameraID id = find(name);
   if (!id) {
     *error = "no webcam found";
     return false;
   }
   const char* n = SDL_GetCameraName(id);
   name_ = n ? n : "webcam";
-  SDL_CameraSpec spec{};
-  camera_ = SDL_OpenCamera(id, choose_mode(id, &spec) ? &spec : nullptr);
-  if (!camera_) {
-    *error = name_ + ": " + SDL_GetError();
-    return false;
-  }
   thread_ = std::thread([this] { run(); });
   return true;
 }
 
 bool Webcam::picture(u8* rgb) {
   std::lock_guard lock(mutex_);
+  asked_ = std::chrono::steady_clock::now();
+  if (!on_) {
+    on_ = true;
+    wake_.notify_one();
+  }
   if (latest_.size() != kPictureSize) return false;
   std::memcpy(rgb, latest_.data(), kPictureSize);
   return true;
 }
 
+// Opens the webcam, found by its name again (it may have been plugged in
+// again since), or says why it can't.
+SDL_Camera* Webcam::open() {
+  const SDL_CameraID id = find(name_);
+  SDL_CameraSpec spec{};
+  SDL_Camera* camera = id ? SDL_OpenCamera(id, choose_mode(id, &spec) ? &spec : nullptr) : nullptr;
+  if (!camera)
+    std::fprintf(stderr, "[camera] %s: %s, so there are no pictures\n", name_.c_str(),
+                 id ? SDL_GetError() : "not found");
+  return camera;
+}
+
 void Webcam::run() {
+#ifdef _WIN32
+  // SDL opens a webcam through Media Foundation, which needs COM on this thread.
+  const bool com = SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
+#endif
   std::vector<u8> picture(kPictureSize);
-  bool first = true;
-  while (!stop_) {
-    // -1 denied, 0 not decided yet, 1 allowed (an int before SDL 3.4).
-    const int permission = static_cast<int>(SDL_GetCameraPermissionState(camera_));
-    if (permission < 0) {
-      std::fprintf(stderr, "[camera] %s: access was denied, so there are no pictures\n", name_.c_str());
-      return;
-    }
-    SDL_Surface* frame = permission > 0 ? SDL_AcquireCameraFrame(camera_, nullptr) : nullptr;
-    if (!frame) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));
-      continue;
-    }
-    SDL_Surface* converted = SDL_ConvertSurface(frame, SDL_PIXELFORMAT_RGB24);
-    const int w = frame->w, h = frame->h;
-    SDL_ReleaseCameraFrame(camera_, frame);
-    if (!converted) continue;
-    crop_and_scale(converted, picture.data());
-    SDL_DestroySurface(converted);
+  bool denied = false;
+  for (;;) {
     {
-      std::lock_guard lock(mutex_);
-      latest_ = picture;
+      std::unique_lock lock(mutex_);
+      wake_.wait(lock, [this] { return stop_ || on_; });
+      if (stop_) break;
     }
-    if (first) std::fprintf(stderr, "[camera] %s: %dx%d\n", name_.c_str(), w, h);
-    first = false;
+    SDL_Camera* camera = denied ? nullptr : open();
+    bool first = true;
+    for (;;) {
+      {
+        std::lock_guard lock(mutex_);
+        if (stop_) break;
+        if (std::chrono::steady_clock::now() - asked_ >= kStayOn) {
+          on_ = false;
+          latest_.clear();  // not to show the next player this one's picture
+          break;
+        }
+      }
+      // -1 denied, 0 not decided yet, 1 allowed (an int before SDL 3.4).
+      const int permission = camera ? static_cast<int>(SDL_GetCameraPermissionState(camera)) : 0;
+      if (permission < 0) {
+        std::fprintf(stderr, "[camera] %s: access was denied, so there are no pictures\n", name_.c_str());
+        denied = true;
+        SDL_CloseCamera(camera);
+        camera = nullptr;
+      }
+      SDL_Surface* frame = permission > 0 ? SDL_AcquireCameraFrame(camera, nullptr) : nullptr;
+      if (!frame) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        continue;
+      }
+      SDL_Surface* converted = SDL_ConvertSurface(frame, SDL_PIXELFORMAT_RGB24);
+      const int w = frame->w, h = frame->h;
+      SDL_ReleaseCameraFrame(camera, frame);
+      if (!converted) continue;
+      crop_and_scale(converted, picture.data());
+      SDL_DestroySurface(converted);
+      {
+        std::lock_guard lock(mutex_);
+        latest_ = picture;
+      }
+      if (first) std::fprintf(stderr, "[camera] %s: on, %dx%d\n", name_.c_str(), w, h);
+      first = false;
+    }
+    if (camera) {
+      SDL_CloseCamera(camera);
+      std::fprintf(stderr, "[camera] %s: off\n", name_.c_str());
+    }
   }
+#ifdef _WIN32
+  if (com) CoUninitialize();
+#endif
 }
 
 }  // namespace camera
