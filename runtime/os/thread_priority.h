@@ -12,4 +12,7 @@ namespace os {
 // efficiency core and miss frames). Elsewhere it does nothing for now.
 void set_interactive_thread();
 
+// Names the calling thread, for debuggers and profiles (see profile/monitor.h).
+void set_thread_name(const char* name);
+
 }  // namespace os

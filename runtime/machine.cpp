@@ -7,6 +7,7 @@
 #include <filesystem>
 
 #include "os/atomic_file.h"
+#include "os/stack_walk.h"
 #include "hw/ai.h"
 #include "hw/di.h"
 #include "hw/dsp.h"
@@ -57,6 +58,24 @@ bool Machine::boot(const std::string& image_path, os::BootResult* boot, std::str
   h.on_gather_burst = [gpu = gpu_.get()] { gpu->on_gather_burst(); };
   h.on_efb_read = [gpu = gpu_.get()](u32 addr) { return gpu->efb_read(addr); };
   h.on_efb_write = [gpu = gpu_.get()](u32 addr, u32 value) { gpu->efb_write(addr, value); };
+  // Frame captures say where the game was for each draw: the guest's call
+  // stack (its link register and back chain) and the host's.
+  gpu_->frontend().set_stack_reader([this](gx::FrameCapture::Stacks& stacks) {
+    const ppc::Context* c = threads_ ? threads_->running_context(nullptr) : nullptr;
+    if (c) {
+      const u8* base = memory_.base();
+      const u32 end = 0x80000000u + memory_.mem1_size();
+      auto valid = [&](u32 a) { return a >= 0x80000000u && a + 8 <= end && (a & 3) == 0; };
+      stacks.guest[stacks.guest_depth++] = c->lr;
+      for (u32 sp = c->gpr[1]; stacks.guest_depth < 8 && valid(sp);) {
+        const u32 caller = ppc::load_be<u32>(base + sp);
+        if (!valid(caller) || caller <= sp) break;
+        stacks.guest[stacks.guest_depth++] = ppc::load_be<u32>(base + caller + 4);
+        sp = caller;
+      }
+    }
+    stacks.host_depth = static_cast<u8>(os::capture_stack(stacks.host, 24));
+  });
   h.map(0x2000, 0x1000, std::make_unique<hw::ViDevice>(h));
   h.map(0x4000, 0x1000, std::make_unique<hw::RegisterFile>(h, "MI", 0x80, 8));
   h.map(0x5000, 0x1000, std::make_unique<hw::DspDevice>(h));

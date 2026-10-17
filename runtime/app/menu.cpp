@@ -194,6 +194,7 @@ void Menu::update(MenuModel& m) {
         if (m.input && !tab("Controls", [&] { controls_tab(m); }) && m.input->capturing()) {
           m.input->cancel_capture();  // left the tab
         }
+        if (m.toggle_profiling) tab("Profiler", [&] { profiler_tab(m); });
         ImGui::EndTabBar();
       }
       ImGui::Spacing();
@@ -305,6 +306,33 @@ void Menu::game_tab(MenuModel& m) {
     ImGui::AlignTextToFramePadding();
     hint("Open the Operator's Menu (Will restart the game)");
   }
+}
+
+// Recording a profile of the session, for finding what slows the game down
+// or draws it wrong (see app/profiler.h).
+void Menu::profiler_tab(MenuModel& m) {
+  ImGui::SeparatorText("Profile");
+  if (m.profiling) {
+    ImGui::TextWrapped("Recording: %llu frames so far.", static_cast<unsigned long long>(m.profile_frames));
+    hint("In %s", m.profile_dir.c_str());
+    if (ImGui::Button("Stop recording")) m.toggle_profiling();
+    ImGui::SameLine();
+    if (ImGui::Button("Mark this moment") && m.mark) m.mark();
+  } else {
+    ImGui::TextWrapped(
+        "Records everything about how the game runs while you play: each frame's timings, hitches and what "
+        "caused them, likely graphical glitches, the CPU's work, and pictures of the screen now and then.");
+    if (ImGui::Button("Start recording")) m.toggle_profiling();
+  }
+  hint("F10 starts and stops recording. F8 marks a moment (a stutter, a glitch) so it can be found later.");
+  hint("Profiles are saved in the profiles folder next to the settings.");
+
+  ImGui::SeparatorText("Frame capture");
+  ImGui::TextWrapped(
+      "Saves everything about one frame: the picture, every texture and draw, and what drew it. For "
+      "something drawn wrong, close the menu and press F9 while it's on screen.");
+  if (ImGui::Button("Capture the next frame") && m.capture) m.capture();
+  hint("Captures go in the profile being recorded, or in the captures folder.");
 }
 
 // Linked cabinets: this one's number, the local network, and who it sees.

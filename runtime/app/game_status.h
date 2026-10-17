@@ -21,6 +21,7 @@ struct GameStatus {
     TestMenu,  // the operator's test menu
   };
   Scene scene = Scene::Starting;
+  gekko::u32 scene_id = 0;  // the game's own scene number (g_currentSceneState), for profiles
   std::string activity;  // in the menus: "Choosing a character", "Choosing a course"...
 
   // Image names are art assets' keys in OpenGP's Discord application.

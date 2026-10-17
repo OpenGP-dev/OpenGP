@@ -6,6 +6,7 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <string>
 
@@ -26,9 +27,10 @@ using FunctionNames = std::map<gekko::u32, std::string>;
 std::string describe_threads(opengp::Machine& machine, const FunctionNames& names);
 
 // Starts a thread that writes a hang report to `path` once the game has not
-// finished a frame for `seconds` while running (again after it recovers).
-// `machine` and `names` must outlive it.
+// finished a frame for `seconds` while running (again after it recovers),
+// and gives it to `on_report` too, if set. `machine` and `names` must
+// outlive it.
 void start_hang_watch(opengp::Machine& machine, const FunctionNames& names, std::filesystem::path path,
-                      int seconds = 10);
+                      int seconds = 10, std::function<void(const std::string& report)> on_report = {});
 
 }  // namespace app

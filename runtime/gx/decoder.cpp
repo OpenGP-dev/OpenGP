@@ -77,6 +77,7 @@ std::size_t Decoder::run(std::span<const u8> data, bool in_display_list) {
     const u8* p = data.data() + pos;
     const std::size_t left = data.size() - pos;
     const u8 op = p[0];
+    if (!in_display_list) command_offset_ = pos;
     std::size_t length = 1;
 
     if (op >= GX_PRIMITIVE_START && op < 0xC0) {

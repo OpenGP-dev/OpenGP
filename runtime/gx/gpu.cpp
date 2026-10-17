@@ -2,7 +2,10 @@
 
 #include "gx/gpu.h"
 
+#include <algorithm>
 #include <cstdio>
+
+#include "os/stack_walk.h"
 
 namespace gx {
 
@@ -120,6 +123,7 @@ std::span<const u8> Gpu::read_display_list(void* context, u32 address, u32 size)
   const u8* p = gpu->hw_.ram(address, size);
   if (!p) {
     std::fprintf(stderr, "[gx] display list out of range: %08X size %u\n", address, size);
+    gpu->frontend_.note_risk(Risk::Kind::DisplayListRange, address, size);
     return {};
   }
   return {p, size};
@@ -191,6 +195,14 @@ void Gpu::on_gather_burst() {
   // Before taking the hardware's lock: while the game waits for the
   // renderer, the machine's timers and other devices go on.
   frontend_.wait_for_output();
+  // Note who writes to the pipe while a capture is coming or under way.
+  const bool tracing = frontend_.capturing();
+  if (tracing != tracing_) {
+    tracing_ = tracing;
+    hw_.gather_write_context = this;
+    hw_.on_gather_write = tracing ? &Gpu::on_gather_write : nullptr;
+    if (!tracing) writers_.clear();
+  }
   std::lock_guard lock(hw_.mutex());
   if (cp_ctrl_ & CTRL_GP_LINK) {
     // Linked: the CPU is writing into the FIFO the GPU reads.
@@ -211,11 +223,27 @@ void Gpu::run() {
       rw_distance_ = 0;
       break;
     }
+    const u64 burst_start = pending_start_ + pending_.size();
     pending_.insert(pending_.end(), src, src + 32);
+    if (tracing_ && (cp_ctrl_ & CTRL_GP_LINK)) {
+      // Linked: these are the bytes of the burst just written.
+      if (bursts_.empty()) bursts_start_ = burst_start;
+      bursts_.push_back(hw_.gather_burst_start());
+    } else {
+      bursts_.clear();
+    }
     rptr_ = rptr_ == end_ ? base_ : rptr_ + 32;
     rw_distance_ -= 32;
     const std::size_t used = decoder_.run(pending_);
     pending_.erase(pending_.begin(), pending_.begin() + static_cast<std::ptrdiff_t>(used));
+    pending_start_ += used;
+    while (!bursts_.empty() && bursts_start_ + 32 <= pending_start_) {
+      bursts_.pop_front();
+      bursts_start_ += 32;
+    }
+    // Writers before the oldest pending byte are done with.
+    const u64 oldest = bursts_.empty() ? hw_.gather_written() : bursts_.front();
+    while (writers_.size() > 1 && writers_[1].position <= oldest) writers_.pop_front();
   }
   update_cp_interrupt();
   running_ = false;
@@ -269,6 +297,28 @@ void Gpu::signal(bool finish, bool token_interrupt, u16 token) {
   update_pe_interrupts();
 }
 
+void Gpu::on_gather_write(void* context, u64 position) {
+  auto* gpu = static_cast<Gpu*>(context);
+  u64 key[6] = {};
+  os::capture_stack(key, 6);
+  if (!gpu->writers_.empty() && std::equal(key, key + 6, gpu->writers_.back().key)) return;
+  Writer& w = gpu->writers_.emplace_back();
+  w.position = position;
+  std::copy(key, key + 6, w.key);
+  gpu->frontend_.read_stacks(w.stacks);
+}
+
+// For captures: who wrote the first byte of the command being decoded.
+void Gpu::set_issuer() {
+  frontend_.set_issuer(nullptr);
+  const u64 at = pending_start_ + decoder_.command_offset();
+  if (bursts_.empty() || at < bursts_start_ || (at - bursts_start_) / 32 >= bursts_.size()) return;
+  const u64 written = bursts_[static_cast<std::size_t>((at - bursts_start_) / 32)] + (at - bursts_start_) % 32;
+  auto it = std::upper_bound(writers_.begin(), writers_.end(), written,
+                             [](u64 p, const Writer& w) { return p < w.position; });
+  if (it != writers_.begin()) frontend_.set_issuer(&std::prev(it)->stacks);
+}
+
 void Gpu::bp_write(u8 reg, u32 value) {
   switch (reg) {
     case BP_SET_DRAW_DONE:
@@ -278,16 +328,20 @@ void Gpu::bp_write(u8 reg, u32 value) {
     case BP_PE_TOKEN: signal(false, false, static_cast<u16>(value)); break;
     case BP_TRIGGER_EFB_COPY:
       if (value & (1u << 14)) copies_.fetch_add(1, std::memory_order_relaxed);  // copy to the XFB
+      if (!bursts_.empty()) set_issuer();
       break;
     default: break;
   }
   frontend_.bp_write(reg, value);
+  frontend_.set_issuer(nullptr);
 }
 
 void Gpu::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertices) {
   // Only the thread running the game writes it: no locked add.
   draws_.store(draws_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+  if (!bursts_.empty()) set_issuer();
   frontend_.draw(primitive, vat, count, vertices, decoder_.cp_regs());
+  frontend_.set_issuer(nullptr);
 }
 
 }  // namespace gx

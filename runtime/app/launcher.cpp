@@ -20,6 +20,7 @@
 
 #include "app/hang_watch.h"
 #include "app/paths.h"
+#include "app/profiler.h"
 #include "app/rich_presence.h"
 #include "app/settings.h"
 #include "audio/wav.h"
@@ -44,6 +45,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include "app/capture.h"
 #include "app/menu.h"
 #include "audio/host.h"
 #include "camera/webcam.h"
@@ -63,10 +65,12 @@ constexpr const char* kUsage =
     "          [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]\n"
     "          [--input SCRIPT] [--input-file PATH] [--free-play] [--test-menu]\n"
     "          [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--game-log]\n"
-    "          [--camera off|webcam|test] [--cabinet 1-4] [--lan] [--version]\n";
+    "          [--camera off|webcam|test] [--cabinet 1-4] [--lan] [--version]\n"
+    "          [--profile] [--profile-dir PATH] [--profile-rate HZ] [--profile-thumbs FRAMES]\n"
+    "          [--capture-frame FRAME]...\n";
 
 struct Options {
-  std::vector<std::string> args;  // as given, for restarts (without --reboot and --frame-offset)
+  std::vector<std::string> args;  // as given, for restarts (without --reboot, --frame-offset and --profile-resume)
   std::string reboot;             // file describing the reboot this run continues
   u64 frame_offset = 0;           // frames shown by the runs before the reboot
   bool test_menu = false;         // start in the game's test menu
@@ -87,6 +91,12 @@ struct Options {
   std::optional<CameraSource> camera;
   std::optional<int> cabinet;
   std::optional<bool> lan;
+  // Profiling (app/profiler.h): record from the start, where, and how.
+  bool profile = false;
+  fs::path profile_dir;
+  fs::path profile_resume;  // a recording to go on with (after a restart)
+  int profile_rate = 500, profile_thumbs = 120;
+  std::set<u64> capture_frames;  // frames to capture (see app/capture.h)
 };
 
 // Returns 0 to go on, or an exit code.
@@ -94,7 +104,7 @@ int parse_options(int argc, char** argv, Options& o) {
   std::string error;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
-    if ((a == "--reboot" || a == "--frame-offset") && i + 1 < argc) ++i;
+    if ((a == "--reboot" || a == "--frame-offset" || a == "--profile-resume") && i + 1 < argc) ++i;
     else if (a != "--test-menu") o.args.push_back(a);
   }
   for (int i = 1; i < argc; ++i) {
@@ -106,6 +116,10 @@ int parse_options(int argc, char** argv, Options& o) {
     }
     if (a == "--frame-offset" && has_value) {
       o.frame_offset = std::strtoull(argv[++i], nullptr, 10);
+      continue;
+    }
+    if (a == "--profile-resume" && has_value) {
+      o.profile_resume = os::utf8_path(argv[++i]);
       continue;
     }
     if (a == "--iso" && has_value) o.image = argv[++i];
@@ -126,6 +140,11 @@ int parse_options(int argc, char** argv, Options& o) {
     else if (a == "--game-log") o.game_log = true;
     else if (a == "--volume" && has_value) o.volume = std::clamp(std::atoi(argv[++i]), 0, 100);
     else if (a == "--lan") o.lan = true;
+    else if (a == "--profile") o.profile = true;
+    else if (a == "--profile-dir" && has_value) o.profile_dir = os::utf8_path(argv[++i]);
+    else if (a == "--profile-rate" && has_value) o.profile_rate = std::clamp(std::atoi(argv[++i]), 0, 10000);
+    else if (a == "--profile-thumbs" && has_value) o.profile_thumbs = std::max(std::atoi(argv[++i]), 0);
+    else if (a == "--capture-frame" && has_value) o.capture_frames.insert(std::strtoull(argv[++i], nullptr, 10));
     else if (a == "--cabinet" && has_value) {
       const int n = std::atoi(argv[++i]);
       if (n < 1 || n > 4) {
@@ -217,6 +236,17 @@ void stop_link() {
   if (g_network) g_network->stop_link();
 }
 
+// The profiler (with video), so that the ways out of the process end its
+// recording.
+Profiler* g_profiler = nullptr;
+void stop_profiler(const char* why) {
+#ifdef OPENGP_VIDEO
+  if (g_profiler) g_profiler->stop(why);
+#else
+  (void)why;
+#endif
+}
+
 // The reboot the game asked for (set on the guest thread; the main thread
 // restarts the process).
 std::mutex g_reboot_mutex;
@@ -234,6 +264,14 @@ std::atomic<bool> g_reboot_requested{false};
   }
   stop_link();
   std::vector<std::string> args = o.args;
+#ifdef OPENGP_VIDEO
+  if (g_profiler && g_profiler->recording()) {
+    // The restarted game goes on recording into the same profile.
+    args.push_back("--profile-resume");
+    args.push_back(g_profiler->dir().string());
+    g_profiler->stop("restart");
+  }
+#endif
   args.push_back("--reboot");
   args.push_back(path.string());
   args.push_back("--frame-offset");
@@ -345,6 +383,11 @@ audio::HostOutput* g_audio_out = nullptr;
 audio::WavWriter* g_audio_dump = nullptr;
 
 std::atomic<unsigned long long> g_rendered{0};
+// Frame captures being written (on their own threads); quitting waits for them.
+std::atomic<int> g_captures_writing{0};
+void wait_for_captures() {
+  for (int i = 0; i < 100 && g_captures_writing.load() > 0; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(50));
+}
 std::atomic<unsigned long long> g_render_ns{0}, g_wait_ns{0};  // render thread: rendering, idle
 
 // The camera's pictures for this run, or null for no camera: a webcam (with
@@ -529,8 +572,19 @@ int run(const Game& game, int argc, char** argv) {
   };
   ppc::g_hooks.fatal = [](const char* message) { std::fprintf(stderr, "[opengp] fatal: %s\n", message); };
   static const auto status_on_crash = print_status;
-  os::install_crash_handler(machine.base(), [] { status_on_crash("crash"); });
-  app::start_hang_watch(machine, names, user_dir / "hang-report.txt");
+  os::install_crash_handler(machine.base(), [] {
+    status_on_crash("crash");
+#ifdef OPENGP_VIDEO
+    if (g_profiler) g_profiler->flush();  // unless a file is being written: the crash may be in the profiler
+#endif
+  });
+  app::start_hang_watch(machine, names, user_dir / "hang-report.txt", 10, [](const std::string& report) {
+#ifdef OPENGP_VIDEO
+    if (g_profiler) g_profiler->note("hang", profile::Json().add("report", report));
+#else
+    (void)report;
+#endif
+  });
   os::start_profiler_from_env();
 
   std::thread([timeout_s = o.timeout_s, status_s = o.status_s, print_status] {
@@ -542,6 +596,7 @@ int run(const Game& game, int argc, char** argv) {
       std::this_thread::sleep_until(wake);
       if (clock::now() >= deadline) {
         print_status("timeout");
+        stop_profiler("timeout");
         stop_link();
         std::fflush(stdout);
         std::_Exit(0);
@@ -553,6 +608,7 @@ int run(const Game& game, int argc, char** argv) {
 #ifdef OPENGP_VIDEO
   if (o.use_video) {
     main_thread_restarts = true;
+    os::set_thread_name("main");
     SDL_SetMainReady();
     if (!SDL_Init(SDL_INIT_VIDEO)) {
       std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
@@ -605,6 +661,31 @@ int run(const Game& game, int argc, char** argv) {
     std::printf("  saves:  %s\n", machine.cards().dir().c_str());
     std::fflush(stdout);
 
+    // Profiling: from the start (--profile), or with F10 or the menu.
+    static Profiler profiler(machine, game, renderer, {o.profile_rate, o.profile_thumbs, 480});
+    g_profiler = &profiler;
+    profiler.set_describe([window, &o, argc, argv] {
+      profile::JsonArray args;
+      for (int i = 0; i < argc; ++i) args.add(argv[i]);
+      profile::Json host;
+      host.add("image", o.image).raw("command_line", args.str()).add("headless", window == nullptr);
+      if (window) {
+        int w = 0, h = 0;
+        SDL_GetWindowSizeInPixels(window, &w, &h);
+        host.add("window", std::to_string(w) + "x" + std::to_string(h));
+        if (const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window)))
+          host.add("display", std::to_string(mode->w) + "x" + std::to_string(mode->h) + " at " +
+                                  std::to_string(mode->refresh_rate) + " Hz");
+      }
+      return host;
+    });
+    const fs::path profiles_dir = user_dir / "profiles";
+    if (o.profile || !o.profile_dir.empty() || !o.profile_resume.empty()) {
+      const bool resume = !o.profile_resume.empty();
+      if (!profiler.start(resume ? o.profile_resume : o.profile_dir, profiles_dir, resume, &error))
+        std::fprintf(stderr, "[profile] %s\n", error.c_str());
+    }
+
     static video::FrameQueue queue;
     machine.gpu().set_output(&queue);
     std::thread([] {
@@ -627,7 +708,9 @@ int run(const Game& game, int argc, char** argv) {
     };
     auto quit = [&save, &print_status](const char* why) {
       save();
+      wait_for_captures();
       print_status(why);
+      stop_profiler(why);
       stop_link();
       std::fflush(stdout);
       std::_Exit(0);
@@ -672,6 +755,39 @@ int run(const Game& game, int argc, char** argv) {
     model.camera_info = camera_info;
     model.webcams = [] { return camera::Webcam::names(); };
     model.quit = [&quit] { quit("quit from the menu"); };
+    auto toggle_profiling = [&] {
+      if (profiler.recording()) {
+        profiler.stop("stopped by the player");
+        menu.notify("Profile saved: " + profiler.dir().string());
+      } else if (std::string why; profiler.start({}, profiles_dir, false, &why)) {
+        menu.notify("Recording a profile (F10 stops)");
+      } else {
+        menu.notify("Can't record a profile: " + why);
+      }
+    };
+    auto mark = [&] {
+      if (!profiler.recording()) {
+        menu.notify("Not recording a profile (F10 starts)");
+        return;
+      }
+      profiler.mark("F8");
+      menu.notify("Marked");
+    };
+    // Frame captures: F9 (the next frame), and the frames asked for.
+    auto capture = [&] {
+      machine.gpu().frontend().request_capture();
+      menu.notify("Capturing a frame...");
+    };
+    auto next_capture = [&o](u64 from) {
+      // Frames count from power-on; the front end's from this boot.
+      const auto it = o.capture_frames.lower_bound(std::max(from, o.frame_offset));
+      machine.gpu().frontend().request_capture_at(it == o.capture_frames.end() ? ~0ull : *it - o.frame_offset);
+    };
+    if (!o.capture_frames.empty()) next_capture(o.frame_offset);
+    model.toggle_profiling = toggle_profiling;
+    model.mark = mark;
+    model.capture = capture;
+    u64 queue_ns = 0;  // waiting for the next frame to present
     // Even frame pacing: the retraces that say when to show each frame, and
     // when the last one was shown (steady clock, ns).
     hw::ViDevice* const vi = machine.hardware().device<hw::ViDevice>();
@@ -707,6 +823,9 @@ int run(const Game& game, int argc, char** argv) {
           case SDL_EVENT_KEY_DOWN:
             if (e.key.repeat) break;
             if (e.key.key == SDLK_F12) shot_requested = true;
+            if (e.key.key == SDLK_F8) mark();
+            if (e.key.key == SDLK_F9) capture();
+            if (e.key.key == SDLK_F10) toggle_profiling();
             if (e.key.key == SDLK_F11 || (e.key.key == SDLK_RETURN && (e.key.mod & SDL_KMOD_ALT))) {
               settings.fullscreen = !settings.fullscreen;
               continue;  // not for the game (Enter is its start button)
@@ -773,6 +892,7 @@ int run(const Game& game, int argc, char** argv) {
           link_lost = now;
           menu.notify("The link to the other cabinets was lost: restarting");
           std::fprintf(stderr, "[opengp] the link to the other cabinets was lost: restarting\n");
+          profiler.note("link_lost");
         } else if (now - *link_lost >= std::chrono::seconds(4)) {
           save();
           os::Reboot fresh;
@@ -793,6 +913,7 @@ int run(const Game& game, int argc, char** argv) {
       os::g_main_activity.set("waiting for the game's next frame");
       auto frame = queue.pop(8);
       g_wait_ns.fetch_add(elapsed_ns(wait_start));
+      queue_ns += elapsed_ns(wait_start);
       if (!frame) {
         // The game has shown nothing new for a while (paused, loading, or
         // stuck): keep the menu alive.
@@ -815,6 +936,8 @@ int run(const Game& game, int argc, char** argv) {
         menu.update(model);
       }
       video::Image shot;
+      std::unique_ptr<video::CaptureImages> capture_images;
+      if (frame->capture) capture_images = std::make_unique<video::CaptureImages>();
       // With even frame pacing a frame is shown at the game's first retrace
       // after it was finished, as the display would show its XFB, instead of
       // as soon as it is drawn: the game's frames take more or less time, but
@@ -824,7 +947,7 @@ int run(const Game& game, int argc, char** argv) {
       const bool paced = settings.even_pacing && window && frame->xfb && vi;
       const auto render_start = std::chrono::steady_clock::now();
       os::g_main_activity.set("drawing a frame");
-      renderer.render(*frame, shoot ? &shot : nullptr, !paced);
+      renderer.render(*frame, shoot ? &shot : nullptr, capture_images.get(), !paced);
       g_render_ns.fetch_add(elapsed_ns(render_start));
       if (paced) {
         // After the last frame's retrace too: one frame a retrace.
@@ -835,6 +958,66 @@ int run(const Game& game, int argc, char** argv) {
       if (frame->xfb) {
         g_rendered.fetch_add(1);
         last_present = std::chrono::steady_clock::now();
+        Profiler::FrameInfo info;
+        info.number = number;
+        info.paused = paused;
+        info.menu_open = menu.is_open();
+        info.background = background;
+        info.linked = linked;
+        info.settings = &settings;
+        info.scale = renderer.scale();
+        info.queue_ns = queue_ns;
+        info.queue_depth = static_cast<u32>(queue.pending());
+        if (g_audio_out) {
+          info.audio_queue_ms = g_audio_out->queue_ms();
+          info.audio_underruns = g_audio_out->underruns();
+        }
+        profiler.on_frame(*frame, info);
+        queue_ns = 0;
+        if (frame->capture && capture_images) {
+          // Written on its own thread, with the frame (not recycled).
+          static int captures = 0;
+          char name[64];
+          std::snprintf(name, sizeof(name), "%03d_f%llu", ++captures, static_cast<unsigned long long>(number));
+          fs::path dir;
+          if (profiler.recording()) {
+            dir = profiler.dir() / "captures" / name;
+          } else {
+            std::time_t now = std::time(nullptr);
+            std::tm tm{};
+#ifdef _WIN32
+            localtime_s(&tm, &now);
+#else
+            localtime_r(&now, &tm);
+#endif
+            char stamp[32];
+            std::strftime(stamp, sizeof(stamp), "%Y-%m-%d_%H%M%S", &tm);
+            dir = user_dir / "captures" / (std::string(stamp) + "_f" + std::to_string(number));
+          }
+          CaptureInfo capture_info;
+          capture_info.game = game.title;
+          capture_info.number = number;
+          capture_info.scale = renderer.scale();
+          if (game.status) game.status(machine.base(), &capture_info.status);
+          capture_info.settings = std::string("aspect ") + aspect_name(settings.aspect) + ", " + renderer.driver() +
+                                  (settings.vsync ? ", vsync" : "");
+          profiler.note("capture", profile::Json().add("dir", dir.string()));
+          menu.notify("Frame captured: " + dir.string());
+          std::fprintf(stderr, "[opengp] capturing frame %llu to %s\n", static_cast<unsigned long long>(number),
+                       dir.string().c_str());
+          ++g_captures_writing;
+          std::thread([dir, capture_info, frame = std::move(frame), images = std::move(capture_images)] {
+            std::string why;
+            if (!write_capture(dir, *frame, *images, names, capture_info, &why))
+              std::fprintf(stderr, "[opengp] capture: %s\n", why.c_str());
+            --g_captures_writing;
+          }).detach();
+          next_capture(number + 1);
+          continue;
+        }
+        model.profiling = profiler.recording();
+        model.profile_dir = model.profiling ? profiler.dir().string() : std::string();
+        model.profile_frames = profiler.frames();
       }
       queue.give_back(std::move(frame));
       if (shoot && shot.width) {
@@ -843,6 +1026,7 @@ int run(const Game& game, int argc, char** argv) {
         const fs::path path = shot_dir / ("frame_" + std::to_string(number) + ".png");
         if (video::write_png(path.string(), shot)) {
           std::fprintf(stderr, "[opengp] screenshot: %s\n", path.string().c_str());
+          profiler.note("screenshot", profile::Json().add("path", path.string()));
           if (shot_requested && use_menu) menu.notify("Screenshot saved: " + path.filename().string());
         }
         shot_requested = false;
@@ -851,6 +1035,7 @@ int run(const Game& game, int argc, char** argv) {
   }
 #endif
 
+  if (o.profile || !o.profile_dir.empty()) std::fprintf(stderr, "[profile] profiling needs video (not --no-video)\n");
   machine.run();
   print_status("entry point returned");
   return 0;

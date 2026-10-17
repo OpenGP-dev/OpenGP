@@ -25,6 +25,7 @@
 #include <atomic>
 #include <chrono>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <span>
 #include <unordered_map>
@@ -51,7 +52,7 @@ class Frontend {
   void set_output(FrameOutput* output) { output_ = output; }
   // Waits while the output is too far behind (see FrameOutput::wait_for_room).
   void wait_for_output() {
-    if (output_) output_->wait_for_room();
+    if (output_) stats_.wait_ns.fetch_add(output_->wait_for_room(), std::memory_order_relaxed);
   }
 
   // Widescreen: widens the EFB by `side` pixels on the left and right, from
@@ -91,14 +92,37 @@ class Frontend {
   struct Stats {
     std::atomic<u64> draw_ns{0}, state_ns{0}, texture_ns{0}, transform_ns{0}, vertices{0};
     std::atomic<u64> readback_ns{0}, readbacks{0};  // EFB reads that waited for the renderer
+    std::atomic<u64> decode_ns{0};  // texture decoding (part of the texture time)
+    std::atomic<u64> wait_ns{0};    // waiting for the renderer to take frames
   };
   const Stats& stats() const { return stats_; }
+  // Notes a likely glitch in the current frame (see Risk).
+  void note_risk(Risk::Kind kind, u32 address = 0, u32 a = 0, u32 b = 0);
+
+  // Captures the next displayed frame (see FrameCapture). Thread-safe.
+  void request_capture() { capture_requested_.store(true, std::memory_order_relaxed); }
+  // ... or the frame numbered `frame` (frames() when it starts), if it hasn't started yet.
+  void request_capture_at(u64 frame) { capture_at_.store(frame, std::memory_order_relaxed); }
+  // Says where the game is (its stack, and the host's) for captures.
+  void set_stack_reader(std::function<void(FrameCapture::Stacks&)> reader) { stack_reader_ = std::move(reader); }
+  void read_stacks(FrameCapture::Stacks& stacks) const {
+    if (stack_reader_) stack_reader_(stacks);
+  }
+  // Whether a capture is under way or asked for (call sites are wanted).
+  bool capturing() const {
+    const u64 at = capture_at_.load(std::memory_order_relaxed);
+    return capture_ || capture_requested_.load(std::memory_order_relaxed) || at == frames_ || at == frames_ + 1;
+  }
+  // Where the game issued the command being decoded, if known (else the
+  // stack at the time it is decoded is taken).
+  void set_issuer(const FrameCapture::Stacks* stacks) { issuer_ = stacks; }
 
  private:
   struct Viewport;  // viewport and scissor offset mapping for the current draw
 
   Frame& frame();
   void end_frame(bool present);
+  void finish_stats(Frame& f);
 
   void efb_copy(u32 trigger);
   void clear(u32 x, u32 y, u32 width, u32 height);
@@ -129,6 +153,21 @@ class Frontend {
   u64 frames_ = 0;
   // OPENGP_GX_DUMP=<frame>: log that frame's draws, copies and clears.
   Stats stats_;
+  // This displayed frame's statistics and risks so far (see FrameStats),
+  // and the totals they started from.
+  FrameStats frame_stats_;
+  std::vector<Risk> frame_risks_;
+  // Capturing (see FrameCapture): asked for, and the displayed frame being captured.
+  std::atomic<bool> capture_requested_{false};
+  std::atomic<u64> capture_at_{~0ull};
+  std::unique_ptr<FrameCapture> capture_;
+  std::function<void(FrameCapture::Stacks&)> stack_reader_;
+  const FrameCapture::Stacks* issuer_ = nullptr;
+  void capture_draw(u32 state, u8 primitive, u8 vat, u16 count, u32 base, u32 first_index, s32 draw, u32 widened,
+                    const u32* cp);
+  struct {
+    u64 finished_ns, draw_ns, state_ns, texture_ns, decode_ns, transform_ns, wait_ns, readback_ns;
+  } last_{};
   // Widescreen: pixels added on each side of the EFB (fixed within a frame).
   std::atomic<u32> requested_side_{0};
   u32 side_ = 0;

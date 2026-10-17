@@ -71,6 +71,19 @@ u64 now_ns() {
       std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
+// Adds the time from construction to destruction to a counter (ns).
+class ScopeTimer {
+ public:
+  explicit ScopeTimer(u64& total) : total_(total), start_(now_ns()) {}
+  ~ScopeTimer() { total_ += now_ns() - start_; }
+  ScopeTimer(const ScopeTimer&) = delete;
+  ScopeTimer& operator=(const ScopeTimer&) = delete;
+
+ private:
+  u64& total_;
+  u64 start_;
+};
+
 struct FullscreenUniforms {
   float rect[4];
   float z[4];
@@ -92,12 +105,15 @@ void FrameQueue::submit(std::unique_ptr<gx::Frame> frame) {
   cv_.notify_all();
 }
 
-void FrameQueue::wait_for_room() {
+u64 FrameQueue::wait_for_room() {
   std::unique_lock lock(mutex_);
-  if (frames_.size() < max_pending_) return;
+  if (frames_.size() < max_pending_) return 0;
+  const auto start = std::chrono::steady_clock::now();
   os::g_guest_wait.set("waiting for the renderer to take a frame");
   cv_.wait(lock, [this] { return frames_.size() < max_pending_; });
   os::g_guest_wait.set(nullptr);
+  return static_cast<u64>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count());
 }
 
 std::unique_ptr<gx::Frame> FrameQueue::recycle() {
@@ -140,18 +156,63 @@ Renderer::~Renderer() {
     if (s) SDL_ReleaseGPUShader(device_, s);
   for (SDL_GPUSampler* s : {linear_, nearest_})
     if (s) SDL_ReleaseGPUSampler(device_, s);
-  for (SDL_GPUTexture* t : {efb_color_, efb_depth_, white_, read_color_, read_depth_})
+  for (SDL_GPUTexture* t : {efb_color_, efb_depth_, white_, read_color_, read_depth_, depth_copy_})
     if (t) SDL_ReleaseGPUTexture(device_, t);
   if (vertex_buffer_) SDL_ReleaseGPUBuffer(device_, vertex_buffer_);
   if (index_buffer_) SDL_ReleaseGPUBuffer(device_, index_buffer_);
   if (transfer_) SDL_ReleaseGPUTransferBuffer(device_, transfer_);
   poll_reads(true);
   for (SDL_GPUTransferBuffer* b : read_buffers_) SDL_ReleaseGPUTransferBuffer(device_, b);
+  poll_thumbnails(true);
   if (window_) SDL_ReleaseWindowFromGPUDevice(device_, window_);
   SDL_DestroyGPUDevice(device_);
 }
 
 const char* Renderer::driver() const { return device_ ? SDL_GetGPUDeviceDriver(device_) : "none"; }
+
+std::string Renderer::device_name() const {
+  if (!device_) return {};
+  const char* name = SDL_GetStringProperty(SDL_GetGPUDeviceProperties(device_), SDL_PROP_GPU_DEVICE_NAME_STRING, "");
+  return name ? name : "";
+}
+
+std::string Renderer::driver_version() const {
+  if (!device_) return {};
+  const SDL_PropertiesID props = SDL_GetGPUDeviceProperties(device_);
+  std::string version = SDL_GetStringProperty(props, SDL_PROP_GPU_DEVICE_DRIVER_NAME_STRING, "");
+  const char* v = SDL_GetStringProperty(props, SDL_PROP_GPU_DEVICE_DRIVER_VERSION_STRING, "");
+  if (v && *v) version += (version.empty() ? "" : " ") + std::string(v);
+  return version;
+}
+
+RenderStats Renderer::take_stats() {
+  RenderStats s = std::move(stats_);
+  stats_ = {};
+  return s;
+}
+
+std::vector<Thumbnail> Renderer::take_thumbnails() {
+  std::vector<Thumbnail> ready;
+  ready.swap(thumbnails_);
+  return ready;
+}
+
+SDL_GPUTexture* Renderer::create_texture(const SDL_GPUTextureCreateInfo& info) {
+  SDL_GPUTexture* texture = SDL_CreateGPUTexture(device_, &info);
+  if (!texture) {
+    ++stats_.failures;
+    return nullptr;
+  }
+  ++stats_.textures;
+  u64 bytes = 0;
+  for (u32 l = 0, w = info.width, h = info.height; l < std::max(info.num_levels, 1u); ++l) {
+    bytes += u64{w} * h * 4;
+    w = std::max(1u, w / 2);
+    h = std::max(1u, h / 2);
+  }
+  stats_.texture_bytes += bytes;
+  return texture;
+}
 
 SDL_GPUShader* Renderer::shader(const ShaderCode& code, bool fragment, u32 samplers, u32 uniforms) {
   SDL_GPUShaderCreateInfo info{};
@@ -175,6 +236,8 @@ SDL_GPUShader* Renderer::shader(const ShaderCode& code, bool fragment, u32 sampl
 bool Renderer::init(SDL_Window* window, u32 scale, std::string* error) {
   const char* debug_env = std::getenv("OPENGP_GPU_DEBUG");
   const bool debug = debug_env && *debug_env && *debug_env != '0';
+  const char* sync_env = std::getenv("OPENGP_PROFILE_GPU_SYNC");
+  gpu_sync_ = sync_env && *sync_env && *sync_env != '0';
   // Vulkan (SPIR-V), or Metal (MSL) on macOS: SDL picks the first backend
   // that takes one of the formats (Metal before Vulkan).
   SDL_GPUShaderFormat formats = SDL_GPU_SHADERFORMAT_SPIRV;
@@ -307,6 +370,7 @@ bool Renderer::resize_efb(u32 width) {
   efb_logical_width_ = width;
   efb_width_ = width * scale_;
   efb_height_ = gx::kEfbHeight * scale_;
+  ++stats_.efb_resizes;
   SDL_GPUTextureCreateInfo t{};
   t.type = SDL_GPU_TEXTURETYPE_2D;
   t.format = kColorFormat;
@@ -315,10 +379,10 @@ bool Renderer::resize_efb(u32 width) {
   t.height = efb_height_;
   t.layer_count_or_depth = 1;
   t.num_levels = 1;
-  efb_color_ = SDL_CreateGPUTexture(device_, &t);
+  efb_color_ = create_texture(t);
   t.format = kDepthFormat;
   t.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-  efb_depth_ = SDL_CreateGPUTexture(device_, &t);
+  efb_depth_ = create_texture(t);
   efb_initialised_ = false;
   return efb_color_ && efb_depth_;
 }
@@ -366,8 +430,14 @@ SDL_GPUGraphicsPipeline* Renderer::tev_pipeline(gx::PipelineKey key) {
   p.target_info.num_color_targets = 1;
   p.target_info.depth_stencil_format = kDepthFormat;
   p.target_info.has_depth_stencil_target = true;
+  const ScopeTimer timer(stats_.pipeline_ns);
   SDL_GPUGraphicsPipeline* pipeline = SDL_CreateGPUGraphicsPipeline(device_, &p);
-  if (!pipeline) std::fprintf(stderr, "[video] pipeline %08X: %s\n", k, SDL_GetError());
+  if (!pipeline) {
+    std::fprintf(stderr, "[video] pipeline %08X: %s\n", k, SDL_GetError());
+    ++stats_.failures;
+  }
+  ++stats_.pipelines;
+  stats_.new_pipelines.push_back(key.bits);
   tev_pipelines_.emplace(key.bits, pipeline);
   return pipeline;
 }
@@ -394,7 +464,10 @@ SDL_GPUGraphicsPipeline* Renderer::clear_pipeline(bool color, bool alpha, bool d
   p.target_info.num_color_targets = 1;
   p.target_info.depth_stencil_format = kDepthFormat;
   p.target_info.has_depth_stencil_target = true;
+  const ScopeTimer timer(stats_.pipeline_ns);
   SDL_GPUGraphicsPipeline* pipeline = SDL_CreateGPUGraphicsPipeline(device_, &p);
+  if (!pipeline) ++stats_.failures;
+  ++stats_.pipelines;
   clear_pipelines_.emplace(key, pipeline);
   return pipeline;
 }
@@ -425,6 +498,8 @@ SDL_GPUSampler* Renderer::sampler(u32 mode0, u32 mode1, bool native_lod) {
     s.max_lod = static_cast<float>(field(mode1, 8, 8)) / 16.0f;
   }
   SDL_GPUSampler* sampler = SDL_CreateGPUSampler(device_, &s);
+  if (!sampler) ++stats_.failures;
+  ++stats_.samplers;
   samplers_.emplace(key, sampler);
   return sampler;
 }
@@ -445,6 +520,8 @@ bool Renderer::upload(SDL_GPUCommandBuffer* cmd, const gx::Frame& f) {
   const u32 tbytes = static_cast<u32>(f.texels.size());
   const u32 total = vbytes + ibytes + tbytes;
   if (total == 0) return true;
+  const ScopeTimer timer(stats_.upload_ns);
+  stats_.upload_bytes += total;
 
   if (total > transfer_capacity_) {
     if (transfer_) SDL_ReleaseGPUTransferBuffer(device_, transfer_);
@@ -487,7 +564,7 @@ bool Renderer::upload(SDL_GPUCommandBuffer* cmd, const gx::Frame& f) {
       t.height = up.height;
       t.layer_count_or_depth = 1;
       t.num_levels = up.levels;
-      tex = SDL_CreateGPUTexture(device_, &t);
+      tex = create_texture(t);
     }
     if (!tex) continue;
     u32 offset = vbytes + ibytes + static_cast<u32>(up.offset);
@@ -529,6 +606,7 @@ void Renderer::begin_efb(SDL_GPUCommandBuffer* cmd) {
   depth.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
   efb_initialised_ = true;
   pass_ = SDL_BeginGPURenderPass(cmd, &color, 1, &depth);
+  ++stats_.passes;
   pass_is_efb_ = true;
   bound_pipeline_ = nullptr;
   pushed_uniforms_ = ~0u;
@@ -559,7 +637,9 @@ void Renderer::draw(const gx::Frame& f, const gx::DrawCmd& d) {
   if (pipeline != bound_pipeline_) {
     SDL_BindGPUGraphicsPipeline(pass_, pipeline);
     bound_pipeline_ = pipeline;
+    ++stats_.pipeline_binds;
   }
+  ++stats_.draws;
   SDL_Rect scissor{s.scissor[0] * static_cast<int>(scale_), s.scissor[1] * static_cast<int>(scale_),
                    s.scissor[2] * static_cast<int>(scale_), s.scissor[3] * static_cast<int>(scale_)};
   SDL_SetGPUScissor(pass_, &scissor);
@@ -612,7 +692,7 @@ void Renderer::copy(SDL_GPUCommandBuffer* cmd, const gx::CopyCmd& c) {
     t.height = h;
     t.layer_count_or_depth = 1;
     t.num_levels = 1;
-    dst = {SDL_CreateGPUTexture(device_, &t), w, h};
+    dst = {create_texture(t), w, h};
     if (!dst.texture) return;
   }
 
@@ -621,6 +701,7 @@ void Renderer::copy(SDL_GPUCommandBuffer* cmd, const gx::CopyCmd& c) {
   target.load_op = SDL_GPU_LOADOP_DONT_CARE;
   target.store_op = SDL_GPU_STOREOP_STORE;
   SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &target, 1, nullptr);
+  ++stats_.passes;
   SDL_BindGPUGraphicsPipeline(pass, copy_pipeline_);
   SDL_GPUTextureSamplerBinding src{c.depth ? efb_depth_ : efb_color_, c.depth ? nearest_ : linear_};
   SDL_BindGPUFragmentSamplers(pass, 0, &src, 1);
@@ -648,9 +729,14 @@ void Renderer::present(SDL_GPUCommandBuffer* cmd, const Texture* xfb, float aspe
   SDL_GPUTexture* swapchain = nullptr;
   Uint32 sw = 0, sh = 0;
   os::g_main_activity.set("waiting for the window's next image");
-  const bool acquired = SDL_WaitAndAcquireGPUSwapchainTexture(cmd, window_, &swapchain, &sw, &sh);
+  bool acquired;
+  {
+    const ScopeTimer timer(stats_.acquire_ns);
+    acquired = SDL_WaitAndAcquireGPUSwapchainTexture(cmd, window_, &swapchain, &sw, &sh);
+  }
   os::g_main_activity.set("drawing a frame");
   if (!acquired || !swapchain) return;
+  ++stats_.presents;
   if (overlay_) overlay_->prepare(cmd);
   SDL_GPUColorTargetInfo target{};
   target.texture = swapchain;
@@ -680,10 +766,14 @@ void Renderer::present(SDL_GPUCommandBuffer* cmd, const Texture* xfb, float aspe
 
 u64 Renderer::redraw(u64 at_ns) {
   if (!window_) return 0;
-  SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device_);
-  if (!cmd) return 0;
-  const auto xfb = last_xfb_ ? textures_.find(last_xfb_) : textures_.end();
-  present(cmd, xfb != textures_.end() && xfb->second.texture ? &xfb->second : nullptr, last_aspect_);
+  SDL_GPUCommandBuffer* cmd;
+  {
+    const ScopeTimer timer(stats_.render_ns);
+    cmd = SDL_AcquireGPUCommandBuffer(device_);
+    if (!cmd) return 0;
+    const auto xfb = last_xfb_ ? textures_.find(last_xfb_) : textures_.end();
+    present(cmd, xfb != textures_.end() && xfb->second.texture ? &xfb->second : nullptr, last_aspect_);
+  }
   // The window's image is ours by now (getting it may have waited for the
   // display): only the submit, which presents it, waits for `at_ns`.
   u64 waited = 0;
@@ -693,6 +783,8 @@ u64 Renderer::redraw(u64 at_ns) {
     SDL_DelayPrecise(waited);
     os::g_main_activity.set("drawing a frame");
   }
+  const ScopeTimer timer(stats_.render_ns);
+  const ScopeTimer submit_timer(stats_.submit_ns);
   SDL_SubmitGPUCommandBuffer(cmd);
   return waited;
 }
@@ -756,6 +848,169 @@ void Renderer::finish_capture(Image* image) {
   capture_ = {};
 }
 
+void Renderer::thumbnail(SDL_GPUCommandBuffer* cmd, const Texture& xfb, u64 frame) {
+  // Scale the XFB down (bilinear) into a small texture and download it; the
+  // download is read once its fence has passed (poll_thumbnails()).
+  const u32 w = std::min(thumbnail_width_, xfb.width);
+  const u32 h = std::max(1u, static_cast<u32>(u64{xfb.height} * w / xfb.width));
+  thumbnail_width_ = 0;
+  SDL_GPUTextureCreateInfo t{};
+  t.type = SDL_GPU_TEXTURETYPE_2D;
+  t.format = kColorFormat;
+  t.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+  t.width = w;
+  t.height = h;
+  t.layer_count_or_depth = 1;
+  t.num_levels = 1;
+  SDL_GPUTexture* small = SDL_CreateGPUTexture(device_, &t);
+  SDL_GPUTransferBufferCreateInfo info{SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, w * h * 4, 0};
+  SDL_GPUTransferBuffer* download = SDL_CreateGPUTransferBuffer(device_, &info);
+  if (!small || !download) {
+    if (small) SDL_ReleaseGPUTexture(device_, small);
+    if (download) SDL_ReleaseGPUTransferBuffer(device_, download);
+    ++stats_.failures;
+    return;
+  }
+  SDL_GPUColorTargetInfo target{};
+  target.texture = small;
+  target.load_op = SDL_GPU_LOADOP_DONT_CARE;
+  target.store_op = SDL_GPU_STOREOP_STORE;
+  SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &target, 1, nullptr);
+  SDL_BindGPUGraphicsPipeline(pass, capture_pipeline_);
+  SDL_GPUTextureSamplerBinding src{xfb.texture, linear_};
+  SDL_BindGPUFragmentSamplers(pass, 0, &src, 1);
+  const FullscreenUniforms vs{{0, 0, 1, 1}, {0, 0, 0, 0}};
+  SDL_PushGPUVertexUniformData(cmd, 0, &vs, sizeof(vs));
+  SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+  SDL_EndGPURenderPass(pass);
+
+  SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
+  SDL_GPUTextureRegion region{};
+  region.texture = small;
+  region.w = w;
+  region.h = h;
+  region.d = 1;
+  SDL_GPUTextureTransferInfo dst{download, 0, w, h};
+  SDL_DownloadFromGPUTexture(copy, &region, &dst);
+  SDL_EndGPUCopyPass(copy);
+  SDL_ReleaseGPUTexture(device_, small);  // freed once the command buffer is done with it
+  unfenced_thumbnails_.push_back({frame, download, w, h, nullptr});
+}
+
+void Renderer::poll_thumbnails(bool wait_all) {
+  for (auto it = pending_thumbnails_.begin(); it != pending_thumbnails_.end();) {
+    SDL_GPUFence* fence = it->fence.get();
+    if (wait_all) SDL_WaitForGPUFences(device_, true, &fence, 1);
+    else if (!SDL_QueryGPUFence(device_, fence)) {
+      ++it;
+      continue;
+    }
+    Thumbnail& t = thumbnails_.emplace_back();
+    t.frame = it->frame;
+    t.image.width = it->width;
+    t.image.height = it->height;
+    t.image.rgba.resize(std::size_t{it->width} * it->height * 4);
+    if (const void* p = SDL_MapGPUTransferBuffer(device_, it->transfer, false)) {
+      std::memcpy(t.image.rgba.data(), p, t.image.rgba.size());
+      SDL_UnmapGPUTransferBuffer(device_, it->transfer);
+    }
+    SDL_ReleaseGPUTransferBuffer(device_, it->transfer);
+    it = pending_thumbnails_.erase(it);
+  }
+}
+
+void Renderer::download(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* texture, u32 width, u32 height, Download kind,
+                        u32 id) {
+  if (!texture || !width || !height) return;
+  end_pass();
+  SDL_GPUTransferBufferCreateInfo info{SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, width * height * 4, 0};
+  SDL_GPUTransferBuffer* transfer = SDL_CreateGPUTransferBuffer(device_, &info);
+  if (!transfer) {
+    ++stats_.failures;
+    return;
+  }
+  SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
+  SDL_GPUTextureRegion region{};
+  region.texture = texture;
+  region.w = width;
+  region.h = height;
+  region.d = 1;
+  SDL_GPUTextureTransferInfo dst{transfer, 0, width, height};
+  SDL_DownloadFromGPUTexture(copy, &region, &dst);
+  SDL_EndGPUCopyPass(copy);
+  downloads_.push_back({kind, id, transfer, width, height});
+}
+
+void Renderer::download_depth(SDL_GPUCommandBuffer* cmd, Download kind) {
+  // Depth textures can't be downloaded directly: draw the depth into an
+  // R32F colour target first.
+  end_pass();
+  if (!depth_copy_ || depth_copy_width_ != efb_width_ || depth_copy_height_ != efb_height_) {
+    if (depth_copy_) SDL_ReleaseGPUTexture(device_, depth_copy_);
+    SDL_GPUTextureCreateInfo t{};
+    t.type = SDL_GPU_TEXTURETYPE_2D;
+    t.format = SDL_GPU_TEXTUREFORMAT_R32_FLOAT;
+    t.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+    t.width = efb_width_;
+    t.height = efb_height_;
+    t.layer_count_or_depth = 1;
+    t.num_levels = 1;
+    depth_copy_ = create_texture(t);
+    depth_copy_width_ = efb_width_, depth_copy_height_ = efb_height_;
+    if (!depth_copy_) return;
+  }
+  SDL_GPUColorTargetInfo color{};
+  color.texture = depth_copy_;
+  color.load_op = SDL_GPU_LOADOP_DONT_CARE;
+  color.store_op = SDL_GPU_STOREOP_STORE;
+  SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &color, 1, nullptr);
+  SDL_BindGPUGraphicsPipeline(pass, read_depth_pipeline_);
+  SDL_GPUTextureSamplerBinding src{efb_depth_, nearest_};
+  SDL_BindGPUFragmentSamplers(pass, 0, &src, 1);
+  const FullscreenUniforms vs{{0, 0, 1, 1}, {0, 0, 0, 0}};
+  SDL_PushGPUVertexUniformData(cmd, 0, &vs, sizeof(vs));
+  SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+  SDL_EndGPURenderPass(pass);
+  download(cmd, depth_copy_, efb_width_, efb_height_, kind, 0);
+}
+
+void Renderer::finish_downloads(CaptureImages* images) {
+  for (PendingDownload& d : downloads_) {
+    Image image;
+    image.width = d.width;
+    image.height = d.height;
+    image.rgba.resize(std::size_t{d.width} * d.height * 4);
+    if (const void* p = SDL_MapGPUTransferBuffer(device_, d.transfer, false)) {
+      std::memcpy(image.rgba.data(), p, image.rgba.size());
+      SDL_UnmapGPUTransferBuffer(device_, d.transfer);
+    }
+    SDL_ReleaseGPUTransferBuffer(device_, d.transfer);
+    const bool depth = d.kind == Download::DepthStart || d.kind == Download::DepthEnd;
+    if (depth) {
+      for (std::size_t i = 0; i < image.rgba.size(); i += 4) {
+        float z;
+        std::memcpy(&z, &image.rgba[i], 4);
+        const u32 v = static_cast<u32>(std::clamp(z * 16777216.0f, 0.0f, 16777215.0f));
+        image.rgba[i] = static_cast<u8>(v >> 16);
+        image.rgba[i + 1] = static_cast<u8>(v >> 8);
+        image.rgba[i + 2] = static_cast<u8>(v);
+        image.rgba[i + 3] = 255;
+      }
+    }
+    if (!images) continue;
+    switch (d.kind) {
+      case Download::EfbStart: images->efb_start = std::move(image); break;
+      case Download::DepthStart: images->depth_start = std::move(image); break;
+      case Download::EfbEnd: images->efb_end = std::move(image); break;
+      case Download::DepthEnd: images->depth_end = std::move(image); break;
+      case Download::Xfb: images->xfb = std::move(image); break;
+      case Download::Copy: images->copies.push_back({d.id, std::move(image)}); break;
+      case Download::Earlier: images->earlier.push_back({d.id, std::move(image)}); break;
+    }
+  }
+  downloads_.clear();
+}
+
 void Renderer::read_efb(SDL_GPUCommandBuffer* cmd, std::shared_ptr<gx::EfbReadback> request) {
   // Sample the EFB at native resolution into a colour target (depth goes to
   // .r of an R32F target), then download it. The request completes once the
@@ -795,6 +1050,7 @@ void Renderer::read_efb(SDL_GPUCommandBuffer* cmd, std::shared_ptr<gx::EfbReadba
   color.load_op = SDL_GPU_LOADOP_DONT_CARE;
   color.store_op = SDL_GPU_STOREOP_STORE;
   SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &color, 1, nullptr);
+  ++stats_.passes;
   SDL_BindGPUGraphicsPipeline(pass, request->depth ? read_depth_pipeline_ : read_color_pipeline_);
   SDL_GPUTextureSamplerBinding src{request->depth ? efb_depth_ : efb_color_, nearest_};
   SDL_BindGPUFragmentSamplers(pass, 0, &src, 1);
@@ -826,6 +1082,7 @@ void Renderer::poll_reads(bool wait_all) {
     }
     if (wait_all) {
       os::g_main_activity.set("waiting for the GPU (readbacks)");
+      const ScopeTimer timer(stats_.fence_ns);
       SDL_WaitForGPUFences(device_, true, &fence, 1);
       os::g_main_activity.set("drawing a frame");
     }
@@ -849,7 +1106,9 @@ void Renderer::poll_reads(bool wait_all) {
   }
 }
 
-void Renderer::render(const gx::Frame& f, Image* capture_image, bool present_xfb) {
+void Renderer::render(const gx::Frame& f, Image* capture_image, CaptureImages* images, bool present_xfb) {
+  const ScopeTimer timer(stats_.render_ns);
+  ++stats_.renders;
   if (!resize_efb(f.efb_width)) {
     std::fprintf(stderr, "[video] could not resize the EFB: %s\n", SDL_GetError());
     return;
@@ -857,9 +1116,31 @@ void Renderer::render(const gx::Frame& f, Image* capture_image, bool present_xfb
   SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device_);
   if (!cmd) return;
   cmd_ = cmd;
-  if (!upload(cmd, f)) std::fprintf(stderr, "[video] upload failed: %s\n", SDL_GetError());
+  if (!upload(cmd, f)) {
+    std::fprintf(stderr, "[video] upload failed: %s\n", SDL_GetError());
+    ++stats_.failures;
+  }
+  if (images) {
+    // A capture: the EFB as the frame found it, and the textures earlier
+    // frames made (EFB copies) that it samples.
+    if (efb_initialised_) {
+      download(cmd, efb_color_, efb_width_, efb_height_, Download::EfbStart, 0);
+      download_depth(cmd, Download::DepthStart);
+    }
+    std::unordered_map<u32, bool> uploaded;
+    for (const gx::TextureUpload& up : f.uploads) uploaded[up.handle] = true;
+    for (const gx::DrawState& s : f.states) {
+      for (const gx::TextureBinding& t : s.textures) {
+        if (!t.texture || uploaded.count(t.texture)) continue;
+        uploaded[t.texture] = true;
+        if (auto it = textures_.find(t.texture); it != textures_.end())
+          download(cmd, it->second.texture, it->second.width, it->second.height, Download::Earlier, t.texture);
+      }
+    }
+  }
 
-  for (const gx::Command& c : f.commands) {
+  for (std::size_t i = 0; i < f.commands.size(); ++i) {
+    const gx::Command& c = f.commands[i];
     switch (c.type) {
       case gx::Command::Type::Draw:
         begin_efb(cmd);
@@ -869,7 +1150,21 @@ void Renderer::render(const gx::Frame& f, Image* capture_image, bool present_xfb
         begin_efb(cmd);
         clear(f.clears[c.index]);
         break;
-      case gx::Command::Type::Copy: copy(cmd, f.copies[c.index]); break;
+      case gx::Command::Type::Copy: {
+        const gx::CopyCmd& copy_cmd = f.copies[c.index];
+        const bool xfb_copy = copy_cmd.format == gx::CopyFormat::XFB;
+        if (images && xfb_copy) {
+          download(cmd, efb_color_, efb_width_, efb_height_, Download::EfbEnd, 0);
+          download_depth(cmd, Download::DepthEnd);
+        }
+        copy(cmd, copy_cmd);
+        if (images) {
+          if (auto it = textures_.find(copy_cmd.dest); it != textures_.end())
+            download(cmd, it->second.texture, it->second.width, it->second.height,
+                     xfb_copy ? Download::Xfb : Download::Copy, static_cast<u32>(i));
+        }
+        break;
+      }
       case gx::Command::Type::Readback: read_efb(cmd, f.readbacks[c.index]); break;
     }
   }
@@ -879,31 +1174,56 @@ void Renderer::render(const gx::Frame& f, Image* capture_image, bool present_xfb
   if (xfb != textures_.end() && xfb->second.texture) {
     if (window_ && present_xfb) present(cmd, &xfb->second, f.xfb_aspect);
     if (capture_image) capture(cmd, xfb->second);
+    if (thumbnail_width_) thumbnail(cmd, xfb->second, f.number);
     last_xfb_ = f.xfb;
     last_aspect_ = f.xfb_aspect;
   }
 
   // Submit, with a fence if downloads were recorded. Wait for it if the
-  // guest thread is waiting for a readback, or for a screenshot.
-  if (unfenced_reads_.empty() && !capture_.transfer) {
+  // guest thread is waiting for a readback, or for a screenshot (or always,
+  // to time the GPU).
+  const bool time_gpu = gpu_sync_ && f.xfb;
+  if (unfenced_reads_.empty() && !capture_.transfer && unfenced_thumbnails_.empty() && !time_gpu &&
+      downloads_.empty()) {
+    const ScopeTimer submit_timer(stats_.submit_ns);
     SDL_SubmitGPUCommandBuffer(cmd);
-  } else if (SDL_GPUFence* raw = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd)) {
-    std::shared_ptr<SDL_GPUFence> fence(raw, [device = device_](SDL_GPUFence* p) { SDL_ReleaseGPUFence(device, p); });
-    bool urgent = capture_.transfer != nullptr;
-    for (PendingRead& r : unfenced_reads_) {
-      urgent = urgent || r.request->urgent;
-      r.fence = fence;
-      pending_reads_.push_back(std::move(r));
+  } else {
+    SDL_GPUFence* raw;
+    {
+      const ScopeTimer submit_timer(stats_.submit_ns);
+      raw = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
     }
-    unfenced_reads_.clear();
-    if (urgent) {
-      os::g_main_activity.set("waiting for the GPU (a readback)");
-      SDL_WaitForGPUFences(device_, true, &raw, 1);
-      os::g_main_activity.set("drawing a frame");
+    if (raw) {
+      const u64 submitted = now_ns();
+      std::shared_ptr<SDL_GPUFence> fence(raw, [device = device_](SDL_GPUFence* p) { SDL_ReleaseGPUFence(device, p); });
+      bool urgent = capture_.transfer != nullptr || time_gpu || !downloads_.empty();
+      for (PendingRead& r : unfenced_reads_) {
+        urgent = urgent || r.request->urgent;
+        r.fence = fence;
+        pending_reads_.push_back(std::move(r));
+      }
+      unfenced_reads_.clear();
+      for (PendingThumbnail& t : unfenced_thumbnails_) {
+        t.fence = fence;
+        pending_thumbnails_.push_back(std::move(t));
+      }
+      unfenced_thumbnails_.clear();
+      if (urgent) {
+        os::g_main_activity.set("waiting for the GPU (a readback)");
+        const ScopeTimer fence_timer(stats_.fence_ns);
+        SDL_WaitForGPUFences(device_, true, &raw, 1);
+        if (time_gpu) stats_.gpu_ns += now_ns() - submitted;
+        os::g_main_activity.set("drawing a frame");
+      }
+      if (capture_image) finish_capture(capture_image);
+      finish_downloads(images);
+    } else {
+      for (PendingDownload& d : downloads_) SDL_ReleaseGPUTransferBuffer(device_, d.transfer);
+      downloads_.clear();
     }
-    if (capture_image) finish_capture(capture_image);
   }
   poll_reads(false);
+  poll_thumbnails(false);
 
   for (u32 h : f.releases) {
     if (auto it = textures_.find(h); it != textures_.end()) {

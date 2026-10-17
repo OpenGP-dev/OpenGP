@@ -141,6 +141,14 @@ class Hardware {
   u32 fifo_write_pointer() const { return fifo_wptr_; }
   // Called after each 32-byte burst lands in RAM (the GPU hooks this).
   std::function<void()> on_gather_burst;
+  // Bytes written to the gather pipe so far, and where the latest burst
+  // began in that count.
+  u64 gather_written() const { return gather_written_; }
+  u64 gather_burst_start() const { return gather_burst_start_; }
+  // If set, called before each write to the gather pipe with where it
+  // starts in gather_written() (frame captures use it to see who wrote what).
+  void (*on_gather_write)(void* context, u64 position) = nullptr;
+  void* gather_write_context = nullptr;
 
   // CPU access to the EFB window (0xC8000000-0xC8FFFFFF; the GPU hooks these).
   std::function<u32(u32 addr)> on_efb_read;
@@ -173,6 +181,7 @@ class Hardware {
   u32 fifo_base_ = 0, fifo_end_ = 0, fifo_wptr_ = 0;
   std::array<u8, 64> gather_buffer_{};  // one 32-byte burst plus spill from up to 8-byte writes
   u32 gather_count_ = 0;
+  u64 gather_written_ = 0, gather_burst_start_ = 0;
 
   // Time base: tb = host_ticks - tb_origin_ (+ guest adjustments, and time
   // spent paused)

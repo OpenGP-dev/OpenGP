@@ -24,6 +24,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "os/stack_walk.h"
+
 namespace os {
 
 namespace {
@@ -38,22 +40,9 @@ struct ThreadSamples {
 };
 
 // Walks a suspended thread's stack from its context.
-void unwind(CONTEXT context, std::array<DWORD64, kMaxFrames>& frames) {
+void unwind(const CONTEXT& context, std::array<DWORD64, kMaxFrames>& frames) {
   frames.fill(0);
-  for (int i = 0; i < kMaxFrames && context.Rip; ++i) {
-    frames[i] = context.Rip;
-    DWORD64 image_base = 0;
-    RUNTIME_FUNCTION* function = RtlLookupFunctionEntry(context.Rip, &image_base, nullptr);
-    if (!function) {  // leaf function: the return address is on top of the stack
-      context.Rip = *reinterpret_cast<DWORD64*>(context.Rsp);
-      context.Rsp += 8;
-      continue;
-    }
-    void* handler_data = nullptr;
-    DWORD64 establisher = 0;
-    RtlVirtualUnwind(UNW_FLAG_NHANDLER, image_base, context.Rip, function, &context, &handler_data, &establisher,
-                     nullptr);
-  }
+  walk_stack(context, frames.data(), kMaxFrames);
 }
 
 std::string symbol_name(HANDLE process, DWORD64 address, DWORD64* start) {

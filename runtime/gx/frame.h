@@ -19,6 +19,7 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -162,6 +163,108 @@ class EfbReadback {
   bool done_ = false;
 };
 
+// What the front end did for a displayed frame, for profiling: everything
+// since the previous displayed frame, so it includes the partial frames
+// before it (which have none of their own). Times in nanoseconds.
+struct FrameStats {
+  u64 finished_ns = 0;  // steady clock when the frame was finished (its XFB copy)
+  u64 interval_ns = 0;  // since the previous displayed frame was finished
+  // Front end work on the game's thread: draws (including the state,
+  // texture and transform work below), texture decoding (part of the
+  // texture work), and waits for the renderer and for EFB readbacks.
+  u64 draw_ns = 0, state_ns = 0, texture_ns = 0, decode_ns = 0, transform_ns = 0;
+  u64 wait_ns = 0, readback_ns = 0;
+  u32 calls = 0;      // primitives the game drew
+  u32 culled = 0;     // ... of which nothing was left after culling (or clipped away by the scissor)
+  u32 vertices = 0, triangles = 0;
+  u32 binds = 0;      // textures looked up for draws
+  u32 copy_binds = 0;  // ... that used an EFB copy
+  u32 decodes = 0;    // ... that had to be decoded (not in the cache)
+  u64 decoded_bytes = 0;  // RGBA8 bytes decoded
+  u64 hashed_bytes = 0;   // guest memory hashed (to find textures in the cache)
+  u32 copies = 0, xfb_copies = 0, clears = 0, readbacks = 0;
+  u32 partials = 0;   // partial frames (rendered early for EFB readbacks)
+  u32 depth_equal = 0;  // draws with an "equal" depth test (sensitive to depth precision)
+  // Widescreen: draws the heuristics changed (see Frontend::set_widescreen).
+  u32 widened_2d = 0, extended_edges = 0, widened_overlays = 0;
+  u32 cached_textures = 0, cached_copies = 0;  // at the end of the frame
+  u32 risks = 0;  // see Risk (more than Frame::risks holds)
+};
+
+// Something in a frame OpenGP does not draw as the hardware would: a likely
+// graphical glitch (for profiling). `address` and `a`, `b` say more.
+struct Risk {
+  enum class Kind : u8 {
+    TextureOutOfRange,    // a texture outside guest memory (drawn white): address, a = bytes
+    TextureFormat,        // an invalid texture format (drawn white): address, a = format
+    TmemRgba8,            // a preloaded RGBA8 texture (not supported; drawn white): address
+    TmemOutOfRange,       // a preloaded texture past the end of TMEM: a = TMEM address, b = bytes
+    CopySize,             // a texture where an EFB copy went, of another size: the copy is not used and
+                          // memory is read instead, which copies never write (a = texture w<<16|h, b = copy's)
+    CopyFormat,           // a texture read from an EFB copy in another format (a = texture's, b = copy's)
+    EfbPeekEmpty,         // a CPU read of the EFB before any readback was ready (reads 0): address
+    EfbWrite,             // a CPU write to the EFB (not supported): address, a = value
+    ZFreeze,              // z-freeze (not supported): a = genmode
+    DisplayListRange,     // a display list outside guest memory: address, a = bytes
+  };
+  Kind kind;
+  u32 address = 0, a = 0, b = 0;
+};
+
+// A frame captured for inspection (F9, see app/capture.h): what the front end
+// knew about each draw, EFB copy and texture. Only captured frames have one.
+// In a captured frame each of the game's primitives is its own DrawCmd, and
+// every texture is decoded afresh (the texture cache is emptied first), so
+// all of them are in Frame::uploads.
+struct FrameCapture {
+  // Where the game was when it issued a command: return addresses on the
+  // guest's stack (the first is its link register), and on Windows the
+  // host's stack (recompiled functions are named after the game's).
+  struct Stacks {
+    u32 guest[8] = {};
+    u8 guest_depth = 0;
+    u64 host[24] = {};
+    u8 host_depth = 0;
+  };
+  struct Texture {
+    u32 address = 0, format = 0, width = 0, height = 0, levels = 1;
+    u32 tlut_address = 0, tlut_format = 0;  // TMEM palette (paletted formats)
+    bool tmem = false;  // preloaded into TMEM
+    bool copy = false;  // an EFB copy (a renderer texture, not decoded from memory)
+    u32 copy_format = 0;  // ... in this TexFormat
+  };
+  struct Draw {
+    s32 draw = -1;     // its DrawCmd in Frame::draws, or -1 if nothing was left to draw
+    u32 state = 0;     // Frame::states
+    u32 primitive = 0, vat = 0, count = 0;
+    u32 first_vertex = 0, vertex_count = 0;  // Frame::vertices (widescreen additions included)
+    u32 triangles = 0;
+    float x0 = 0, y0 = 0, x1 = 0, y1 = 0;  // bounds in game pixels (x beyond 0..640 in widescreen)
+    float z0 = 0, z1 = 0;                  // EFB depth range, 0..1
+    float w0 = 0, w1 = 0;
+    u32 widescreen = 0;  // 1 widened 2D, 2 extended edges, 3 widened overlay
+    bool perspective = true;
+    // Registers the uniforms and pipeline key don't show as they were.
+    u32 genmode = 0, zmode = 0, blendmode = 0, zcompare = 0, constant_alpha = 0;
+    u32 vcd_lo = 0, vcd_hi = 0, vat_a = 0, vat_b = 0, vat_c = 0;
+    u32 xf_colors = 0, xf_texgens = 0, color_ctrl[2] = {}, alpha_ctrl[2] = {}, texgen[8] = {};
+    u32 matrix_index[2] = {};
+    float viewport[6] = {}, projection[7] = {};
+    Stacks stacks;
+  };
+  struct Copy {
+    u32 command = 0;  // Frame::commands
+    u32 address = 0, x = 0, y = 0, width = 0, height = 0;  // the game's rectangle and destination
+    u32 trigger = 0, pixel_format = 0;
+    Stacks stacks;
+  };
+  std::vector<Draw> draws;
+  std::vector<Copy> copies;
+  std::unordered_map<u32, Texture> textures;  // by handle
+  u32 side = 0;      // widescreen pixels added on each side
+  u32 partials = 0;  // partial frames before the end (their draws are not in the capture)
+};
+
 // An allocator that leaves trivially constructible elements uninitialised
 // when a vector grows (vertices are written right after).
 template <typename T>
@@ -202,6 +305,9 @@ struct Frame {
   u64 number = 0;             // displayed frames before this one (partial frames share the number)
   u64 finished_ns = 0;        // steady clock when it was finished (displayed frames only)
   std::vector<std::shared_ptr<EfbReadback>> readbacks;
+  FrameStats stats;          // displayed frames only
+  std::vector<Risk> risks;   // the first few of the frame's (displayed frames only)
+  std::unique_ptr<FrameCapture> capture;  // captured frames only (see FrameCapture)
 
   // Empties the frame for reuse, keeping the buffers' capacity.
   void clear() {
@@ -221,6 +327,9 @@ struct Frame {
     efb_width = kEfbWidth;
     number = finished_ns = 0;
     readbacks.clear();
+    stats = {};
+    risks.clear();
+    capture.reset();
   }
 };
 
@@ -231,8 +340,8 @@ class FrameOutput {
   // Takes a frame; never blocks.
   virtual void submit(std::unique_ptr<Frame> frame) = 0;
   // Blocks while the renderer is too far behind, which paces the game. Called
-  // on the game's thread with no lock held.
-  virtual void wait_for_room() {}
+  // on the game's thread with no lock held. Returns how long it waited (ns).
+  virtual u64 wait_for_room() { return 0; }
   // A rendered frame to reuse (its buffers keep their capacity), or nullptr.
   virtual std::unique_ptr<Frame> recycle() { return nullptr; }
 };

@@ -213,7 +213,17 @@ Frame& Frontend::frame() {
     if (frame_) frame_->clear();
     else frame_ = std::make_unique<Frame>();
     // The EFB's width only changes between displayed frames.
-    if (new_display_frame_) side_ = std::min(requested_side_.load(std::memory_order_relaxed), 2048u);
+    if (new_display_frame_) {
+      side_ = std::min(requested_side_.load(std::memory_order_relaxed), 2048u);
+      const bool at = capture_at_.load(std::memory_order_relaxed) == frames_;
+      if (output_ && (capture_requested_.exchange(false, std::memory_order_relaxed) || at)) {
+        // Every texture the frame uses is decoded again, into the frame.
+        capture_ = std::make_unique<FrameCapture>();
+        capture_->side = side_;
+        for (const auto& [key, t] : textures_) frame_->releases.push_back(t.handle);
+        textures_.clear();
+      }
+    }
     new_display_frame_ = false;
     frame_->efb_width = efb_width();
     // New frame: state and texture indices are per frame, and textures are
@@ -235,6 +245,7 @@ void Frontend::end_frame(bool present) {
     f.finished_ns = static_cast<u64>(
         std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
             .count());
+    finish_stats(f);
     ++frames_;
     new_display_frame_ = true;
     peeks_[0].requested = peeks_[1].requested = false;
@@ -269,11 +280,51 @@ void Frontend::end_frame(bool present) {
         }
       }
     }
+    f.capture = std::move(capture_);
   } else {
     f.xfb = 0;
+    ++frame_stats_.partials;
+    if (capture_) {
+      // The draws so far are in this partial frame, not the captured one.
+      ++capture_->partials;
+      capture_->draws.clear();
+      capture_->copies.clear();
+    }
   }
   if (output_) output_->submit(std::move(frame_));
   frame_.reset();
+}
+
+void Frontend::finish_stats(Frame& f) {
+  FrameStats& s = frame_stats_;
+  const u64 now = static_cast<u64>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+  auto delta = [](const std::atomic<u64>& total, u64& last) {
+    const u64 v = total.load(std::memory_order_relaxed), d = v - last;
+    last = v;
+    return d;
+  };
+  s.finished_ns = now;
+  s.interval_ns = last_.finished_ns ? now - last_.finished_ns : 0;
+  last_.finished_ns = now;
+  s.draw_ns = delta(stats_.draw_ns, last_.draw_ns);
+  s.state_ns = delta(stats_.state_ns, last_.state_ns);
+  s.texture_ns = delta(stats_.texture_ns, last_.texture_ns);
+  s.decode_ns = delta(stats_.decode_ns, last_.decode_ns);
+  s.transform_ns = delta(stats_.transform_ns, last_.transform_ns);
+  s.wait_ns = delta(stats_.wait_ns, last_.wait_ns);
+  s.readback_ns = delta(stats_.readback_ns, last_.readback_ns);
+  s.cached_textures = static_cast<u32>(textures_.size());
+  s.cached_copies = static_cast<u32>(copies_.size());
+  f.stats = s;
+  f.risks.swap(frame_risks_);
+  frame_risks_.clear();
+  s = {};
+}
+
+void Frontend::note_risk(Risk::Kind kind, u32 address, u32 a, u32 b) {
+  ++frame_stats_.risks;
+  if (frame_risks_.size() < 64) frame_risks_.push_back({kind, address, a, b});
 }
 
 // ---- CPU access to the EFB -----------------------------------------------------------------------
@@ -289,6 +340,7 @@ u32 Frontend::efb_read(u32 address, u32 alpha_mode) {
     f.readbacks.push_back(r);
     f.commands.push_back({Command::Type::Readback, static_cast<u32>(f.readbacks.size() - 1)});
     stats_.readbacks.fetch_add(1, std::memory_order_relaxed);
+    ++frame_stats_.readbacks;
     return r;
   };
   if (efb_sync_) {
@@ -314,7 +366,10 @@ u32 Frontend::efb_read(u32 address, u32 alpha_mode) {
       peeks.current = std::move(peeks.pending.front());
       peeks.pending.pop_front();
     }
-    if (!peeks.current) return 0;
+    if (!peeks.current) {
+      note_risk(Risk::Kind::EfbPeekEmpty, address);
+      return 0;
+    }
   }
   const std::vector<u32>& pixels = peeks.current->pixels;
   if (pixels.size() != std::size_t{kEfbWidth} * kEfbHeight) return 0;
@@ -329,6 +384,7 @@ u32 Frontend::efb_read(u32 address, u32 alpha_mode) {
 }
 
 void Frontend::efb_write(u32 address, u32 value) {
+  note_risk(Risk::Kind::EfbWrite, address, value);
   static bool warned = false;
   if (!warned) std::fprintf(stderr, "[gx] EFB writes are not supported (%08X = %08X)\n", address, value);
   warned = true;
@@ -477,6 +533,13 @@ void Frontend::efb_copy(u32 trigger) {
       c.dest = it->second.handle;
       f.copies.push_back(c);
       f.commands.push_back({Command::Type::Copy, static_cast<u32>(f.copies.size() - 1)});
+      ++frame_stats_.xfb_copies;
+      if (capture_) {
+        FrameCapture::Copy& cc = capture_->copies.emplace_back();
+        cc = {static_cast<u32>(f.commands.size() - 1), dest, x, y, w, h, trigger, bits(bp_[BP_ZCOMPARE], 0, 3), {}};
+        if (issuer_) cc.stacks = *issuer_;
+        else read_stacks(cc.stacks);
+      }
       f.xfb = c.dest;
       f.xfb_width = c.width;
       f.xfb_height = c.height;
@@ -503,6 +566,13 @@ void Frontend::efb_copy(u32 trigger) {
       c.dest = it->second.handle;
       f.copies.push_back(c);
       f.commands.push_back({Command::Type::Copy, static_cast<u32>(f.copies.size() - 1)});
+      if (capture_) {
+        FrameCapture::Copy& cc = capture_->copies.emplace_back();
+        cc = {static_cast<u32>(f.commands.size() - 1), dest, x, y, w, h, trigger, bits(bp_[BP_ZCOMPARE], 0, 3), {}};
+        if (issuer_) cc.stacks = *issuer_;
+        else read_stacks(cc.stacks);
+      }
+      ++frame_stats_.copies;
       textures_dirty_ = true;  // a texture at the destination now reads the copy
     }
   }
@@ -546,6 +616,7 @@ void Frontend::clear(u32 x, u32 y, u32 width, u32 height) {
   c.z = static_cast<float>(z) / 16777216.0f;
   if (!c.color && !c.alpha && !c.depth) return;
   efb_changed();
+  ++frame_stats_.clears;
   Frame& f = frame();
   f.clears.push_back(c);
   f.commands.push_back({Command::Type::Clear, static_cast<u32>(f.clears.size() - 1)});
@@ -762,9 +833,13 @@ TextureBinding Frontend::bind_texture(u32 map, s32* size) {
   const u32 width = bits(image0, 0, 10) + 1, height = bits(image0, 10, 10) + 1;
   size[0] = static_cast<s32>(width);
   size[1] = static_cast<s32>(height);
-  if (!is_valid_format(bits(image0, 20, 4))) return {};
-  const TexFormat format = static_cast<TexFormat>(bits(image0, 20, 4));
   const u32 address = (bits(image3, 0, 24) << 5) & 0x01FFFFFF;
+  ++frame_stats_.binds;
+  if (!is_valid_format(bits(image0, 20, 4))) {
+    note_risk(Risk::Kind::TextureFormat, address, bits(image0, 20, 4));
+    return {};
+  }
+  const TexFormat format = static_cast<TexFormat>(bits(image0, 20, 4));
 
   u32 levels = 1;
   if (bits(mode0, 5, 2) != 0) {  // mipmapping on
@@ -782,14 +857,18 @@ TextureBinding Frontend::bind_texture(u32 map, s32* size) {
       static bool warned = false;
       if (!warned) std::fprintf(stderr, "[gx] preloaded RGBA8 textures are not supported\n");
       warned = true;
+      note_risk(Risk::Kind::TmemRgba8, address);
       return binding;
     }
     if (tmem + bytes <= kTmemSize) data = tmem_.data() + tmem;
+    else note_risk(Risk::Kind::TmemOutOfRange, address, tmem, bytes);
   } else {
     data = read_(context_, address, bytes);
+    if (!data) note_risk(Risk::Kind::TextureOutOfRange, address, bytes);
   }
   if (!data) return binding;
 
+  if (from_tmem) frame_stats_.hashed_bytes += bytes;
   const u64 data_hash = from_tmem ? hash_bytes(data, bytes) : memory_hash(data, address, bytes);
 
   // An EFB copy at this address, not overwritten since?
@@ -799,9 +878,22 @@ TextureBinding Frontend::bind_texture(u32 map, s32* size) {
       const u8* mem = read_(context_, address, copy_bytes);
       if (mem && memory_hash(mem, address, copy_bytes) == it->second.memory_hash) {
         it->second.last_used = frames_;
+        ++frame_stats_.copy_binds;
+        if (it->second.format != format)
+          note_risk(Risk::Kind::CopyFormat, address, static_cast<u32>(format), static_cast<u32>(it->second.format));
         binding.texture = it->second.handle;
+        if (capture_) {
+          FrameCapture::Texture& t = capture_->textures[binding.texture];
+          t.address = address, t.format = static_cast<u32>(format), t.width = width, t.height = height;
+          t.copy = true, t.copy_format = static_cast<u32>(it->second.format);
+        }
         return binding;
       }
+    } else if (it != copies_.end() && it->second.memory_hash) {
+      const u32 copy_bytes = texture_level_size(it->second.format, it->second.width, it->second.height);
+      const u8* mem = read_(context_, address, copy_bytes);
+      if (mem && memory_hash(mem, address, copy_bytes) == it->second.memory_hash)
+        note_risk(Risk::Kind::CopySize, address, (width << 16) | height, (it->second.width << 16) | it->second.height);
     }
   }
 
@@ -815,18 +907,30 @@ TextureBinding Frontend::bind_texture(u32 map, s32* size) {
   }
 
   Frame& f = frame();
+  auto note_texture = [&](u32 handle) {
+    if (!capture_) return;
+    FrameCapture::Texture& t = capture_->textures[handle];
+    t.address = from_tmem ? bits(image1, 0, 15) * 32 : address;
+    t.format = static_cast<u32>(format), t.width = width, t.height = height, t.levels = levels;
+    t.tmem = from_tmem;
+    if (is_paletted(format)) t.tlut_address = tlut_offset, t.tlut_format = static_cast<u32>(tlut_format);
+  };
   if (auto it = textures_.find(key); it != textures_.end()) {
     it->second.last_used = frames_;
     binding.texture = it->second.handle;
     binding.native_lod = it->second.native_lod;
+    note_texture(binding.texture);
     return binding;
   }
 
   // Decode every level to RGBA8 into the frame's upload data.
+  const ScopeTimer decode_timer(stats_.decode_ns);
   TextureUpload up{new_handle(), width, height, levels, f.texels.size()};
   u32 texels = 0;
   for (u32 l = 0, w = width, h = height; l < levels; ++l, w = std::max(1u, w / 2), h = std::max(1u, h / 2)) texels += w * h;
   f.texels.resize(f.texels.size() + std::size_t{texels} * 4);
+  ++frame_stats_.decodes;
+  frame_stats_.decoded_bytes += std::size_t{texels} * 4;
   u32* out = reinterpret_cast<u32*>(f.texels.data() + up.offset);
   const u8* src = data;
   for (u32 l = 0, w = width, h = height; l < levels; ++l) {
@@ -842,6 +946,7 @@ TextureBinding Frontend::bind_texture(u32 map, s32* size) {
   binding.native_lod =
       levels > 1 && fades_with_distance(reinterpret_cast<const u32*>(f.texels.data() + up.offset), width, height, levels);
   textures_.emplace(key, CachedTexture{up.handle, frames_, binding.native_lod});
+  note_texture(up.handle);
   if (dumping_)
     std::fprintf(stderr, "[gx]  texture %u: %08X format %u %ux%u, %u levels%s\n", up.handle, address,
                  static_cast<u32>(format), width, height, levels, from_tmem ? " (TMEM)" : "");
@@ -853,6 +958,7 @@ u64 Frontend::memory_hash(const u8* data, u32 address, u32 size) {
   if (memory_hashes_.size() > 16384) memory_hashes_.clear();
   MemoryHash& m = memory_hashes_[(u64{size} << 32) | address];
   if (m.frame != frames_ + 1) {
+    frame_stats_.hashed_bytes += size;
     m.hash = hash_bytes(data, size);
     m.frame = frames_ + 1;
   }
@@ -865,10 +971,15 @@ void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertice
   if (!output_ || count == 0) return;
   DrawTimer timer(stats_);
   Frame& f = frame();
+  ++frame_stats_.calls;
 
   const u32 state = draw_state();
   const s32* sc = f.states[state].scissor;
-  if (sc[2] == 0 || sc[3] == 0) return;
+  if (sc[2] == 0 || sc[3] == 0) {
+    ++frame_stats_.culled;
+    if (capture_) capture_draw(state, primitive, vat, count, static_cast<u32>(f.vertices.size()), 0, -1, 0, cp);
+    return;
+  }
 
   loader_.setup(cp, vat, ram_, ram_size_);
   const u32 stride = loader_.size();
@@ -891,6 +1002,7 @@ void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertice
   TransformedVertex t{};  // an emboss generator may read a later, not yet written coordinate
   timer.transform_starts();
   add(stats_.vertices, count);
+  frame_stats_.vertices += count;
   xf_.prepare();
   loader_.begin(mia, mib, input_);
   xf_.begin(t);
@@ -908,6 +1020,7 @@ void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertice
 
   const u32 first = static_cast<u32>(f.indices.size());
   assemble(primitive, base, count, vp);
+  const u32 widened_before = frame_stats_.widened_2d + frame_stats_.extended_edges * 2 + frame_stats_.widened_overlays * 3;
   if (side_ && f.indices.size() > first) {
     if (xf_.perspective()) {
       run_.active = false;
@@ -916,7 +1029,13 @@ void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertice
       extend_edges(base);
     }
   }
+  const u32 widened =
+      frame_stats_.widened_2d + frame_stats_.extended_edges * 2 + frame_stats_.widened_overlays * 3 - widened_before;
   const u32 added = static_cast<u32>(f.indices.size()) - first;
+  frame_stats_.triangles += added / 3;
+  if (added == 0) ++frame_stats_.culled;
+  if (added && bits(bp_[BP_ZMODE], 0, 1) && bits(bp_[BP_ZMODE], 1, 3) == 2) ++frame_stats_.depth_equal;
+  if (added && bits(bp_[BP_GENMODE], 19, 1)) note_risk(Risk::Kind::ZFreeze, 0, bp_[BP_GENMODE]);
 
   if (dumping_) {
     if (state != dumped_state_) {
@@ -961,8 +1080,18 @@ void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertice
                  (hi + 1.0f) * half - side, v.pos[0] / w, v.pos[1] / w, v.pos[2] / w, v.pos[3], v.color[0], v.color[1],
                  v.tex[0][0], v.tex[0][1], v.tex[0][2]);
   }
-  if (added == 0) return;
+  if (added == 0) {
+    if (capture_) capture_draw(state, primitive, vat, count, base, first, -1, widened, cp);
+    return;
+  }
   efb_changed();
+  if (capture_) {
+    // Each primitive its own draw.
+    capture_draw(state, primitive, vat, count, base, first, static_cast<s32>(f.draws.size()), widened, cp);
+    f.draws.push_back({state, first, added});
+    f.commands.push_back({Command::Type::Draw, static_cast<u32>(f.draws.size() - 1)});
+    return;
+  }
 
   // Extend the previous draw if nothing else happened in between.
   if (!f.commands.empty() && f.commands.back().type == Command::Type::Draw) {
@@ -974,6 +1103,46 @@ void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertice
   }
   f.draws.push_back({state, first, added});
   f.commands.push_back({Command::Type::Draw, static_cast<u32>(f.draws.size() - 1)});
+}
+
+void Frontend::capture_draw(u32 state, u8 primitive, u8 vat, u16 count, u32 base, u32 first_index, s32 draw,
+                            u32 widened, const u32* cp) {
+  Frame& f = frame();
+  FrameCapture::Draw& d = capture_->draws.emplace_back();
+  d.draw = draw;
+  d.state = state;
+  d.primitive = primitive, d.vat = vat, d.count = count;
+  d.first_vertex = base;
+  d.vertex_count = static_cast<u32>(f.vertices.size()) - base;
+  d.triangles = static_cast<u32>(f.indices.size() - first_index) / 3;
+  d.widescreen = widened;
+  d.perspective = xf_.perspective();
+  // Bounds in game pixels and EFB depth, of the vertices in front of the camera.
+  const float half_width = static_cast<float>(efb_width()) * 0.5f, side = static_cast<float>(side_);
+  bool any = false;
+  for (u32 i = base; i < f.vertices.size(); ++i) {
+    const float* p = f.vertices[i].pos;
+    if (!(p[3] > 0.0f)) continue;
+    const float x = (p[0] / p[3] + 1.0f) * half_width - side, y = (1.0f - p[1] / p[3]) * (kEfbHeight * 0.5f);
+    const float z = p[2] / p[3];
+    if (!any) d.x0 = d.x1 = x, d.y0 = d.y1 = y, d.z0 = d.z1 = z, d.w0 = d.w1 = p[3], any = true;
+    d.x0 = std::min(d.x0, x), d.x1 = std::max(d.x1, x);
+    d.y0 = std::min(d.y0, y), d.y1 = std::max(d.y1, y);
+    d.z0 = std::min(d.z0, z), d.z1 = std::max(d.z1, z);
+    d.w0 = std::min(d.w0, p[3]), d.w1 = std::max(d.w1, p[3]);
+  }
+  d.genmode = bp_[BP_GENMODE], d.zmode = bp_[BP_ZMODE], d.blendmode = bp_[BP_BLENDMODE];
+  d.zcompare = bp_[BP_ZCOMPARE], d.constant_alpha = bp_[BP_CONSTANT_ALPHA];
+  d.vcd_lo = cp[0x50], d.vcd_hi = cp[0x60];
+  d.vat_a = cp[0x70 + vat], d.vat_b = cp[0x80 + vat], d.vat_c = cp[0x90 + vat];
+  d.xf_colors = xf_.reg(XF_NUM_COLORS), d.xf_texgens = xf_.num_texgens();
+  for (u32 i = 0; i < 2; ++i) d.color_ctrl[i] = xf_.reg(XF_COLOR0_CTRL + i), d.alpha_ctrl[i] = xf_.reg(XF_ALPHA0_CTRL + i);
+  for (u32 i = 0; i < 8; ++i) d.texgen[i] = xf_.reg(XF_TEXGEN + i);
+  d.matrix_index[0] = xf_.reg(XF_MATRIX_INDEX_A), d.matrix_index[1] = xf_.reg(XF_MATRIX_INDEX_B);
+  for (u32 i = 0; i < 6; ++i) d.viewport[i] = xf_.f(static_cast<u16>(XF_VIEWPORT + i));
+  for (u32 i = 0; i < 7; ++i) d.projection[i] = xf_.f(static_cast<u16>(XF_PROJECTION + i));
+  if (issuer_) d.stacks = *issuer_;
+  else read_stacks(d.stacks);
 }
 
 // Widescreen, for 2D (orthographic) draws: 2D that spans the game's whole
@@ -1012,6 +1181,7 @@ bool Frontend::widen_2d(u32 first_vertex) {
   const float scale = static_cast<float>(efb_width()) / width;
   for (std::size_t i = run.first_vertex; i < f.vertices.size(); ++i) f.vertices[i].pos[0] *= scale;
   run.active = false;
+  ++frame_stats_.widened_2d;
   return true;
 }
 
@@ -1037,6 +1207,7 @@ void Frontend::extend_edges(u32 first_vertex) {
     for (u32 i = first_vertex; i < end; ++i)
       if (std::abs(game_x(f.vertices[i]) - edge) < 1.0f) on_edge.push_back(i);
     if (on_edge.size() < 2) return;
+    ++frame_stats_.extended_edges;
     std::sort(on_edge.begin(), on_edge.end(), [&](u32 a, u32 b) { return f.vertices[a].pos[1] < f.vertices[b].pos[1]; });
     for (std::size_t k = 0; k + 1 < on_edge.size(); ++k) {
       const Vertex a = f.vertices[on_edge[k]], b = f.vertices[on_edge[k + 1]];
@@ -1077,6 +1248,7 @@ void Frontend::widen_overlay(u32 first_vertex, const DrawState& state) {
   const float left = (lo + 1.0f) * half_width - side, right = (hi + 1.0f) * half_width - side;
   if (std::abs(left) > 1.0f || std::abs(right - width) > 1.0f) return;
   const float scale = static_cast<float>(efb_width()) / width;
+  ++frame_stats_.widened_overlays;
 
   // Flat at one depth, the draw's texture coordinates are affine in its NDC
   // x and y: each one's slope in x, from the three vertices that span the

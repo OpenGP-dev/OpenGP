@@ -79,6 +79,9 @@ class Decoder {
   u32 vertex_size(u8 vat) const;
   u64 commands() const { return commands_; }
   u64 unknown_opcodes() const { return unknown_; }
+  // Where the command being decoded starts in the data given to run() (for
+  // a display list's contents: where the call to it starts).
+  std::size_t command_offset() const { return command_offset_; }
 
  private:
   std::size_t run(std::span<const u8> data, bool in_display_list);
@@ -92,6 +95,7 @@ class Decoder {
   mutable std::array<u32, 8> vertex_sizes_{};
   u64 commands_ = 0;
   u64 unknown_ = 0;
+  std::size_t command_offset_ = 0;
 };
 
 }  // namespace gx

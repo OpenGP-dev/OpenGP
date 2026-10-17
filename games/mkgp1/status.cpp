@@ -40,6 +40,7 @@ void read(const gekko::u8* base, app::GameStatus* s) {
   *s = {};
   s->game_image = "gp1";
   const gekko::u32 scene = word(base, kScene);
+  s->scene_id = scene;
   // Start-up (the device check) is in the entry scene too, until the game
   // first moves on.
   static bool started_up = false;

@@ -2,7 +2,9 @@
 
 #include "os/threads.h"
 
+#include <chrono>
 #include <cstdio>
+#include <string>
 #include <thread>
 
 #include "os/thread_priority.h"
@@ -79,6 +81,7 @@ void ThreadManager::write32(u32 addr, u32 value) { ppc::store_be<u32>(base_ + ad
 void ThreadManager::run(ppc::Context& ctx, u32 entry) {
   auto main = std::make_unique<HostThread>();
   main->id = 0;
+  set_thread_name("guest 0");
   main->ctx = &ctx;
   t_self = main.get();
   running_ = main.get();
@@ -112,7 +115,12 @@ void ThreadManager::idle(ppc::Context& ctx) {
   const u64 delivered = exceptions_delivered_.load(std::memory_order_relaxed);
   if (delivered == idle_seen_) {
     ++idle_waits_;
+    const auto start = std::chrono::steady_clock::now();
     hw_.wait_for_interrupt(4);
+    idle_ns_.fetch_add(static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                            std::chrono::steady_clock::now() - start)
+                                            .count()),
+                       std::memory_order_relaxed);
     service_interrupts(ctx);
   }
   idle_seen_ = exceptions_delivered_.load(std::memory_order_relaxed);
@@ -213,6 +221,7 @@ HostThread* ThreadManager::spawn(ppc::Context& from, u32 context) {
 
 void ThreadManager::thread_main(HostThread* t, u32 entry) {
   set_interactive_thread();
+  set_thread_name(("guest " + std::to_string(t->id)).c_str());
   t_self = t;
   {
     std::unique_lock lock(mutex_);

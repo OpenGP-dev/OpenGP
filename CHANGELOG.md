@@ -57,6 +57,20 @@ you are playing on Discord. It comes with installer packages for Windows, Linux 
 - If a cabinet stops in the middle of a game, the others stop with "Link error occurred", as arcade
   cabinets do: OpenGP restarts them after a few seconds.
 
+### Profiling
+
+- **F10** (or `--profile`, or the menu's new Profiler tab) records a profile of how the game runs
+  while you play, in `user/profiles/`: every frame's timings (the game's work and spare time, the
+  GX front end, the renderer, shader compiles, uploads), the scenes and races, hitches with what
+  caused them and the game's busiest functions, likely graphical glitches, CPU use by thread and
+  of the whole computer, call stack samples (Windows), thumbnails of the screen and the console.
+  **F8** marks a moment. `tools/profiles.py` reads profiles. See
+  [docs/profiling.md](docs/profiling.md).
+- **F9** (or `--capture-frame N`) captures a frame: the picture, the EFB and its depth, every
+  texture and EFB copy as PNG files, and every draw with its state, its TEV stages as formulas and
+  the game function that drew it.
+- Screenshots are compressed PNG files (about a third of the size).
+
 ### Controls
 
 - **Use the controls in the background too** (Controls tab) lets every OpenGP window read the

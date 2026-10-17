@@ -11,6 +11,7 @@
 #include "hw/vi.h"
 #include "machine.h"
 #include "os/activity.h"
+#include "os/thread_priority.h"
 
 namespace app {
 
@@ -115,8 +116,9 @@ std::string describe_threads(opengp::Machine& machine, const FunctionNames& name
 }
 
 void start_hang_watch(opengp::Machine& machine, const FunctionNames& names, std::filesystem::path path,
-                      int seconds) {
-  std::thread([&machine, &names, path = std::move(path), seconds] {
+                      int seconds, std::function<void(const std::string& report)> on_report) {
+  std::thread([&machine, &names, path = std::move(path), seconds, on_report = std::move(on_report)] {
+    os::set_thread_name("hang watch");
     using clock = std::chrono::steady_clock;
     u64 frames = 0;
     auto since = clock::now();
@@ -144,6 +146,7 @@ void start_hang_watch(opengp::Machine& machine, const FunctionNames& names, std:
       file << report;
       if (file) std::fprintf(stderr, "[opengp] hang report written to %s\n", path.string().c_str());
       std::fflush(stderr);
+      if (on_report) on_report(report);
     }
   }).detach();
 }

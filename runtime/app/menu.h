@@ -39,6 +39,12 @@ struct MenuModel {
   bool discord = false;              // Discord is connected (for Rich Presence)
   std::function<void()> quit;
   std::function<void()> test_menu;  // restarts into the game's test menu (if it has one)
+  // Profiling (app/profiler.h): whether a profile is being recorded, where,
+  // how many frames so far; starting or stopping, marking a moment.
+  bool profiling = false;
+  std::string profile_dir;
+  u64 profile_frames = 0;
+  std::function<void()> toggle_profiling, mark, capture;
 };
 
 class Menu final : public video::Overlay {
@@ -87,6 +93,7 @@ class Menu final : public video::Overlay {
   void video_tab(MenuModel& m);
   void sound_tab(MenuModel& m);
   void controls_tab(MenuModel& m);
+  void profiler_tab(MenuModel& m);
   void draw_notices();
   void draw_paused(MenuModel& m);
 

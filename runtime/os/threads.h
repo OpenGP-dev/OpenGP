@@ -80,8 +80,10 @@ class ThreadManager {
   // with ExceptionReturn (for profiling).
   u64 exceptions_delivered() const { return exceptions_delivered_.load(std::memory_order_relaxed); }
   u64 exception_returns() const { return exception_returns_.load(std::memory_order_relaxed); }
-  // How often the idle loop has waited for an interrupt (for diagnostics).
+  // How often the idle loop has waited for an interrupt, and for how long in
+  // all (ns): the time the game had nothing to do (for diagnostics).
   u64 idle_waits() const { return idle_waits_.load(std::memory_order_relaxed); }
+  u64 idle_ns() const { return idle_ns_.load(std::memory_order_relaxed); }
   // The registers of the thread holding the CPU, and its host thread's
   // number (for diagnostics: they change while it runs).
   const ppc::Context* running_context(int* id);
@@ -107,7 +109,7 @@ class ThreadManager {
   HostThread* running_ = nullptr;
   std::vector<std::unique_ptr<HostThread>> threads_;
   std::unordered_map<u32, Owner> owners_;  // only touched by the thread holding the CPU
-  std::atomic<u64> exceptions_delivered_{0}, exception_returns_{0}, idle_waits_{0};
+  std::atomic<u64> exceptions_delivered_{0}, exception_returns_{0}, idle_waits_{0}, idle_ns_{0};
   u64 idle_seen_ = 0;  // exceptions_delivered_ when the idle hook last returned
 };
 

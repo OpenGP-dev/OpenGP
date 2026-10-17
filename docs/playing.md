@@ -36,9 +36,14 @@ Game tab to keep it running).
 | Video | Fullscreen, aspect ratio, internal resolution, VSync, even frame pacing |
 | Sound | Volume |
 | Controls | The keys, buttons and axes for each control; force feedback, steering speed, dead zones |
+| Profiler | Recording a profile, marking a moment, capturing a frame (see [profiling.md](profiling.md)) |
 
 **F11** (or Alt+Enter) switches between a window and fullscreen, and **F12** saves a screenshot to
 `user/screenshots/`.
+
+If the game stutters or draws something wrong, **F10** records a profile of how it runs, **F8**
+marks the moment something happened, and **F9** captures a frame that looks wrong; see
+[profiling.md](profiling.md) for what they record and how to send them.
 
 ### Pausing
 
@@ -184,6 +189,9 @@ it as well.
 | Pause | P, Pause | |
 | Fullscreen | F11, Alt+Enter | |
 | Screenshot | F12 | |
+| Record a profile (start/stop) | F10 | |
+| Mark the moment in a profile | F8 | |
+| Capture a frame | F9 | |
 
 Every connected device works at once. Keys and d-pad steer gradually (a keyboard cannot hold the
 wheel half-way); sticks and wheels steer directly.

@@ -280,6 +280,7 @@ void Hardware::cancel(EventId id) {
 
 void Hardware::timer_loop() {
   os::set_interactive_thread();
+  os::set_thread_name("timer");
   std::unique_lock lock(mutex_);
   while (running_) {
     if (events_.empty() || paused()) {
@@ -362,9 +363,13 @@ void Hardware::mmio_write(u32 addr, u32 value, u32 size) {
 // The gather pipe is only ever written by the thread running guest code, and
 // its state is only touched from that thread, so it needs no lock.
 void Hardware::gather_write(const u8* bytes, u32 size) {
+  if (on_gather_write) [[unlikely]]
+    on_gather_write(gather_write_context, gather_written_);
   std::memcpy(gather_buffer_.data() + gather_count_, bytes, size);
   gather_count_ += size;
+  gather_written_ += size;
   if (gather_count_ < 32) return;
+  gather_burst_start_ = gather_written_ - gather_count_;
   u8* dst = ram(fifo_wptr_, 32);
   if (dst) std::memcpy(dst, gather_buffer_.data(), 32);
   if (fifo_wptr_ == fifo_end_) fifo_wptr_ = fifo_base_;

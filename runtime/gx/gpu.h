@@ -13,6 +13,7 @@
 
 #include <array>
 #include <atomic>
+#include <deque>
 #include <memory>
 #include <vector>
 
@@ -76,6 +77,21 @@ class Gpu : public Sink {
   Decoder decoder_;
   bool running_ = false;       // guards against re-entry while decoding
   std::vector<u8> pending_;    // FIFO bytes not yet forming a complete command
+  // Captures: who wrote each command. While capturing, each write to the
+  // gather pipe notes its writer (runs of writes by the same code share
+  // one); each burst in pending_ remembers where it began among the bytes
+  // written, so a command's first byte leads to its writer.
+  static void on_gather_write(void* context, u64 position);
+  void set_issuer();
+  struct Writer {
+    u64 position;  // gather_written() at its first write
+    u64 key[6];    // the innermost return addresses, to tell writers apart
+    FrameCapture::Stacks stacks;
+  };
+  std::deque<Writer> writers_;
+  bool tracing_ = false;
+  std::deque<u64> bursts_;  // each pending burst's start among the bytes written
+  u64 pending_start_ = 0, bursts_start_ = 0;  // FIFO bytes read before pending_ and before bursts_.front()
 
   // CP registers
   u16 cp_ctrl_ = 0x0010;  // linked, reads disabled

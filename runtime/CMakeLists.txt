@@ -24,6 +24,7 @@ add_library(opengp_machine STATIC
   dsp/accelerator.cpp
   dsp/ax.cpp
   gx/decoder.cpp
+  gx/describe.cpp
   gx/frontend.cpp
   gx/gpu.cpp
   gx/texture.cpp
@@ -46,6 +47,9 @@ add_library(opengp_machine STATIC
   os/reboot.cpp
   os/thread_priority.cpp
   os/threads.cpp
+  profile/monitor.cpp
+  profile/session.cpp
+  profile/symbols.cpp
   triforce/baseboard.cpp
   triforce/card_folder.cpp
   triforce/io_ports.cpp
@@ -74,10 +78,11 @@ target_link_libraries(opengp_machine
   PUBLIC ppc_runtime Threads::Threads
   PRIVATE opengp_warnings)
 if(WIN32)
-  target_link_libraries(opengp_machine PRIVATE winmm dbghelp ws2_32 iphlpapi)
+  target_link_libraries(opengp_machine PRIVATE winmm dbghelp ws2_32 iphlpapi psapi)
 else()
   # Shift JIS text from the games (os/printf.h); iconv is part of glibc, and
   # its own library on macOS.
+  target_link_libraries(opengp_machine PRIVATE ${CMAKE_DL_LIBS})  # dladdr (profile/symbols.cpp)
   find_package(Iconv)
   if(Iconv_FOUND)
     target_link_libraries(opengp_machine PRIVATE Iconv::Iconv)
@@ -156,7 +161,7 @@ target_link_libraries(opengp_app
   PRIVATE opengp_warnings)
 target_compile_definitions(opengp_app PRIVATE OPENGP_VERSION="${PROJECT_VERSION}")
 if(OPENGP_BUILD_VIDEO)
-  target_sources(opengp_app PRIVATE app/menu.cpp)
+  target_sources(opengp_app PRIVATE app/capture.cpp app/menu.cpp app/profiler.cpp)
   target_link_libraries(opengp_app PUBLIC opengp_video opengp_input opengp_audio opengp_webcam imgui)
   target_compile_definitions(opengp_app PRIVATE OPENGP_VIDEO)
 endif()

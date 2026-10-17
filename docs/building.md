@@ -112,6 +112,11 @@ options that change them do so for that run only.
 | `--camera SOURCE` | The camera's pictures: `off`, `webcam` or `test` (colour bars; see [playing.md](playing.md#the-camera)) |
 | `--cabinet N` | This cabinet's number for linking, 1-4 (see [playing.md](playing.md#linked-cabinets)) |
 | `--lan` | Link with cabinets on the local network too |
+| `--profile` | Record a profile from the start, in `user/profiles/` (see [profiling.md](profiling.md)) |
+| `--profile-dir PATH` | Record a profile into PATH |
+| `--profile-rate HZ` | Call stack samples a second per busy thread while recording (default 500; 0 for none) |
+| `--profile-thumbs FRAMES` | Frames between a profile's thumbnails (default 120; 0 for only those of events) |
+| `--capture-frame FRAME` | Capture frame FRAME (repeatable; see [profiling.md](profiling.md#frame-captures)) |
 
 Files the machine writes (baseboard backup memory, media board settings, Mario Cards, the
 settings and controls, screenshots) go in `user/`, which is gitignored.
@@ -133,6 +138,7 @@ Environment variables for debugging:
 | `OPENGP_FRAME_LOG=1` | each frame's duration, time in draws and vertex count |
 | `OPENGP_LOG_INTERP=1` | each guest address where code falls back to the interpreter (code the recompiler missed), once |
 | `OPENGP_PROFILE=START,SECONDS` | (Windows) samples every thread for SECONDS seconds, starting START seconds in, then prints each busy thread's hottest functions, self and inclusive |
+| `OPENGP_PROFILE_GPU_SYNC=1` | (not a log) the renderer waits for each frame on the GPU, so that a profile records the GPU's time (`gpu_us`) |
 
 The status line also shows where time goes: the guest thread's time in draws (pipeline state,
 textures, vertex transform) and EFB readbacks, and the render thread's time rendering and idle.
