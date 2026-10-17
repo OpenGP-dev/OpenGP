@@ -34,6 +34,10 @@ From a profile of a whole playthrough of GP 2:
 
 ### Fixes
 
+- Linked cabinets on different computers: each cabinet's messages now go out as soon as the game
+  sends them. They used to wait for the other computer to acknowledge the one before, which it can
+  delay by up to 200 ms, so they arrived in bursts and the other players' karts lagged behind
+  their controls. Every computer in a linked race needs this version.
 - The rainbows of GP 2's Rainbow Coaster and Rainbow Downhill no longer nearly vanish at high
   internal resolutions: they fade in with distance as they should.
 - Widescreen: GP 2 no longer leaves out objects in the side strips (scenery, item boxes, a blimp)

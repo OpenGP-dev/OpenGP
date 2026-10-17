@@ -97,6 +97,16 @@ HostSocket open_host(int type) {
   return s;
 }
 
+// Sends each of the game's writes at once (no Nagle's algorithm). A link
+// connection carries messages one way only, one a frame, so with Nagle a
+// message waits for the acknowledgement of the one before, which the other
+// computer may delay (up to 200 ms on Windows): over a network, a cabinet's
+// messages then come in bursts. The games never ask for TCP_NODELAY.
+void set_no_delay(HostSocket s) {
+  const int on = 1;
+  ::setsockopt(s, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&on), sizeof(on));
+}
+
 // The host's errors as the board reports them.
 u32 status_for(int error) {
   if (would_block(error)) return SSC_EWOULDBLOCK;
@@ -663,6 +673,7 @@ void Network::take_incoming(Socket& listener) {
     const HostSocket h = ::accept(listener.host, reinterpret_cast<sockaddr*>(&from), &from_len);
     if (h == kNoSocket) break;
     set_nonblocking(h);
+    set_no_delay(h);
     Socket::Incoming in;
     in.host = h;
     in.from = {ntohl(from.sin_addr.s_addr), ntohs(from.sin_port)};
@@ -697,6 +708,14 @@ void Network::take_incoming(Socket& listener) {
 }
 
 Network::Socket* Network::find(u32 fd) { return fd < kSockets ? sockets_[fd].get() : nullptr; }
+
+bool Network::sends_without_delay(u32 fd) const {
+  const Socket* s = fd < kSockets ? sockets_[fd].get() : nullptr;
+  if (!s || s->host == kNoSocket) return false;
+  int on = 0;
+  socklen_t size = sizeof(on);
+  return ::getsockopt(s->host, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<char*>(&on), &size) == 0 && on != 0;
+}
 
 u32 Network::fail(u32 error) {
   last_error_ = error;
@@ -818,6 +837,7 @@ u32 Network::connect(u32 fd, u32 address, u32 length) {
     // Local Network permission not given yet) it gives up on that cabinet.
     const Endpoint host{peer.ip, host_port(link_->options().port, cabinet, to.port)};
     if (host_connect(*s, fd, to, host) != SSC_SUCCESS) return fail(SSC_ECONNREFUSED);
+    set_no_delay(s->host);
     u8 hello[kHelloSize];
     write_hello(hello, own, link_->game());
     if (::send(s->host, reinterpret_cast<const char*>(hello), static_cast<int>(kHelloSize), kSendFlags) !=

@@ -130,6 +130,13 @@ TEST_CASE("two cabinets on one computer link") {
   CHECK(two.at(0x1404)[2] == 29);
   CHECK(two.at(0x1404)[3] == 150);
 
+  // Both ends send each message at once: with Nagle's algorithm, a cabinet's
+  // messages to another computer would wait for acknowledgements and come
+  // in bursts (loopback hides it, so check the setting itself).
+  CHECK(one.net.sends_without_delay(client));
+  CHECK(two.net.sends_without_delay(accepted));
+  CHECK_FALSE(two.net.sends_without_delay(listener));
+
   // The game's data, without the hello, both ways.
   std::memcpy(one.at(0x2000), "lap 3", 5);
   CHECK(one.run(triforce::NET_SEND, {client, 0x2000, 5}) == 5);

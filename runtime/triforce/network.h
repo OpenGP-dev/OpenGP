@@ -176,6 +176,10 @@ class Network {
   // running, so the launcher does not pause a linked game. Thread-safe.
   bool linked() const { return linked_.load(std::memory_order_relaxed); }
 
+  // Whether socket `fd`'s connection on the host sends each write at once
+  // (TCP_NODELAY, which every link connection gets). For tests.
+  bool sends_without_delay(u32 fd) const;
+
   static constexpr std::size_t kSockets = 64;  // numbers 1-63; 0 is never used
 
  private:

@@ -404,8 +404,10 @@ and start as soon as the game has its number, because the game looks for the oth
 moment as it starts (below): they must be known by then. A game's connection to another cabinet goes to the host port only once that cabinet has said it
 listens there, so a connection never waits for a cabinet that is not there, and it starts with a
 16-byte hello naming the cabinet and the game: the cabinet accepting it hands it to its game only
-then, as a connection from the other cabinet's address. With `lan` off, everything stays on the
-loopback interface. `Network::link_status()` is what the menu shows.
+then, as a connection from the other cabinet's address. Link connections send each write at once
+(`TCP_NODELAY`): the games send one small message a frame, and with Nagle's algorithm each would
+wait for the other computer's delayed acknowledgement, so messages between computers came in
+bursts. With `lan` off, everything stays on the loopback interface. `Network::link_status()` is what the menu shows.
 
 `Network::linked()` says whether the game has linked to another cabinet since start-up: a
 connection to one made, or one accepted (services don't count). The launcher pauses only a game
