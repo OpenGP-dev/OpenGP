@@ -215,7 +215,12 @@ Frame& Frontend::frame() {
     // The EFB's width only changes between displayed frames.
     if (new_display_frame_) {
       side_ = std::min(requested_side_.load(std::memory_order_relaxed), 2048u);
-      const bool at = capture_at_.load(std::memory_order_relaxed) == frames_;
+      // The first frame at or after the one asked for: the launcher asks for
+      // the next frame once it has the previous capture, and by then the game
+      // may be a frame or two further on.
+      u64 at_frame = capture_at_.load(std::memory_order_relaxed);
+      const bool at = at_frame != ~0ull && frames_ >= at_frame &&
+                      capture_at_.compare_exchange_strong(at_frame, ~0ull, std::memory_order_relaxed);
       if (output_ && (capture_requested_.exchange(false, std::memory_order_relaxed) || at)) {
         // Every texture the frame uses is decoded again, into the frame.
         capture_ = std::make_unique<FrameCapture>();

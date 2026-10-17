@@ -111,7 +111,7 @@ class Frontend {
   // Whether a capture is under way or asked for (call sites are wanted).
   bool capturing() const {
     const u64 at = capture_at_.load(std::memory_order_relaxed);
-    return capture_ || capture_requested_.load(std::memory_order_relaxed) || at == frames_ || at == frames_ + 1;
+    return capture_ || capture_requested_.load(std::memory_order_relaxed) || (at != ~0ull && at <= frames_ + 1);
   }
   // Where the game issued the command being decoded, if known (else the
   // stack at the time it is decoded is taken).
