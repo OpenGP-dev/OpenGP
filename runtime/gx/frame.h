@@ -200,6 +200,7 @@ struct Frame {
   float xfb_aspect = 4.0f / 3.0f;  // the XFB's display aspect ratio
   u32 efb_width = kEfbWidth;       // 640, or more for widescreen (see above)
   u64 number = 0;             // displayed frames before this one (partial frames share the number)
+  u64 finished_ns = 0;        // steady clock when it was finished (displayed frames only)
   std::vector<std::shared_ptr<EfbReadback>> readbacks;
 
   // Empties the frame for reuse, keeping the buffers' capacity.
@@ -218,7 +219,7 @@ struct Frame {
     xfb = xfb_width = xfb_height = 0;
     xfb_aspect = 4.0f / 3.0f;
     efb_width = kEfbWidth;
-    number = 0;
+    number = finished_ns = 0;
     readbacks.clear();
   }
 };

@@ -109,6 +109,11 @@ class Hardware {
   // --- Time -----------------------------------------------------------------------------
   u64 timebase() const;  // ticks since boot (40.5 MHz), plus any guest adjustment
   void set_timebase(u64 value);
+  // The time base at a time of the host's steady clock (std::chrono::
+  // steady_clock, in nanoseconds), and back (the first nanosecond at or
+  // after it), while the machine runs.
+  u64 timebase_at(u64 steady_ns) const;
+  u64 steady_ns_at(u64 timebase) const;
   u32 decrementer() const;
   void set_decrementer(u32 value);
 

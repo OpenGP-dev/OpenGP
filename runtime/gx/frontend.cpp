@@ -232,6 +232,9 @@ void Frontend::end_frame(bool present) {
   Frame& f = frame();
   f.number = frames_;
   if (present) {
+    f.finished_ns = static_cast<u64>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
+            .count());
     ++frames_;
     new_display_frame_ = true;
     peeks_[0].requested = peeks_[1].requested = false;

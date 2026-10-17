@@ -108,16 +108,19 @@ class Renderer {
   // Drawn over every presented frame (nullptr: nothing).
   void set_overlay(Overlay* overlay) { overlay_ = overlay; }
 
-  // Presents the last frame again (with the overlay), for when the game has
-  // shown nothing new for a while.
-  void redraw();
+  // Presents the last frame (with the overlay): again, for when the game has
+  // shown nothing new for a while, or for the first time after a render()
+  // that didn't. With `at_ns` (steady clock), it gets the window's next image,
+  // then waits until then to present it; it returns how long it waited (ns).
+  u64 redraw(u64 at_ns = 0);
 
   SDL_GPUDevice* device() const { return device_; }
   u32 window_format() const;  // the window's SDL_GPUTextureFormat
 
-  // Renders a frame and presents its XFB. If `capture` is given and the
-  // frame has an XFB, it receives the XFB image (at the internal resolution).
-  void render(const gx::Frame& frame, Image* capture = nullptr);
+  // Renders a frame and presents its XFB (unless `present` is false: then
+  // redraw() presents it). If `capture` is given and the frame has an XFB, it
+  // receives the XFB image (at the internal resolution).
+  void render(const gx::Frame& frame, Image* capture = nullptr, bool present = true);
 
   const char* driver() const;
 

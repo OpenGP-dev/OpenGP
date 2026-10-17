@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Pausing the machine: the time base stops and carries on where it stopped,
-// timed events wait, and guest code waits at its safe points.
+// timed events wait, and guest code waits at its safe points. And the
+// retraces on the host's clock, which even frame pacing shows frames at.
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
@@ -12,6 +13,7 @@
 #include <thread>
 
 #include "hw/hardware.h"
+#include "hw/vi.h"
 #include "ppc/hooks.h"
 #include "ppc/memory.h"
 
@@ -87,6 +89,44 @@ TEST_CASE("guest code stops at a safe point until resumed") {
   guest.join();
   CHECK(through.load());
   CHECK_FALSE(ppc::g_interrupt_pending.load());
+}
+
+TEST_CASE("retraces on the host's clock") {
+  Rig rig;
+  hw::Hardware& h = *rig.hw;
+  h.map(0x2000, 0x100, std::make_unique<hw::ViDevice>(h));
+  hw::ViDevice& vi = *h.device<hw::ViDevice>();
+  const auto steady_ns = [] {
+    return static_cast<u64>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
+            .count());
+  };
+  // Field times: DI1 at line 1 starts a frame, DI0 at line 263 is 524
+  // half-lines later, and the frame is 1050 half-lines.
+  const u64 frame_ns = hw::ViDevice::kTicksPerFrame * 2000 / 81;
+  const u64 field_ns = 524 * hw::ViDevice::kTicksPerHalfLine * 2000 / 81;
+  const auto about = [](u64 a, u64 b) { return (a > b ? a - b : b - a) <= 1; };
+
+  const u64 now = steady_ns();
+  const u64 r1 = vi.next_retrace_ns(now);
+  CHECK(r1 > now);
+  CHECK(r1 - now <= frame_ns - field_ns + 1);
+  const u64 r2 = vi.next_retrace_ns(r1);  // the next one, not the same
+  CHECK((about(r2 - r1, field_ns) || about(r2 - r1, frame_ns - field_ns)));
+  const u64 r3 = vi.next_retrace_ns(r2);
+  CHECK(about(r3 - r1, frame_ns));
+  CHECK(vi.next_retrace_ns(r1 - 1) == r1);
+
+  vi.write(0x30, 0, 2);  // DI0 off: one retrace a frame
+  CHECK(about(vi.next_retrace_ns(vi.next_retrace_ns(now)) - vi.next_retrace_ns(now), frame_ns));
+  vi.write(0x34, 0, 2);  // DI1 off too: none
+  CHECK(vi.next_retrace_ns(now) == 0);
+
+  vi.write(0x34, 0x1001, 2);  // DI1 on at line 1 again
+  h.set_paused(true);
+  CHECK(vi.next_retrace_ns(steady_ns()) == 0);  // none while paused
+  h.set_paused(false);
+  CHECK(vi.next_retrace_ns(steady_ns()) != 0);
 }
 
 TEST_CASE("the time base can be set while paused") {

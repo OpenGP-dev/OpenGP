@@ -46,6 +46,7 @@ TEST_CASE("settings: save and load round trip") {
   s.aspect = app::AspectRatio::Wide21x9;
   s.internal_resolution = 3;
   s.vsync = false;
+  s.even_pacing = true;
   s.volume = 42;
   s.free_play = true;
   s.card = "Mario's \"best\" card";

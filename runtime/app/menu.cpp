@@ -372,6 +372,9 @@ void Menu::video_tab(MenuModel& m) {
     ImGui::EndCombo();
   }
   ImGui::Checkbox("VSync", &s.vsync);
+  ImGui::Checkbox("Even frame pacing", &s.even_pacing);
+  hint("Shows each frame on the game's own 60 Hz tick, as the cabinet's display does: evenly spaced, so smoother "
+       "with FreeSync or G-Sync, and about half a frame later.");
   hint("%s", m.video_info.c_str());
   ImGui::TextWrapped(
       "Widescreen expands the viewport, some 2D elements are at their original aspect ratio and some are stretched to fit.");

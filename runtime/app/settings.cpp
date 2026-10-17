@@ -118,6 +118,7 @@ bool load_settings(const std::string& path, Settings* settings, std::string* err
   }
   s.internal_resolution = static_cast<u32>(std::clamp(video["internal_resolution"].value_or(0), 0, 8));
   s.vsync = video["vsync"].value_or(s.vsync);
+  s.even_pacing = video["even_pacing"].value_or(s.even_pacing);
   s.volume = std::clamp(root["audio"]["volume"].value_or(s.volume), 0, 100);
   const auto game = root["game"];
   s.free_play = game["free_play"].value_or(s.free_play);
@@ -158,6 +159,11 @@ bool save_settings(const std::string& path, const Settings& s, std::string* erro
          "# 1 to 8 times the game's 640x528, or 0 to match the window's size.\n"
          "internal_resolution = "
       << s.internal_resolution << "\nvsync = " << (s.vsync ? "true" : "false")
+      << "\n"
+         "# Show each frame on the game's own 60 Hz tick, as the cabinet's display does: evenly\n"
+         "# spaced frames (smoother with FreeSync or G-Sync), about half a frame later.\n"
+         "even_pacing = "
+      << (s.even_pacing ? "true" : "false")
       << "\n"
          "\n"
          "[audio]\n"

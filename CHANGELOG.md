@@ -35,6 +35,14 @@
 - OpenGP talks to the Discord app through its local connection, without Discord's SDK, and sends
   nothing anywhere else. `OPENGP_LOG_DISCORD=1` prints what it shows.
 
+### Even frame pacing
+
+- **Even frame pacing** (Video tab, off by default; `[video] even_pacing`) shows each frame on the
+  game's own 60 Hz tick, as a cabinet's display does, instead of as soon as it is drawn. The game
+  takes more time over some frames than others, so they used to come 12 to 21 ms apart; a FreeSync
+  or G-Sync monitor showed that unevenness as it came. Now they are presented at evenly spaced
+  times, for about half a frame (8 ms) more delay. See [docs/playing.md](docs/playing.md#even-frame-pacing).
+
 ### Smoother
 
 From a profile of a whole playthrough of GP 2:

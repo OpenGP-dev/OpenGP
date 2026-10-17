@@ -294,6 +294,14 @@ Rendering is split in two, with plain data (`gx::Frame`, `runtime/gx/frame.h`) i
 
 A queue of at most two frames between the two paces the game if rendering falls behind.
 
+The renderer presents a frame as soon as it has drawn it, unless **even frame pacing** is on
+(`[video] even_pacing`): then the launcher presents it at the game's first retrace after the
+game finished it (`hw::ViDevice::next_retrace_ns`, from the display interrupts' schedule on the
+host's clock), as a cabinet's display would start showing its XFB. The renderer gets the
+window's image first and waits only to submit (`Renderer::redraw(at_ns)`). The game's frames
+take more or less time, but its retraces are evenly spaced, so a display with a variable refresh
+rate shows the frames evenly; it costs half a frame of latency on average.
+
 **Widescreen** (`Frontend::set_widescreen`) widens the EFB by the same number of pixels on each
 side (107 for 16:9), with the game's 640 pixels in the middle:
 - The front end maps the game's clip space onto the wide EFB without changing a draw's scale or

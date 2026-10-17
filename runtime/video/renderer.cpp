@@ -66,6 +66,11 @@ constexpr SDL_GPUBlendFactor kDstFactor[8] = {
 
 u32 field(u32 v, u32 shift, u32 count) { return (v >> shift) & ((1u << count) - 1); }
 
+u64 now_ns() {
+  return static_cast<u64>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
 struct FullscreenUniforms {
   float rect[4];
   float z[4];
@@ -673,13 +678,23 @@ void Renderer::present(SDL_GPUCommandBuffer* cmd, const Texture* xfb, float aspe
   SDL_EndGPURenderPass(pass);
 }
 
-void Renderer::redraw() {
-  if (!window_) return;
+u64 Renderer::redraw(u64 at_ns) {
+  if (!window_) return 0;
   SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device_);
-  if (!cmd) return;
+  if (!cmd) return 0;
   const auto xfb = last_xfb_ ? textures_.find(last_xfb_) : textures_.end();
   present(cmd, xfb != textures_.end() && xfb->second.texture ? &xfb->second : nullptr, last_aspect_);
+  // The window's image is ours by now (getting it may have waited for the
+  // display): only the submit, which presents it, waits for `at_ns`.
+  u64 waited = 0;
+  if (const u64 now = now_ns(); at_ns > now) {
+    os::g_main_activity.set("waiting to present at the game's retrace");
+    waited = at_ns - now;
+    SDL_DelayPrecise(waited);
+    os::g_main_activity.set("drawing a frame");
+  }
   SDL_SubmitGPUCommandBuffer(cmd);
+  return waited;
 }
 
 void Renderer::capture(SDL_GPUCommandBuffer* cmd, const Texture& xfb) {
@@ -834,7 +849,7 @@ void Renderer::poll_reads(bool wait_all) {
   }
 }
 
-void Renderer::render(const gx::Frame& f, Image* capture_image) {
+void Renderer::render(const gx::Frame& f, Image* capture_image, bool present_xfb) {
   if (!resize_efb(f.efb_width)) {
     std::fprintf(stderr, "[video] could not resize the EFB: %s\n", SDL_GetError());
     return;
@@ -862,7 +877,7 @@ void Renderer::render(const gx::Frame& f, Image* capture_image) {
 
   const auto xfb = f.xfb ? textures_.find(f.xfb) : textures_.end();
   if (xfb != textures_.end() && xfb->second.texture) {
-    if (window_) present(cmd, &xfb->second, f.xfb_aspect);
+    if (window_ && present_xfb) present(cmd, &xfb->second, f.xfb_aspect);
     if (capture_image) capture(cmd, xfb->second);
     last_xfb_ = f.xfb;
     last_aspect_ = f.xfb_aspect;

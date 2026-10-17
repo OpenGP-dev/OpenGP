@@ -33,7 +33,7 @@ Game tab to keep it running).
 | Tab | Settings |
 |-----|----------|
 | Game | The Mario Card you hold; the camera; pausing; free play |
-| Video | Fullscreen, aspect ratio, internal resolution, VSync |
+| Video | Fullscreen, aspect ratio, internal resolution, VSync, even frame pacing |
 | Sound | Volume |
 | Controls | The keys, buttons and axes for each control; force feedback, steering speed, dead zones |
 
@@ -75,6 +75,16 @@ the edge of the wide one.
 The game renders at its native 640x528 times the internal resolution. **Match the window** (the
 default) picks the smallest multiple at least as tall as the window: 2x for 720p, 3x for 1080p,
 5x for 4K.
+
+### Even frame pacing
+
+The game runs on its own 60 Hz clock, but it takes more time over some frames than others, and
+OpenGP shows each frame as soon as it is drawn. A monitor with a variable refresh rate (FreeSync
+or G-Sync) shows each frame as it comes, so frames can be a few milliseconds early or late and
+the motion slightly uneven. With **Even frame pacing** (Video tab, off by default; `[video]
+even_pacing` in `user/settings.toml`), OpenGP holds each frame until the game's next tick, as a
+cabinet's display does, so the frames come evenly spaced. It costs about half a frame (8 ms) of
+delay, and matters most in fullscreen with FreeSync or G-Sync.
 
 ## Mario Cards
 

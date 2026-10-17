@@ -25,6 +25,12 @@ class ViDevice : public Device {
   // Physical address of the XFB (top field) the display shows.
   u32 xfb_address() const;
   u64 retrace_count() const { return retraces_; }
+  // The host's steady clock (in nanoseconds) at the first retrace after
+  // `after_ns`: DI0's or DI1's interrupt, both of which the SDK counts as a
+  // retrace (one a field, 59.94 a second). The display shows the XFB the game
+  // gave it from then. 0 if neither interrupt is on, or while the machine is
+  // paused. Thread-safe.
+  u64 next_retrace_ns(u64 after_ns);
 
   static constexpr u64 kTicksPerHalfLine = 1287;
   static constexpr u32 kHalfLinesPerFrame = 1050;
@@ -33,6 +39,9 @@ class ViDevice : public Device {
  private:
   u16 read16(u32 offset);
   void write16(u32 offset, u16 value);
+  // The time base of display interrupt `index`'s first time after `timebase`,
+  // or 0 if it is off.
+  u64 next_interrupt(int index, u64 timebase) const;
   void reschedule(int index);
   void update_interrupts();
 
