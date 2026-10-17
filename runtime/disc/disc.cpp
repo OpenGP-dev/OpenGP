@@ -14,6 +14,7 @@
 #include <string_view>
 
 #include "disc/sha1.h"
+#include "os/utf8.h"
 
 namespace disc {
 
@@ -27,18 +28,7 @@ int seek64(std::FILE* f, u64 offset) {
 #endif
 }
 
-std::FILE* open_utf8(const std::string& path) {
-#ifdef _WIN32
-  // fopen would read the name in the system's code page.
-  const int n = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, nullptr, 0);
-  if (n <= 0) return nullptr;
-  std::wstring wide(static_cast<std::size_t>(n), L'\0');
-  MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, wide.data(), n);
-  return _wfopen(wide.c_str(), L"rb");
-#else
-  return std::fopen(path.c_str(), "rb");
-#endif
-}
+std::FILE* open_utf8(const std::string& path) { return os::fopen_utf8(path, "rb"); }
 
 u64 tell64(std::FILE* f) {
 #ifdef _WIN32

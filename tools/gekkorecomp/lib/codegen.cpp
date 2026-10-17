@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "codegen.h"
+#include "os/utf8.h"
 
 #include <cstdio>
 #include <filesystem>
@@ -271,7 +272,7 @@ bool write_text(const std::filesystem::path& path, const std::string& text, std:
   }
   std::ofstream out(path, std::ios::binary | std::ios::trunc);
   if (!out) {
-    if (error) *error = "cannot write " + path.string();
+    if (error) *error = "cannot write " + os::utf8(path);
     return false;
   }
   out << text;
@@ -288,12 +289,12 @@ bool generate(const Program& program, const std::string& directory, GenerateStat
               std::string* error) {
   namespace fs = std::filesystem;
   std::error_code ec;
-  fs::create_directories(directory, ec);
+  const fs::path dir = os::utf8_path(directory);
+  fs::create_directories(dir, ec);
   if (ec) {
     if (error) *error = "cannot create " + directory + ": " + ec.message();
     return false;
   }
-  const fs::path dir(directory);
   const Config& config = program.config();
   const auto& functions = program.functions();
   GenerateStats st;

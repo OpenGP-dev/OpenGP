@@ -14,7 +14,7 @@ set(OPENGP_LLVM_MINGW_SHA256 e3ad77d117a4bea19a7a3b333341824d79a5a371004a10e25b8
 
 # The runtime's libraries, in link order.
 set(package_libs opengp_app opengp_settings opengp_discord opengp_video opengp_input opengp_audio opengp_webcam imgui
-                 opengp_machine ppc_runtime gekko_isa SDL3-static)
+                 opengp_machine ppc_runtime gekko_isa opengp_utf8 SDL3-static)
 install(TARGETS ${package_libs} ARCHIVE DESTINATION sdk/lib)
 install(TARGETS opengp_installer RUNTIME DESTINATION .)
 

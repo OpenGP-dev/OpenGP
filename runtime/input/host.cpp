@@ -504,12 +504,13 @@ bool HostInput::load(const std::string& path, std::string* error) {
   impl_->path = path;
   impl_->dirty = false;
   std::error_code ec;
-  if (!fs::exists(path, ec)) {
-    fs::create_directories(fs::path(path).parent_path(), ec);
-    std::ofstream(path, std::ios::binary) << kDefaultConfig;
+  const fs::path file = os::utf8_path(path);
+  if (!fs::exists(file, ec)) {
+    fs::create_directories(file.parent_path(), ec);
+    std::ofstream(file, std::ios::binary) << kDefaultConfig;
   }
   std::string text = kDefaultConfig;
-  if (std::ifstream f(path, std::ios::binary); f) {
+  if (std::ifstream f(file, std::ios::binary); f) {
     text.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
   }
   std::string why;

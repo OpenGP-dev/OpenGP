@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "config.h"
+#include "os/utf8.h"
 
 #include <filesystem>
 
@@ -23,8 +24,8 @@ bool get_u32(const toml::node_view<const toml::node>& n, u32* out) {
 
 std::string resolve(const fs::path& dir, const std::string& p) {
   if (p.empty()) return p;
-  const fs::path path(p);
-  return path.is_absolute() ? p : (dir / path).lexically_normal().string();
+  const fs::path path = os::utf8_path(p);
+  return path.is_absolute() ? p : os::utf8((dir / path).lexically_normal());
 }
 
 }  // namespace
@@ -40,7 +41,7 @@ bool Config::load(const std::string& path, std::string* error) {
     return false;
   }
   const toml::table& t = result.table();
-  const fs::path dir = fs::path(path).parent_path();
+  const fs::path dir = os::utf8_path(path).parent_path();
   auto fail = [&](const std::string& msg) {
     if (error) *error = path + ": " + msg;
     return false;

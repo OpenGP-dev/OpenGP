@@ -11,6 +11,7 @@
 #include "hw/vi.h"
 #include "machine.h"
 #include "os/activity.h"
+#include "os/utf8.h"
 
 namespace app {
 
@@ -143,7 +144,7 @@ void start_hang_watch(opengp::Machine& machine, const FunctionNames& names, std:
       std::fprintf(stderr, "\n[opengp] %s\n", report.c_str());
       std::ofstream file(path, std::ios::binary | std::ios::trunc);
       file << report;
-      if (file) std::fprintf(stderr, "[opengp] hang report written to %s\n", path.string().c_str());
+      if (file) std::fprintf(stderr, "[opengp] hang report written to %s\n", os::utf8(path).c_str());
       std::fflush(stderr);
     }
   }).detach();

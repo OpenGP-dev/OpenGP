@@ -26,9 +26,11 @@ namespace installer {
 
 namespace {
 
-std::string utf8(const fs::path& p) {
-  const std::u8string s = p.u8string();
-  return std::string(s.begin(), s.end());
+using os::utf8;
+
+// The last part of a program's output, for an error message.
+std::string tail(const std::string& output, std::size_t max = 600) {
+  return output.size() <= max ? output : "..." + output.substr(output.size() - max);
 }
 
 std::vector<std::string> strings(const toml::node* node) {
@@ -123,14 +125,22 @@ bool find_compiler(const Package& package, const std::string& requested, const R
   if (!package.toolchain_url.empty()) {
     const fs::path dir = package.home / "toolchain";
     const fs::path compiler = dir / package.toolchain_dir / package.toolchain_cxx;
-    if (!fs::exists(compiler)) {
-      std::error_code ec;
+    std::error_code ec;
+    if (!fs::exists(compiler, ec)) {
+      // curl and tar run inside the toolchain folder with relative names:
+      // Windows' tar reads its arguments in the system's code page, so a
+      // package folder named with other characters would not reach it.
       fs::create_directories(dir, ec);
       const fs::path archive = dir / "download.zip";
-      report.line("Downloading the compiler (once): " + package.toolchain_url);
-      if (run_process({system_tool("curl"), "-fL", "--retry", "3", "-o", utf8(archive), package.toolchain_url}).exit_code !=
-          0) {
-        if (error) *error = "cannot download " + package.toolchain_url;
+      report.line("Downloading the compiler (once, about 190 MB): " + package.toolchain_url);
+      // -C - resumes a download that was interrupted.
+      const ProcessResult download = run_process(
+          {system_tool("curl"), "-fL", "--retry", "3", "-C", "-", "-o", "download.zip", package.toolchain_url},
+          utf8(dir));
+      if (download.exit_code != 0) {
+        if (error)
+          *error = "cannot download " + package.toolchain_url + " (check the internet connection and run OpenGP again):\n" +
+                   tail(download.output);
         return false;
       }
       report.line("Checking the download");
@@ -140,13 +150,21 @@ bool find_compiler(const Package& package, const std::string& requested, const R
         if (error) *error = "the download's SHA-256 is " + sha + ", expected " + package.toolchain_sha256;
         return false;
       }
+      // Unpacked into a folder of its own first, and moved into place only
+      // when complete: an interrupted unpack is never taken for a compiler.
       report.line("Unpacking the compiler");
-      std::vector<std::string> tar = {system_tool("tar"), "-xf", utf8(archive), "-C", utf8(dir)};
+      const fs::path unpacking = dir / "unpacking";
+      fs::remove_all(unpacking, ec);
+      fs::create_directories(unpacking, ec);
+      std::vector<std::string> tar = {system_tool("tar"), "-xf", "download.zip", "-C", "unpacking"};
       for (const std::string& e : package.toolchain_exclude) tar.insert(tar.end(), {"--exclude", e});
-      const ProcessResult r = run_process(tar);
+      const ProcessResult r = run_process(tar, utf8(dir));
+      fs::remove_all(dir / package.toolchain_dir, ec);
+      if (r.exit_code == 0) fs::rename(unpacking / package.toolchain_dir, dir / package.toolchain_dir, ec);
+      fs::remove_all(unpacking, ec);
       fs::remove(archive, ec);
-      if (r.exit_code != 0 || !fs::exists(compiler)) {
-        if (error) *error = "cannot unpack the compiler: " + r.output;
+      if (r.exit_code != 0 || !fs::exists(compiler, ec)) {
+        if (error) *error = "cannot unpack the compiler into " + utf8(dir) + ":\n" + tail(r.output);
         return false;
       }
     }
@@ -191,7 +209,11 @@ std::vector<std::pair<const GameInfo*, std::string>> find_images(const Package& 
     return std::any_of(found.begin(), found.end(), [&](const auto& f) { return f.first == g; });
   };
   if (!given.empty()) {
-    for (const std::string& image : given) {
+    for (const std::string& name : given) {
+      // Remembered as an absolute path: the game may be started from anywhere.
+      std::error_code ec;
+      const fs::path absolute = fs::absolute(os::utf8_path(name), ec);
+      const std::string image = ec ? name : utf8(absolute.lexically_normal());
       const GameInfo* g = identify_image(package, image);
       if (!g) report.line(image + ": not a disc image of a game OpenGP supports; skipped");
       else if (!have(g)) found.emplace_back(g, image);
@@ -209,11 +231,13 @@ std::vector<std::pair<const GameInfo*, std::string>> find_images(const Package& 
     std::error_code ec;
     const fs::path dir = package.home / folder;
     if (!fs::is_directory(dir, ec)) continue;
-    for (const auto& entry : fs::recursive_directory_iterator(dir, ec)) {
-      std::string ext = entry.path().extension().string();
+    // Never throws: an unreadable folder in there is skipped.
+    for (fs::recursive_directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end;
+         !ec && it != end; it.increment(ec)) {
+      std::string ext = utf8(it->path().extension());
       std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
       if (ext != ".iso" && ext != ".gcm") continue;
-      const std::string image = utf8(entry.path());
+      const std::string image = utf8(it->path());
       if (const GameInfo* g = identify_image(package, image); g && !have(g)) found.emplace_back(g, image);
     }
   }
@@ -293,13 +317,15 @@ bool install_game(const Package& package, const GameInfo& game, const std::strin
   base.push_back("-DOPENGP_GAME_ID=\"" + game.id + "\"");
   base.push_back("-DOPENGP_GAME_TITLE=\"" + game.title + "\"");
   base.push_back("-DOPENGP_DOL_SHA1=\"" + game.dol_sha1 + "\"");
-  // A C string: forward slashes, which Windows accepts too.
-  const std::u8string symbols_path = (game.dir / "config" / "symbols.txt").generic_u8string();
+  // Relative to the package folder, where the game's executable goes, so that
+  // the package can be moved: forward slashes, which Windows accepts too.
+  const std::u8string symbols_path =
+      (game.dir / "config" / "symbols.txt").lexically_relative(package.home).generic_u8string();
   base.push_back("-DOPENGP_SYMBOLS=\"" + std::string(symbols_path.begin(), symbols_path.end()) + "\"");
   std::vector<std::vector<std::string>> commands;
   std::vector<std::string> objects;
   for (std::size_t i = 0; i < sources.size(); ++i) {
-    const std::string obj = utf8(work / "obj" / (std::to_string(i) + "_" + sources[i].stem().string() + ".o"));
+    const std::string obj = utf8(work / "obj" / (std::to_string(i) + "_" + utf8(sources[i].stem()) + ".o"));
     std::vector<std::string> c = base;
     c.insert(c.end(), {"-c", utf8(sources[i]), "-o", obj});
     commands.push_back(std::move(c));

@@ -6,7 +6,7 @@ add_library(gekkorecomp_lib STATIC
   lib/symbols.cpp
 )
 target_include_directories(gekkorecomp_lib PUBLIC lib)
-target_link_libraries(gekkorecomp_lib PUBLIC gekko_isa PRIVATE tomlplusplus opengp_warnings)
+target_link_libraries(gekkorecomp_lib PUBLIC gekko_isa opengp_utf8 PRIVATE tomlplusplus opengp_warnings)
 
 add_executable(gekkorecomp main.cpp)
 target_link_libraries(gekkorecomp PRIVATE gekkorecomp_lib opengp_warnings)

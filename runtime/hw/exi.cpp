@@ -4,6 +4,7 @@
 // EXI_DeviceBaseboard.cpp (Copyright Dolphin Emulator Project, GPL-2.0-or-later).
 
 #include "hw/exi.h"
+#include "os/utf8.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -118,7 +119,7 @@ IplDevice::IplDevice(const std::string& user_dir) : rom_(ROM_SIZE, 0) {
   constexpr u32 kSjisOffset = 0x1AFF00, kSjisSize = 0x4A24D;
   constexpr u32 kAnsiOffset = 0x1FCF00, kAnsiSize = 0x2575;
   bool loaded = false;
-  if (std::FILE* f = std::fopen((user_dir + "/IPL.bin").c_str(), "rb")) {
+  if (std::FILE* f = os::fopen_utf8(user_dir + "/IPL.bin", "rb")) {
     loaded = std::fseek(f, kSjisOffset, SEEK_SET) == 0 && std::fread(&rom_[kSjisOffset], 1, kSjisSize, f) == kSjisSize &&
              std::fseek(f, kAnsiOffset, SEEK_SET) == 0 && std::fread(&rom_[kAnsiOffset], 1, kAnsiSize, f) == kAnsiSize;
     std::fclose(f);
@@ -195,8 +196,8 @@ void IplDevice::transfer_byte(u8& data) {
 // ---- Triforce baseboard ----------------------------------------------------------------------
 
 BaseboardDevice::BaseboardDevice(std::string backup_path) {
-  backup_ = std::fopen(backup_path.c_str(), "rb+");
-  if (!backup_) backup_ = std::fopen(backup_path.c_str(), "wb+");
+  backup_ = os::fopen_utf8(backup_path, "rb+");
+  if (!backup_) backup_ = os::fopen_utf8(backup_path, "wb+");
   if (!backup_) std::fprintf(stderr, "[exi] cannot open baseboard backup file %s\n", backup_path.c_str());
 }
 

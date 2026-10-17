@@ -5,16 +5,11 @@
 #pragma once
 
 #include <cstddef>
-#include <filesystem>
 #include <string>
 
-namespace os {
+#include "os/utf8.h"
 
-// A path from UTF-8 text (std::filesystem would read a std::string in the
-// system's code page on Windows).
-inline std::filesystem::path utf8_path(const std::string& utf8) {
-  return std::filesystem::path(std::u8string(utf8.begin(), utf8.end()));
-}
+namespace os {
 
 // Writes `size` bytes to `path` (UTF-8): to a temporary file next to it first, which
 // then replaces `path`. Creates the folder if needed.

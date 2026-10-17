@@ -34,6 +34,17 @@ From a profile of a whole playthrough of GP 2:
 
 ### Fixes
 
+- Windows: OpenGP now works in folders whose names have characters outside the system's code page
+  (an accent, Cyrillic, Chinese, Japanese...), such as a user folder named José or 日本. The
+  installer used to fail to build the games there, the games could crash at start-up, and saves,
+  settings, screenshots and images dropped on the installer could go unread or unwritten.
+- The installer: an interrupted compiler download carries on where it stopped, an interrupted
+  unpack is redone instead of leaving a broken compiler, and a failed download or unpack shows
+  what went wrong. It remembers an image given to it by its full path, so the game finds it
+  however it is started, and checks `--jobs`. Compiles running side by side no longer hold each
+  other's output open.
+- The games find their function names (for hang and crash reports) after the package folder is
+  moved.
 - Linked cabinets on different computers: each cabinet's messages now go out as soon as the game
   sends them. They used to wait for the other computer to acknowledge the one before, which it can
   delay by up to 200 ms, so they arrived in bursts and the other players' karts lagged behind

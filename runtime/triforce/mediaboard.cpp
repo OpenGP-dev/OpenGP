@@ -11,6 +11,7 @@
 #include <filesystem>
 
 #include "hw/exi.h"
+#include "os/utf8.h"
 
 namespace triforce {
 
@@ -122,8 +123,8 @@ bool log_enabled() {
 // ---- Files -------------------------------------------------------------------------------------
 
 void MediaBoard::File::open(const std::string& path) {
-  f = std::fopen(path.c_str(), "rb+");
-  if (!f) f = std::fopen(path.c_str(), "wb+");
+  f = os::fopen_utf8(path, "rb+");
+  if (!f) f = os::fopen_utf8(path, "wb+");
   if (!f) mb_error("cannot open %s", path.c_str());
 }
 

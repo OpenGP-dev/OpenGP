@@ -76,7 +76,7 @@ bool Machine::boot(const std::string& image_path, os::BootResult* boot, std::str
     if (fs::is_regular_file(legacy, ec) && cards_->list().empty()) {
       fs::create_directories(os::utf8_path(cards_->dir()), ec);
       fs::rename(legacy, os::utf8_path(cards_->path("Card 1")), ec);
-      if (!ec) std::fprintf(stderr, "[card] moved %s to %s\n", legacy.string().c_str(), cards_->path("Card 1").c_str());
+      if (!ec) std::fprintf(stderr, "[card] moved %s to %s\n", os::utf8(legacy).c_str(), cards_->path("Card 1").c_str());
     }
   }
   auto si = std::make_unique<hw::SiBus>(h);

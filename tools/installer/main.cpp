@@ -18,6 +18,7 @@
 
 #include "app/paths.h"
 #include "installer.h"
+#include "os/utf8.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -46,17 +47,25 @@ void pause_if_own_console() {
 #endif
 }
 
-int run(int argc, char** argv) {
+int run(const std::vector<std::string>& args) {
   std::vector<std::string> images;
   std::string cxx;
   bool force = false;
   installer::BuildOptions options;
-  for (int i = 1; i < argc; ++i) {
-    const std::string a = argv[i];
+  const std::size_t argc = args.size();
+  for (std::size_t i = 1; i < argc; ++i) {
+    const std::string& a = args[i];
     if (a == "--force") force = true;
     else if (a == "--keep-build") options.keep_build = true;
-    else if (a == "--jobs" && i + 1 < argc) options.jobs = static_cast<unsigned>(std::atoi(argv[++i]));
-    else if (a == "--cxx" && i + 1 < argc) cxx = argv[++i];
+    else if (a == "--jobs" && i + 1 < argc) {
+      char* end = nullptr;
+      const long n = std::strtol(args[++i].c_str(), &end, 10);
+      if (*end != '\0' || n < 1 || n > 256) {
+        std::fprintf(stderr, "--jobs %s: give a number from 1 to 256\n", args[i].c_str());
+        return 2;
+      }
+      options.jobs = static_cast<unsigned>(n);
+    } else if (a == "--cxx" && i + 1 < argc) cxx = args[++i];
     else if (a == "-h" || a == "--help") {
       std::printf("%s", kUsage);
       return 0;
@@ -121,7 +130,7 @@ int run(int argc, char** argv) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  const int code = run(argc, argv);
+  const int code = run(os::utf8_args(argc, argv));
   pause_if_own_console();
   return code;
 }

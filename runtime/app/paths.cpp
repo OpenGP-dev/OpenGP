@@ -65,7 +65,7 @@ fs::path home_dir() {
 #ifdef OPENGP_PACKAGE
   return executable_dir();
 #else
-  return fs::path(OPENGP_SOURCE_DIR);
+  return os::utf8_path(OPENGP_SOURCE_DIR);
 #endif
 }
 
@@ -81,8 +81,7 @@ bool remember_image(const fs::path& user_dir, const std::string& game_id, const 
   std::ostringstream out;
   out << "# The disc image each game was installed from (written by the installer).\n" << images << "\n";
   const std::string text = out.str();
-  const std::u8string u8 = images_file(user_dir).u8string();
-  const std::string path(u8.begin(), u8.end());
+  const std::string path = os::utf8(images_file(user_dir));
   if (!os::write_file_atomically(path, text.data(), text.size())) {
     if (error) *error = "cannot write " + path;
     return false;

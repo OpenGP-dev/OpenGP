@@ -1,3 +1,12 @@
+# Paths and arguments as UTF-8 (os/utf8.h), for the runtime, the recompiler
+# and the installer.
+add_library(opengp_utf8 STATIC os/utf8.cpp)
+target_include_directories(opengp_utf8 PUBLIC .)
+target_link_libraries(opengp_utf8 PRIVATE opengp_warnings)
+if(WIN32)
+  target_link_libraries(opengp_utf8 PRIVATE shell32)
+endif()
+
 # The CPU core: needed by everything that runs guest code (tests included).
 add_library(ppc_runtime STATIC
   ppc/dispatch.cpp
@@ -71,7 +80,7 @@ foreach(font western japanese)
 endforeach()
 find_package(Threads REQUIRED)
 target_link_libraries(opengp_machine
-  PUBLIC ppc_runtime Threads::Threads
+  PUBLIC ppc_runtime opengp_utf8 Threads::Threads
   PRIVATE opengp_warnings)
 if(WIN32)
   target_link_libraries(opengp_machine PRIVATE winmm dbghelp ws2_32 iphlpapi)

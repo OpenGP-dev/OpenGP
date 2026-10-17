@@ -97,7 +97,7 @@ u32 internal_scale(u32 setting, int window_height) {
 }
 
 bool load_settings(const std::string& path, Settings* settings, std::string* error) {
-  std::ifstream f(path, std::ios::binary);
+  std::ifstream f(os::utf8_path(path), std::ios::binary);
   if (!f) return true;  // defaults
   const std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
   toml::parse_result parsed = toml::parse(text);

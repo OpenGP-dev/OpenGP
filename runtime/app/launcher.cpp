@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -71,7 +72,7 @@ struct Options {
   u64 frame_offset = 0;           // frames shown by the runs before the reboot
   bool test_menu = false;         // start in the game's test menu
   std::string image;
-  fs::path user_dir;
+  std::string user_dir;  // UTF-8
   int timeout_s = -1, status_s = 5;
   bool headless = false, use_video = true, use_audio = true;
   bool game_log = false;  // print the game's debug messages
@@ -90,8 +91,12 @@ struct Options {
 };
 
 // Returns 0 to go on, or an exit code.
-int parse_options(int argc, char** argv, Options& o) {
+int parse_options(const std::vector<std::string>& args, Options& o) {
   std::string error;
+  const int argc = static_cast<int>(args.size());
+  std::vector<const char*> argv_storage;
+  for (const std::string& a : args) argv_storage.push_back(a.c_str());
+  const char* const* argv = argv_storage.data();
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     if ((a == "--reboot" || a == "--frame-offset") && i + 1 < argc) ++i;
@@ -151,7 +156,7 @@ int parse_options(int argc, char** argv, Options& o) {
     } else if ((a == "--input" || a == "--input-file") && has_value) {
       std::string text = argv[++i];
       if (a == "--input-file") {
-        std::ifstream f(text, std::ios::binary);
+        std::ifstream f(os::utf8_path(text), std::ios::binary);
         if (!f) {
           std::fprintf(stderr, "cannot read %s\n", text.c_str());
           return 1;
@@ -227,15 +232,15 @@ std::atomic<bool> g_reboot_requested{false};
 // `frames` is how many frames have been shown since power-on.
 [[noreturn]] void restart(const Options& o, const fs::path& user_dir, const char* argv0, const os::Reboot& reboot,
                           u64 frames) {
-  const fs::path path = user_dir / "reboot.bin";
-  if (!os::save_reboot(path.string(), reboot)) {
-    std::fprintf(stderr, "[opengp] cannot write %s\n", path.string().c_str());
+  const std::string path = os::utf8(user_dir / "reboot.bin");
+  if (!os::save_reboot(path, reboot)) {
+    std::fprintf(stderr, "[opengp] cannot write %s\n", path.c_str());
     std::_Exit(1);
   }
   stop_link();
   std::vector<std::string> args = o.args;
   args.push_back("--reboot");
-  args.push_back(path.string());
+  args.push_back(path);
   args.push_back("--frame-offset");
   args.push_back(std::to_string(frames));
   std::fprintf(stderr, "[opengp] restarting\n");
@@ -269,13 +274,17 @@ std::string find_image(const Game& game, const fs::path& user_dir) {
     const fs::path dir = home_dir() / folder;
     std::error_code ec;
     if (!fs::is_directory(dir, ec)) continue;
-    for (const auto& entry : fs::recursive_directory_iterator(dir, ec)) {
-      const std::string ext = entry.path().extension().string();
-      if (ext != ".iso" && ext != ".gcm" && ext != ".ISO" && ext != ".GCM") continue;
+    // Never throws: an unreadable folder in there is skipped.
+    for (fs::recursive_directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end;
+         !ec && it != end; it.increment(ec)) {
+      std::string ext = os::utf8(it->path().extension());
+      std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
+      if (ext != ".iso" && ext != ".gcm") continue;
+      const std::string path = os::utf8(it->path());
       disc::Image img;
-      if (!img.open(entry.path().string(), nullptr)) continue;
-      if (img.game_id() == game.id) return entry.path().string();
-      others.push_back(entry.path().string());
+      if (!img.open(path, nullptr)) continue;
+      if (img.game_id() == game.id) return path;
+      others.push_back(path);
     }
   }
   if (game.dol_sha1) {
@@ -316,11 +325,18 @@ bool check_image(const Game& game, const std::string& path) {
   return false;
 }
 
-// Function names for backtraces, from the decomp-toolkit symbol file.
+// Function names for backtraces, from the decomp-toolkit symbol file (UTF-8;
+// an installed game's is relative to its executable's folder).
 std::map<u32, std::string> load_function_names(const char* path) {
   std::map<u32, std::string> names;
   if (!path) return names;
-  std::ifstream f(path);
+  fs::path file = os::utf8_path(path);
+  if (file.is_relative()) file = executable_dir() / file;
+  std::ifstream f(file);
+  if (!f) {
+    std::fprintf(stderr, "[opengp] cannot read %s: reports show addresses without names\n", os::utf8(file).c_str());
+    return names;
+  }
   std::string line;
   while (std::getline(f, line)) {
     if (line.find("type:function") == std::string::npos) continue;
@@ -380,22 +396,23 @@ unsigned long long elapsed_ns(std::chrono::steady_clock::time_point since) {
 }  // namespace
 
 int run(const Game& game, int argc, char** argv) {
-  for (int i = 1; i < argc; ++i) {
-    if (std::string(argv[i]) == "--version") {
+  const std::vector<std::string> args = os::utf8_args(argc, argv);
+  for (std::size_t i = 1; i < args.size(); ++i) {
+    if (args[i] == "--version") {
       std::printf("OpenGP %s: %s (%s)\n", OPENGP_VERSION, game.title, game.id);
       return 0;
     }
   }
   os::use_utf8_console();
   Options o;
-  if (const int code = parse_options(argc, argv, o)) return code;
+  if (const int code = parse_options(args, o)) return code;
 #ifndef OPENGP_VIDEO
   o.use_video = false;
 #endif
   // With a window the game runs until it is closed; otherwise for 20 seconds.
   const bool windowed = o.use_video && !o.headless;
   if (o.timeout_s < 0) o.timeout_s = windowed ? 0 : 20;
-  const fs::path user_dir = o.user_dir.empty() ? home_dir() / "user" : o.user_dir;
+  const fs::path user_dir = o.user_dir.empty() ? home_dir() / "user" : os::utf8_path(o.user_dir);
   if (o.image.empty()) o.image = find_image(game, user_dir);
   if (o.image.empty()) {
     std::fprintf(stderr, "No %s image found in ISO/ or private/ (see docs/game-files.md), or pass --iso.\n", game.id);
@@ -405,7 +422,7 @@ int run(const Game& game, int argc, char** argv) {
 
   // Settings: the file, then this run's options.
   std::string error;
-  const std::string settings_path = (user_dir / "settings.toml").string();
+  const std::string settings_path = os::utf8(user_dir / "settings.toml");
   static Settings file_settings;
   if (!load_settings(settings_path, &file_settings, &error)) {
     std::fprintf(stderr, "[settings] %s (using the defaults)\n", error.c_str());
@@ -427,7 +444,7 @@ int run(const Game& game, int argc, char** argv) {
     os::g_previous_boot = &previous_boot;
   }
   static opengp::Machine machine;
-  machine.set_user_dir(user_dir.string());
+  machine.set_user_dir(os::utf8(user_dir));
   machine.set_script(std::move(o.script));
   machine.set_frame_offset(o.frame_offset);
   // A reboot now: with a window, the main thread restarts (after saving the
@@ -584,7 +601,7 @@ int run(const Game& game, int argc, char** argv) {
     static Menu menu;
     bool use_menu = false;
     if (!o.headless) {
-      const std::string controls_path = (user_dir / "controls.toml").string();
+      const std::string controls_path = os::utf8(user_dir / "controls.toml");
       if (!host_input.load(controls_path, &error)) std::fprintf(stderr, "[input] %s\n", error.c_str());
       use_input = host_input.init(&error);
       if (!use_input) std::fprintf(stderr, "[input] controllers unavailable: %s\n", error.c_str());
@@ -841,9 +858,9 @@ int run(const Game& game, int argc, char** argv) {
         std::error_code ec;
         fs::create_directories(shot_dir, ec);
         const fs::path path = shot_dir / ("frame_" + std::to_string(number) + ".png");
-        if (video::write_png(path.string(), shot)) {
-          std::fprintf(stderr, "[opengp] screenshot: %s\n", path.string().c_str());
-          if (shot_requested && use_menu) menu.notify("Screenshot saved: " + path.filename().string());
+        if (video::write_png(os::utf8(path), shot)) {
+          std::fprintf(stderr, "[opengp] screenshot: %s\n", os::utf8(path).c_str());
+          if (shot_requested && use_menu) menu.notify("Screenshot saved: " + os::utf8(path.filename()));
         }
         shot_requested = false;
       }

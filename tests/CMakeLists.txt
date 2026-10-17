@@ -87,3 +87,7 @@ add_test(NAME discord COMMAND test_discord)
 add_executable(test_link test_link.cpp)
 target_link_libraries(test_link PRIVATE opengp_machine doctest opengp_warnings)
 add_test(NAME link COMMAND test_link)
+
+add_executable(test_paths test_paths.cpp)
+target_link_libraries(test_paths PRIVATE opengp_settings gekkorecomp_lib doctest opengp_warnings)
+add_test(NAME paths COMMAND test_paths)
