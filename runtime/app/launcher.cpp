@@ -194,6 +194,7 @@ Settings settings_to_save(const Settings& file, const Settings& start, const Set
   OPENGP_KEEP_CHANGE(aspect);
   OPENGP_KEEP_CHANGE(internal_resolution);
   OPENGP_KEEP_CHANGE(vsync);
+  OPENGP_KEEP_CHANGE(even_pacing);
   OPENGP_KEEP_CHANGE(volume);
   OPENGP_KEEP_CHANGE(free_play);
   OPENGP_KEEP_CHANGE(pause_in_menu);
@@ -356,7 +357,7 @@ std::shared_ptr<camera::Source> start_camera(const Settings& s, std::string* des
 #ifdef OPENGP_VIDEO
       auto webcam = std::make_shared<camera::Webcam>();
       std::string error;
-      if (webcam->open(s.webcam, &error)) {
+      if (webcam->choose(s.webcam, &error)) {
         *description = "webcam, " + webcam->name();
         return webcam;
       }
@@ -671,6 +672,10 @@ int run(const Game& game, int argc, char** argv) {
     model.camera_info = camera_info;
     model.webcams = [] { return camera::Webcam::names(); };
     model.quit = [&quit] { quit("quit from the menu"); };
+    // Even frame pacing: the retraces that say when to show each frame, and
+    // when the last one was shown (steady clock, ns).
+    hw::ViDevice* const vi = machine.hardware().device<hw::ViDevice>();
+    u64 shown_ns = 0;
     if (game.test_menu) {
       model.test_menu = [&save, &o, &user_dir, &game, argv] {
         save();
@@ -810,10 +815,23 @@ int run(const Game& game, int argc, char** argv) {
         menu.update(model);
       }
       video::Image shot;
+      // With even frame pacing a frame is shown at the game's first retrace
+      // after it was finished, as the display would show its XFB, instead of
+      // as soon as it is drawn: the game's frames take more or less time, but
+      // its retraces are evenly spaced, and a display with a variable refresh
+      // rate (FreeSync, G-Sync) shows each frame as it comes. A frame whose
+      // retrace has gone by (it is late) is shown at once.
+      const bool paced = settings.even_pacing && window && frame->xfb && vi;
       const auto render_start = std::chrono::steady_clock::now();
       os::g_main_activity.set("drawing a frame");
-      renderer.render(*frame, shoot ? &shot : nullptr);
+      renderer.render(*frame, shoot ? &shot : nullptr, !paced);
       g_render_ns.fetch_add(elapsed_ns(render_start));
+      if (paced) {
+        // After the last frame's retrace too: one frame a retrace.
+        const u64 due = vi->next_retrace_ns(std::max(frame->finished_ns, shown_ns));
+        g_wait_ns.fetch_add(renderer.redraw(due));
+        if (due) shown_ns = due;
+      }
       if (frame->xfb) {
         g_rendered.fetch_add(1);
         last_present = std::chrono::steady_clock::now();

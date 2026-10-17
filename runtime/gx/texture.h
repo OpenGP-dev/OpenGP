@@ -40,4 +40,13 @@ void decode_texture(u32* dst, const u8* src, TexFormat format, u32 width, u32 he
 // The format of the texture an EFB copy produces, when read back as a texture.
 TexFormat copy_texture_format(CopyFormat format);
 
+// Whether a texture's mipmaps make it fade in with distance: level 0 (nearly)
+// all transparent and a smaller level visible, as GP 2's rainbows are. Such
+// levels are an effect, not downscaled copies, so they are chosen as at the
+// game's resolution (TextureBinding::native_lod). Dolphin's general
+// detection (levels compared with box-filtered copies) flags most of GP 2's
+// CMPR textures, whose levels are compressed separately. `texels`: the
+// decoded levels in RGBA8, one after another.
+bool fades_with_distance(const u32* texels, u32 width, u32 height, u32 levels);
+
 }  // namespace gx

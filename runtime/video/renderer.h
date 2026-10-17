@@ -108,16 +108,19 @@ class Renderer {
   // Drawn over every presented frame (nullptr: nothing).
   void set_overlay(Overlay* overlay) { overlay_ = overlay; }
 
-  // Presents the last frame again (with the overlay), for when the game has
-  // shown nothing new for a while.
-  void redraw();
+  // Presents the last frame (with the overlay): again, for when the game has
+  // shown nothing new for a while, or for the first time after a render()
+  // that didn't. With `at_ns` (steady clock), it gets the window's next image,
+  // then waits until then to present it; it returns how long it waited (ns).
+  u64 redraw(u64 at_ns = 0);
 
   SDL_GPUDevice* device() const { return device_; }
   u32 window_format() const;  // the window's SDL_GPUTextureFormat
 
-  // Renders a frame and presents its XFB. If `capture` is given and the
-  // frame has an XFB, it receives the XFB image (at the internal resolution).
-  void render(const gx::Frame& frame, Image* capture = nullptr);
+  // Renders a frame and presents its XFB (unless `present` is false: then
+  // redraw() presents it). If `capture` is given and the frame has an XFB, it
+  // receives the XFB image (at the internal resolution).
+  void render(const gx::Frame& frame, Image* capture = nullptr, bool present = true);
 
   const char* driver() const;
 
@@ -125,11 +128,13 @@ class Renderer {
   struct Texture {
     SDL_GPUTexture* texture = nullptr;
     u32 width = 0, height = 0;  // host size (EFB copies: scaled)
+    u32 levels = 1;
+    bool uploaded = false;  // a decoded texture (not an EFB copy target)
   };
 
   SDL_GPUGraphicsPipeline* tev_pipeline(gx::PipelineKey key);
   SDL_GPUGraphicsPipeline* clear_pipeline(bool color, bool alpha, bool depth);
-  SDL_GPUSampler* sampler(u32 mode0, u32 mode1);
+  SDL_GPUSampler* sampler(u32 mode0, u32 mode1, bool native_lod);
   SDL_GPUShader* shader(const ShaderCode& code, bool fragment, u32 samplers, u32 uniforms);
   bool resize_efb(u32 width);
   bool upload(SDL_GPUCommandBuffer* cmd, const gx::Frame& frame);
@@ -179,6 +184,7 @@ class Renderer {
     std::shared_ptr<SDL_GPUFence> fence;
   };
   std::vector<PendingRead> unfenced_reads_, pending_reads_;
+  std::vector<SDL_GPUTransferBuffer*> read_buffers_;  // download buffers for the next readbacks
   struct Capture {
     SDL_GPUTransferBuffer* transfer = nullptr;
     u32 width = 0, height = 0;
@@ -192,6 +198,20 @@ class Renderer {
   std::unordered_map<u32, SDL_GPUGraphicsPipeline*> clear_pipelines_;
   std::unordered_map<u64, SDL_GPUSampler*> samplers_;
   std::unordered_map<u32, Texture> textures_;
+  // Released decoded textures, kept for reuse by later textures of the same
+  // size: creating one costs a command buffer submission in SDL's Vulkan
+  // backend (about 75 us), and a course start creates dozens.
+  struct PooledTexture {
+    SDL_GPUTexture* texture;
+    u32 width, height, levels;
+    u64 released;  // frame
+    u64 bytes;
+  };
+  std::deque<PooledTexture> texture_pool_;
+  u64 texture_pool_bytes_ = 0;
+  u64 frames_rendered_ = 0;
+  SDL_GPUTexture* pooled_texture(u32 width, u32 height, u32 levels);
+  void release_texture(const Texture& t);
 
   SDL_GPUBuffer* vertex_buffer_ = nullptr;
   SDL_GPUBuffer* index_buffer_ = nullptr;

@@ -35,6 +35,7 @@ struct Settings {
   AspectRatio aspect = AspectRatio::Auto;
   u32 internal_resolution = 0;  // 0: from the window's size, else 1 to 8 times 640x528
   bool vsync = true;
+  bool even_pacing = false;  // show each frame at the game's next retrace (even, for FreeSync/G-Sync)
 
   // [audio]
   int volume = 100;  // percent

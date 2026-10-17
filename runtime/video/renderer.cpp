@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -64,6 +65,11 @@ constexpr SDL_GPUBlendFactor kDstFactor[8] = {
     SDL_GPU_BLENDFACTOR_DST_ALPHA, SDL_GPU_BLENDFACTOR_ONE_MINUS_DST_ALPHA};
 
 u32 field(u32 v, u32 shift, u32 count) { return (v >> shift) & ((1u << count) - 1); }
+
+u64 now_ns() {
+  return static_cast<u64>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+}
 
 struct FullscreenUniforms {
   float rect[4];
@@ -124,6 +130,7 @@ Renderer::~Renderer() {
   if (!device_) return;
   SDL_WaitForGPUIdle(device_);
   for (auto& [h, t] : textures_) SDL_ReleaseGPUTexture(device_, t.texture);
+  for (PooledTexture& t : texture_pool_) SDL_ReleaseGPUTexture(device_, t.texture);
   for (auto& [k, p] : tev_pipelines_) SDL_ReleaseGPUGraphicsPipeline(device_, p);
   for (auto& [k, p] : clear_pipelines_) SDL_ReleaseGPUGraphicsPipeline(device_, p);
   for (auto& [k, s] : samplers_) SDL_ReleaseGPUSampler(device_, s);
@@ -139,6 +146,7 @@ Renderer::~Renderer() {
   if (index_buffer_) SDL_ReleaseGPUBuffer(device_, index_buffer_);
   if (transfer_) SDL_ReleaseGPUTransferBuffer(device_, transfer_);
   poll_reads(true);
+  for (SDL_GPUTransferBuffer* b : read_buffers_) SDL_ReleaseGPUTransferBuffer(device_, b);
   if (window_) SDL_ReleaseWindowFromGPUDevice(device_, window_);
   SDL_DestroyGPUDevice(device_);
 }
@@ -391,8 +399,11 @@ SDL_GPUGraphicsPipeline* Renderer::clear_pipeline(bool color, bool alpha, bool d
   return pipeline;
 }
 
-SDL_GPUSampler* Renderer::sampler(u32 mode0, u32 mode1) {
-  const u64 key = (u64{mode0 & 0x1FFFFF} << 16) | (mode1 & 0xFFFF);
+SDL_GPUSampler* Renderer::sampler(u32 mode0, u32 mode1, bool native_lod) {
+  // Mip levels chosen as at the game's resolution: the internal resolution's
+  // finer pixels would choose them log2(scale) levels lower.
+  const u32 lod_scale = native_lod && field(mode0, 5, 2) != 0 ? scale_ : 1;
+  const u64 key = (u64{mode0 & 0x1FFFFF} << 16) | (mode1 & 0xFFFF) | (u64{lod_scale} << 40);
   if (auto it = samplers_.find(key); it != samplers_.end()) return it->second;
   auto wrap = [](u32 w) {
     return w == 0 ? SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE
@@ -406,7 +417,7 @@ SDL_GPUSampler* Renderer::sampler(u32 mode0, u32 mode1) {
   s.mag_filter = field(mode0, 4, 1) ? SDL_GPU_FILTER_LINEAR : SDL_GPU_FILTER_NEAREST;
   s.min_filter = field(mode0, 7, 1) ? SDL_GPU_FILTER_LINEAR : SDL_GPU_FILTER_NEAREST;
   s.mipmap_mode = mip == 2 ? SDL_GPU_SAMPLERMIPMAPMODE_LINEAR : SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
-  s.mip_lod_bias = static_cast<float>(static_cast<s8>(field(mode0, 9, 8))) / 32.0f;
+  s.mip_lod_bias = static_cast<float>(static_cast<s8>(field(mode0, 9, 8))) / 32.0f + std::log2(static_cast<float>(lod_scale));
   if (mip == 0) {
     s.min_lod = s.max_lod = 0.0f;
   } else {
@@ -465,15 +476,19 @@ bool Renderer::upload(SDL_GPUCommandBuffer* cmd, const gx::Frame& f) {
     SDL_UploadToGPUBuffer(copy, &src, &region, true);
   }
   for (const gx::TextureUpload& up : f.uploads) {
-    SDL_GPUTextureCreateInfo t{};
-    t.type = SDL_GPU_TEXTURETYPE_2D;
-    t.format = kColorFormat;
-    t.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-    t.width = up.width;
-    t.height = up.height;
-    t.layer_count_or_depth = 1;
-    t.num_levels = up.levels;
-    SDL_GPUTexture* tex = SDL_CreateGPUTexture(device_, &t);
+    SDL_GPUTexture* tex = pooled_texture(up.width, up.height, up.levels);
+    const bool reused = tex != nullptr;
+    if (!tex) {
+      SDL_GPUTextureCreateInfo t{};
+      t.type = SDL_GPU_TEXTURETYPE_2D;
+      t.format = kColorFormat;
+      t.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+      t.width = up.width;
+      t.height = up.height;
+      t.layer_count_or_depth = 1;
+      t.num_levels = up.levels;
+      tex = SDL_CreateGPUTexture(device_, &t);
+    }
     if (!tex) continue;
     u32 offset = vbytes + ibytes + static_cast<u32>(up.offset);
     for (u32 l = 0, w = up.width, h = up.height; l < up.levels; ++l) {
@@ -484,12 +499,14 @@ bool Renderer::upload(SDL_GPUCommandBuffer* cmd, const gx::Frame& f) {
       region.w = w;
       region.h = h;
       region.d = 1;
-      SDL_UploadToGPUTexture(copy, &src, &region, false);
+      // A reused texture gets new memory if the GPU might still be reading
+      // it (cycle, with the first level only: cycling replaces all of them).
+      SDL_UploadToGPUTexture(copy, &src, &region, reused && l == 0);
       offset += w * h * 4;
       w = std::max(1u, w / 2);
       h = std::max(1u, h / 2);
     }
-    textures_[up.handle] = {tex, up.width, up.height};
+    textures_[up.handle] = {tex, up.width, up.height, up.levels, true};
   }
   SDL_EndGPUCopyPass(copy);
   return true;
@@ -552,7 +569,7 @@ void Renderer::draw(const gx::Frame& f, const gx::DrawCmd& d) {
     const gx::TextureBinding& t = s.textures[i];
     auto it = t.texture ? textures_.find(t.texture) : textures_.end();
     bindings[i].texture = it != textures_.end() ? it->second.texture : white_;
-    bindings[i].sampler = sampler(t.mode0, t.mode1);
+    bindings[i].sampler = sampler(t.mode0, t.mode1, t.native_lod);
   }
   SDL_BindGPUFragmentSamplers(pass_, 0, bindings, 8);
   if (s.uniforms != pushed_uniforms_) {
@@ -661,13 +678,23 @@ void Renderer::present(SDL_GPUCommandBuffer* cmd, const Texture* xfb, float aspe
   SDL_EndGPURenderPass(pass);
 }
 
-void Renderer::redraw() {
-  if (!window_) return;
+u64 Renderer::redraw(u64 at_ns) {
+  if (!window_) return 0;
   SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device_);
-  if (!cmd) return;
+  if (!cmd) return 0;
   const auto xfb = last_xfb_ ? textures_.find(last_xfb_) : textures_.end();
   present(cmd, xfb != textures_.end() && xfb->second.texture ? &xfb->second : nullptr, last_aspect_);
+  // The window's image is ours by now (getting it may have waited for the
+  // display): only the submit, which presents it, waits for `at_ns`.
+  u64 waited = 0;
+  if (const u64 now = now_ns(); at_ns > now) {
+    os::g_main_activity.set("waiting to present at the game's retrace");
+    waited = at_ns - now;
+    SDL_DelayPrecise(waited);
+    os::g_main_activity.set("drawing a frame");
+  }
   SDL_SubmitGPUCommandBuffer(cmd);
+  return waited;
 }
 
 void Renderer::capture(SDL_GPUCommandBuffer* cmd, const Texture& xfb) {
@@ -746,10 +773,18 @@ void Renderer::read_efb(SDL_GPUCommandBuffer* cmd, std::shared_ptr<gx::EfbReadba
     t.num_levels = 1;
     target = SDL_CreateGPUTexture(device_, &t);
   }
-  SDL_GPUTransferBufferCreateInfo info{SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, w * h * 4, 0};
-  SDL_GPUTransferBuffer* transfer = SDL_CreateGPUTransferBuffer(device_, &info);
+  // Download buffers are kept for the next readbacks: creating one each time
+  // (once a frame on some courses) sometimes stalled the driver for 4-40 ms.
+  SDL_GPUTransferBuffer* transfer = nullptr;
+  if (!read_buffers_.empty()) {
+    transfer = read_buffers_.back();
+    read_buffers_.pop_back();
+  } else {
+    SDL_GPUTransferBufferCreateInfo info{SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, w * h * 4, 0};
+    transfer = SDL_CreateGPUTransferBuffer(device_, &info);
+  }
   if (!target || !transfer) {
-    if (transfer) SDL_ReleaseGPUTransferBuffer(device_, transfer);
+    if (transfer) read_buffers_.push_back(transfer);
     request->complete();  // with no pixels: peeks read zero
     return;
   }
@@ -807,13 +842,14 @@ void Renderer::poll_reads(bool wait_all) {
         }
       }
     }
-    SDL_ReleaseGPUTransferBuffer(device_, it->transfer);
+    if (read_buffers_.size() < 4) read_buffers_.push_back(it->transfer);
+    else SDL_ReleaseGPUTransferBuffer(device_, it->transfer);
     r.complete();
     it = pending_reads_.erase(it);
   }
 }
 
-void Renderer::render(const gx::Frame& f, Image* capture_image) {
+void Renderer::render(const gx::Frame& f, Image* capture_image, bool present_xfb) {
   if (!resize_efb(f.efb_width)) {
     std::fprintf(stderr, "[video] could not resize the EFB: %s\n", SDL_GetError());
     return;
@@ -841,7 +877,7 @@ void Renderer::render(const gx::Frame& f, Image* capture_image) {
 
   const auto xfb = f.xfb ? textures_.find(f.xfb) : textures_.end();
   if (xfb != textures_.end() && xfb->second.texture) {
-    if (window_) present(cmd, &xfb->second, f.xfb_aspect);
+    if (window_ && present_xfb) present(cmd, &xfb->second, f.xfb_aspect);
     if (capture_image) capture(cmd, xfb->second);
     last_xfb_ = f.xfb;
     last_aspect_ = f.xfb_aspect;
@@ -871,9 +907,40 @@ void Renderer::render(const gx::Frame& f, Image* capture_image) {
 
   for (u32 h : f.releases) {
     if (auto it = textures_.find(h); it != textures_.end()) {
-      SDL_ReleaseGPUTexture(device_, it->second.texture);
+      release_texture(it->second);
       textures_.erase(it);
     }
+  }
+  ++frames_rendered_;
+}
+
+SDL_GPUTexture* Renderer::pooled_texture(u32 width, u32 height, u32 levels) {
+  // Released a few frames ago at least, so that the GPU is done with it.
+  for (auto it = texture_pool_.begin(); it != texture_pool_.end(); ++it) {
+    if (it->width == width && it->height == height && it->levels == levels && it->released + 4 <= frames_rendered_) {
+      SDL_GPUTexture* t = it->texture;
+      texture_pool_bytes_ -= it->bytes;
+      texture_pool_.erase(it);
+      return t;
+    }
+  }
+  return nullptr;
+}
+
+void Renderer::release_texture(const Texture& t) {
+  if (!t.texture) return;
+  if (!t.uploaded) {
+    SDL_ReleaseGPUTexture(device_, t.texture);
+    return;
+  }
+  const u64 bytes = u64{t.width} * t.height * 4 * 4 / 3;  // with its mipmaps
+  texture_pool_.push_back({t.texture, t.width, t.height, t.levels, frames_rendered_, bytes});
+  texture_pool_bytes_ += bytes;
+  constexpr u64 kPoolBytes = 256ull << 20;
+  while (texture_pool_bytes_ > kPoolBytes && !texture_pool_.empty()) {
+    SDL_ReleaseGPUTexture(device_, texture_pool_.front().texture);
+    texture_pool_bytes_ -= texture_pool_.front().bytes;
+    texture_pool_.pop_front();
   }
 }
 

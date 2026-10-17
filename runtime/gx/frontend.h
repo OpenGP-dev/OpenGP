@@ -63,7 +63,13 @@ class Frontend {
   //     full width.
   //   * Scissors, clears and copies that span the whole width do so in the
   //     wide EFB, so full-screen copies (and the displayed frame) are wide.
-  void set_widescreen(u32 side) { requested_side_.store(side, std::memory_order_relaxed); }
+  void set_widescreen(u32 side) {
+    requested_side_.store(side, std::memory_order_relaxed);
+    g_widescreen_side.store(side, std::memory_order_relaxed);
+  }
+  // The side asked for last, for game code that needs the picture's shape
+  // (games/*/patches.cpp).
+  static inline std::atomic<u32> g_widescreen_side{0};
 
   // Command stream input (see gx::Decoder). `cp` is the CP register file.
   void bp_write(u8 reg, u32 value);
@@ -149,7 +155,8 @@ class Frontend {
   // Per-draw work
   VertexLoader loader_;
   InputVertex input_{};  // kept across vertices: absent normals reuse the last values
-  std::vector<std::array<float, 4>> clip_;  // GX clip-space positions of the current draw (for culling)
+  // GX clip-space positions of the current draw (for culling).
+  std::vector<std::array<float, 4>, UninitAllocator<std::array<float, 4>>> clip_;
   std::vector<u8> skip_;
 
   // State caching: rebuilt when registers change.
@@ -164,6 +171,7 @@ class Frontend {
   struct CachedTexture {
     u32 handle;
     u64 last_used;
+    bool native_lod;  // see TextureBinding::native_lod
   };
   std::unordered_map<u64, CachedTexture> textures_;
   // EFB copies, by destination address.
@@ -172,6 +180,8 @@ class Frontend {
     u32 width, height;
     TexFormat format;
     u64 memory_hash;  // of the destination memory when copied
+    u64 last_used;    // frame it was last copied or sampled
+    bool xfb;
   };
   std::unordered_map<u32, CopiedTexture> copies_;
   // Hashes of guest memory ranges (address, size) taken this frame. Hashing

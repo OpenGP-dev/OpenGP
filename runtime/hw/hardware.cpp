@@ -174,6 +174,14 @@ u64 Hardware::clock_ticks() const {
 
 u64 Hardware::timebase() const { return clock_ticks() - tb_origin_; }
 
+u64 Hardware::timebase_at(u64 steady_ns) const { return ns_to_ticks(steady_ns) - tb_origin_; }
+
+// Rounded up, so that timebase_at(steady_ns_at(tb)) == tb.
+u64 Hardware::steady_ns_at(u64 timebase) const {
+  const u64 ticks = timebase + tb_origin_;
+  return (ticks / 81) * 2000 + ((ticks % 81) * 2000 + 80) / 81;
+}
+
 void Hardware::set_timebase(u64 value) {
   std::lock_guard lock(mutex_);
   tb_origin_ = clock_ticks() - value;

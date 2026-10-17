@@ -1,5 +1,42 @@
 # Changelog
 
+## Unreleased
+
+### Even frame pacing
+
+- **Even frame pacing** (Video tab, off by default; `[video] even_pacing`) shows each frame on the
+  game's own 60 Hz tick, as a cabinet's display does, instead of as soon as it is drawn. The game
+  takes more time over some frames than others, so they used to come 12 to 21 ms apart; a FreeSync
+  or G-Sync monitor showed that unevenness as it came. Now they are presented at evenly spaced
+  times, for about half a frame (8 ms) more delay. See [docs/playing.md](docs/playing.md#even-frame-pacing).
+
+### Smoother
+
+From a profile of a whole playthrough of GP 2:
+
+- The busiest courses (Arena and Waluigi Stadium, the Mario courses, the flyovers before a race)
+  drop far fewer frames. OpenGP transforms the game's vertices on the CPU, over 80,000 a frame
+  there; each now takes about 40% less time, with exactly the same results.
+- Shorter pauses when loading between scenes and at the start of a course: the game's file name
+  lookup, memory copies and fills are done natively.
+- The game image is held in memory, as on a cabinet: no more stutters, or the odd freeze of a
+  second, while the game streams its music from the disc during a race.
+- No more 4-40 ms renderer stalls in races where the game reads the picture back (Arena and
+  Waluigi Stadium, the Mario courses), and shorter stalls when many textures load at once.
+- Fixed a memory leak: every race kept a 64 MB texture at 8x (one of the game's shadow maps).
+- The per-draw timers cost about half a millisecond a frame in busy races, even when nothing
+  was measuring; they are now nearly free.
+
+### Fixes
+
+- The rainbows of GP 2's Rainbow Coaster and Rainbow Downhill no longer nearly vanish at high
+  internal resolutions: they fade in with distance as they should.
+- Widescreen: GP 2 no longer leaves out objects in the side strips (scenery, item boxes, a blimp)
+  that then popped in at the edges of the 4:3 picture.
+- The webcam is on only while the game uses it: while your photo is taken, for a moment as the
+  game starts, and on the test menu's camera page. It used to stay on, light and all, for as long
+  as the game ran, taking about 5% of a CPU core for pictures nothing used.
+
 ## 0.4.0 (2026-10-16)
 
 This release links cabinets for Versus races, on one computer or a local network, and shows what

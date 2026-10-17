@@ -33,7 +33,7 @@ Game tab to keep it running).
 | Tab | Settings |
 |-----|----------|
 | Game | The Mario Card you hold; the camera; pausing; free play |
-| Video | Fullscreen, aspect ratio, internal resolution, VSync |
+| Video | Fullscreen, aspect ratio, internal resolution, VSync, even frame pacing |
 | Sound | Volume |
 | Controls | The keys, buttons and axes for each control; force feedback, steering speed, dead zones |
 
@@ -76,6 +76,16 @@ The game renders at its native 640x528 times the internal resolution. **Match th
 default) picks the smallest multiple at least as tall as the window: 2x for 720p, 3x for 1080p,
 5x for 4K.
 
+### Even frame pacing
+
+The game runs on its own 60 Hz clock, but it takes more time over some frames than others, and
+OpenGP shows each frame as soon as it is drawn. A monitor with a variable refresh rate (FreeSync
+or G-Sync) shows each frame as it comes, so frames can be a few milliseconds early or late and
+the motion slightly uneven. With **Even frame pacing** (Video tab, off by default; `[video]
+even_pacing` in `user/settings.toml`), OpenGP holds each frame until the game's next tick, as a
+cabinet's display does, so the frames come evenly spaced. It costs about half a frame (8 ms) of
+delay, and matters most in fullscreen with FreeSync or G-Sync.
+
 ## Mario Cards
 
 Cards are saved in `user/cards/GGPE01/` (GP) and `user/cards/GGPE02/` (GP 2), one file per card
@@ -98,11 +108,16 @@ race. OpenGP can use a webcam for it. In the menu's Game tab, **Photos from** is
   the middle. On macOS, the system asks once whether OpenGP may use the camera.
 - **Test pattern**: colour bars, for trying it without a webcam.
 
-The camera is set up when the game starts, so a change takes effect when the game restarts. If the
-webcam cannot be opened, the game runs without its camera and says why on the console. In
+The camera is set up when the game starts, so a change takes effect when the game restarts. If
+there is no webcam, the game runs without its camera and says so on the console. In
 `user/settings.toml` the setting is `[camera] source` (`"off"`, `"webcam"` or `"test"`) with
 `webcam` (the webcam's name, `""` for the first), and `--camera off|webcam|test` sets it for one
-run. The webcam's light stays on while the game runs with it.
+run.
+
+The webcam is on only while the game uses it: while your photo is taken, for a moment as the game
+starts (it checks its camera), and on the test menu's camera page. Its light goes off a few
+seconds later. If the webcam can't be opened then (another program is using it, say), the photo
+is grey and the console says why.
 
 ## Linked cabinets
 

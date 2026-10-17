@@ -4,14 +4,28 @@
 // CP vertex descriptor and attribute table describe) into InputVertex,
 // resolving indexed attributes through the CP arrays in guest memory.
 //
+// load() runs for every vertex the game draws (over 80,000 a frame on the
+// busiest courses), so it is defined here, for the draw loop to inline, and
+// everything that is the same for a whole draw is worked out once, by
+// setup() and begin().
+//
 // Based on Dolphin's VertexLoader*.cpp and the software renderer's
 // SWVertexLoader.cpp (Copyright Dolphin Emulator Project,
 // GPL-2.0-or-later).
 #pragma once
 
 #include <array>
+#include <bit>
 
 #include "gx/regs.h"
+
+// For the per-vertex functions: compilers judge them too big to inline into
+// the draw loop on their own.
+#if defined(_MSC_VER) && !defined(__clang__)
+#define GX_INLINE __forceinline
+#else
+#define GX_INLINE inline __attribute__((always_inline))
+#endif
 
 namespace gx {
 
@@ -33,21 +47,31 @@ class VertexLoader {
 
   // Configures the loader for vertex attribute table `vat` from the CP
   // registers (indexed by CP register address). Indexed attributes are read
-  // from `ram` (guest MEM1, `ram_size` bytes).
+  // from `ram` (guest MEM1, `ram_size` bytes). Cheap when nothing changed.
   void setup(const u32* cp, u8 vat, const u8* ram, u32 ram_size);
 
   // Bytes per vertex in the command stream.
   u32 size() const { return size_; }
 
-  // Decodes one vertex from `src`. `matrix_index_a/b` are the XF matrix
-  // index registers, used when the vertex has no matrix indices.
-  // Attributes the vertex lacks keep their previous values in `v` (normals),
-  // or get defaults (colours: white).
-  void load(const u8* src, InputVertex& v, u32 matrix_index_a, u32 matrix_index_b) const;
+  // Starts a draw: `matrix_index_a/b` are the XF matrix index registers,
+  // used when the vertices have no matrix indices. `v` is the vertex the
+  // draw's load() calls fill.
+  void begin(u32 matrix_index_a, u32 matrix_index_b, InputVertex& v) const;
+
+  // Decodes one vertex from `src` (after begin()). Attributes the vertex
+  // lacks keep their previous values in `v` (normals), or get defaults
+  // (colours: white; texture coordinates: 0).
+  GX_INLINE void load(const u8* src, InputVertex& v) const;
 
   bool has_normal() const { return normal_.type != 0; }
 
  private:
+  enum : u32 { NOT_PRESENT = 0, DIRECT = 1, INDEX8 = 2, INDEX16 = 3 };
+  // Array numbers (CP_ARRAY_BASE + n).
+  enum : u32 { ARRAY_POSITION = 0, ARRAY_NORMAL = 1, ARRAY_COLOR0 = 2, ARRAY_TEX0 = 4 };
+  static constexpr u32 kComponentSize[8] = {1, 1, 2, 2, 4, 4, 4, 4};  // u8, s8, u16, s16, f32 (5-7 act as f32)
+  static constexpr u32 kColorSize[8] = {2, 3, 4, 2, 3, 4, 4, 4};      // 565, 888, 888x, 4444, 6666, 8888
+
   struct Attr {
     u32 type = 0;     // 0 not present, 1 direct, 2 index8, 3 index16
     u32 format = 0;   // component or colour format
@@ -55,15 +79,176 @@ class VertexLoader {
     float scale = 1;  // dequantisation for integer formats
   };
 
-  const u8* fetch(const Attr& a, u32 array, const u8*& src, u32 bytes) const;
+  static u16 be16(const u8* p) { return static_cast<u16>((p[0] << 8) | p[1]); }
+  static u32 be32(const u8* p) { return (u32{p[0]} << 24) | (u32{p[1]} << 16) | (u32{p[2]} << 8) | p[3]; }
+  GX_INLINE static float component(const u8* p, u32 format, float scale) {
+    switch (format) {
+      case 0: return p[0] * scale;
+      case 1: return static_cast<s8>(p[0]) * scale;
+      case 2: return be16(p) * scale;
+      case 3: return static_cast<s16>(be16(p)) * scale;
+      default: return std::bit_cast<float>(be32(p));
+    }
+  }
+  static u32 index_size(u32 type) { return type == INDEX8 ? 1 : type == INDEX16 ? 2 : 0; }
+  GX_INLINE static std::array<u8, 4> read_color(const u8* p, u32 format);
+
+  // Returns the attribute's data: in the stream (direct) or in the array
+  // (indexed). Advances `src` past what the stream holds.
+  GX_INLINE const u8* fetch(const Attr& a, u32 array, const u8*& src, u32 bytes) const {
+    if (a.type == DIRECT) {
+      const u8* p = src;
+      src += bytes;
+      return p;
+    }
+    const u32 index = a.type == INDEX8 ? *src : be16(src);
+    src += index_size(a.type);
+    const u32 addr = (array_base_[array] + index * array_stride_[array]) & 0x1FFFFFFF;
+    return u64{addr} + bytes <= ram_size_ ? ram_ + addr : nullptr;
+  }
+  void load_normals(const u8*& src, InputVertex& v) const;
+  GX_INLINE void load_fast(const u8* src, InputVertex& v) const;
+  GX_INLINE void load_colors(const u8*& src, InputVertex& v) const;
+
+  // The CP words and memory the setup came from: setup() is skipped while
+  // they stay the same (most draws).
+  u32 key_[5 + 32] = {};
+  const u8* key_ram_ = nullptr;
+  u32 key_ram_size_ = 0;
+  bool keyed_ = false;
 
   u32 size_ = 0;
   u32 matrix_flags_ = 0;  // VCD bits 0-8: position and texture matrix indices present
   bool normal_index3_ = false;
   Attr pos_, normal_, color_[2], tex_[8];
+  u32 pos_bytes_ = 0;
+  u32 tex_slots_[8] = {};  // the texture coordinates present, in order
+  u32 num_tex_slots_ = 0;
+  bool colors_present_ = false;
+  // GP 2's usual layout (81% of the vertices in its busiest courses), which
+  // load_fast() decodes with no format switches: no matrix indices or
+  // normals, a float xyz position, an RGBA8 colour 0 or none, and a float st
+  // texture coordinate 0 or none.
+  bool fast_ = false;
   u32 array_base_[16] = {}, array_stride_[16] = {};
   const u8* ram_ = nullptr;
   u32 ram_size_ = 0;
+  // From begin(): the matrix rows for vertices without matrix indices.
+  mutable u8 default_posmtx_ = 0;
+  mutable u8 default_texmtx_[8] = {};
 };
+
+GX_INLINE void VertexLoader::load_fast(const u8* src, InputVertex& v) const {
+  constexpr std::array<u8, 4> kWhite{0xFF, 0xFF, 0xFF, 0xFF};
+  v.skip = false;
+  if (pos_.type == INDEX8 && *src == 0xFF) v.skip = true;
+  if (pos_.type == INDEX16 && be16(src) == 0xFFFF) v.skip = true;
+  if (const u8* p = fetch(pos_, ARRAY_POSITION, src, 12)) {
+    v.pos[0] = std::bit_cast<float>(be32(p));
+    v.pos[1] = std::bit_cast<float>(be32(p + 4));
+    v.pos[2] = std::bit_cast<float>(be32(p + 8));
+  } else {
+    v.skip = true;
+  }
+  if (color_[0].type != NOT_PRESENT) {
+    const u8* p = fetch(color_[0], ARRAY_COLOR0, src, 4);
+    v.color[0] = p ? std::array<u8, 4>{p[0], p[1], p[2], p[3]} : kWhite;
+    v.color[1] = kWhite;
+  }
+  if (num_tex_slots_) {
+    v.tex[0][0] = v.tex[0][1] = 0.0f;
+    if (const u8* p = fetch(tex_[0], ARRAY_TEX0, src, 8)) {
+      v.tex[0][0] = std::bit_cast<float>(be32(p));
+      v.tex[0][1] = std::bit_cast<float>(be32(p + 4));
+    }
+  }
+}
+
+GX_INLINE void VertexLoader::load(const u8* src, InputVertex& v) const {
+  if (fast_) {
+    load_fast(src, v);
+    return;
+  }
+  // Matrix indices: from the vertex if present, else the XF registers (set
+  // by begin()).
+  if (matrix_flags_) {
+    v.posmtx = static_cast<u8>((matrix_flags_ & 1) ? (*src++ & 0x3F) : default_posmtx_);
+    for (u32 i = 0; i < 8; ++i)
+      v.texmtx[i] = static_cast<u8>((matrix_flags_ & (2u << i)) ? (*src++ & 0x3F) : default_texmtx_[i]);
+  }
+
+  // Position. An index of all ones means "skip this vertex".
+  v.skip = false;
+  if (pos_.type == INDEX8 && *src == 0xFF) v.skip = true;
+  if (pos_.type == INDEX16 && be16(src) == 0xFFFF) v.skip = true;
+  if (const u8* p = fetch(pos_, ARRAY_POSITION, src, pos_bytes_)) {
+    const u32 step = kComponentSize[pos_.format];
+    v.pos[0] = component(p, pos_.format, pos_.scale);
+    v.pos[1] = component(p + step, pos_.format, pos_.scale);
+    v.pos[2] = pos_.count == 3 ? component(p + 2 * step, pos_.format, pos_.scale) : 0.0f;
+  } else {
+    v.skip = true;
+  }
+
+  if (normal_.type != NOT_PRESENT) load_normals(src, v);
+  if (colors_present_) load_colors(src, v);
+
+  // Texture coordinates (begin() zeroed the ones the vertices lack).
+  for (u32 s = 0; s < num_tex_slots_; ++s) {
+    const u32 i = tex_slots_[s];
+    const Attr& t = tex_[i];
+    const u32 step = kComponentSize[t.format];
+    v.tex[i][0] = v.tex[i][1] = 0.0f;
+    if (const u8* p = fetch(t, ARRAY_TEX0 + i, src, t.count * step)) {
+      v.tex[i][0] = component(p, t.format, t.scale);
+      if (t.count == 2) v.tex[i][1] = component(p + step, t.format, t.scale);
+    }
+  }
+}
+
+GX_INLINE std::array<u8, 4> VertexLoader::read_color(const u8* p, u32 format) {
+  auto expand4 = [](u32 v) { return static_cast<u8>(v * 17); };
+  auto expand5 = [](u32 v) { return static_cast<u8>((v << 3) | (v >> 2)); };
+  auto expand6 = [](u32 v) { return static_cast<u8>((v << 2) | (v >> 4)); };
+  switch (format) {
+    case 0: {  // RGB565
+      const u32 v = be16(p);
+      return {expand5(v >> 11), expand6((v >> 5) & 0x3F), expand5(v & 0x1F), 0xFF};
+    }
+    case 1:  // RGB888
+    case 2:  // RGB888x
+      return {p[0], p[1], p[2], 0xFF};
+    case 3:  // RGBA4444
+      return {expand4(p[0] >> 4), expand4(p[0] & 0xF), expand4(p[1] >> 4), expand4(p[1] & 0xF)};
+    case 4: {  // RGBA6666
+      const u32 v = (u32{p[0]} << 16) | (u32{p[1]} << 8) | p[2];
+      return {expand6(v >> 18), expand6((v >> 12) & 0x3F), expand6((v >> 6) & 0x3F), expand6(v & 0x3F)};
+    }
+    default:  // RGBA8888
+      return {p[0], p[1], p[2], p[3]};
+  }
+}
+
+GX_INLINE void VertexLoader::load_colors(const u8*& src, InputVertex& v) const {
+  // Colour 0 feeds channel 0 and colour 1 channel 1 when both are present; a
+  // lone colour 1 feeds channel 0. Missing colours are white.
+  constexpr std::array<u8, 4> kWhite{0xFF, 0xFF, 0xFF, 0xFF};
+  std::array<u8, 4> colors[2] = {kWhite, kWhite};
+  bool present[2] = {false, false};
+  for (u32 i = 0; i < 2; ++i) {
+    if (color_[i].type == NOT_PRESENT) continue;
+    if (const u8* p = fetch(color_[i], ARRAY_COLOR0 + i, src, kColorSize[color_[i].format])) {
+      colors[i] = read_color(p, color_[i].format);
+      present[i] = true;
+    }
+  }
+  if (present[0]) {
+    v.color[0] = colors[0];
+    v.color[1] = present[1] ? colors[1] : kWhite;
+  } else {
+    v.color[0] = present[1] ? colors[1] : kWhite;
+    v.color[1] = kWhite;
+  }
+}
 
 }  // namespace gx

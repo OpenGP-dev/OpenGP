@@ -104,7 +104,7 @@ void XfUnit::prepare() {
   }
 }
 
-void XfUnit::transform(const InputVertex& in, TransformedVertex& out) const {
+void XfUnit::transform_lit(const InputVertex& in, TransformedVertex& out) const {
   // Position: model-view matrix (3x4), then projection.
   const Vec3 view = mul34(&fmem_[XF_POS_MATRICES + in.posmtx * 4], vec(in.pos), true);
   const float* p = proj_;
@@ -209,54 +209,17 @@ void XfUnit::transform(const InputVertex& in, TransformedVertex& out) const {
   // ---- Texture coordinates ----
   for (u32 i = 0; i < num_texgens_; ++i) {
     const TexGen& tg = texgens_[i];
-    Vec3 dst;
-    switch (tg.type) {
-      case 0: {  // regular: matrix times a source row
-        Vec3 src;
-        switch (tg.source) {
-          case 0: src = vec(in.pos); break;
-          case 1: src = vec(in.normal[0]); break;
-          case 3: src = vec(in.normal[1]); break;
-          case 4: src = vec(in.normal[2]); break;
-          case 2: break;  // colours: only valid for the colour texgen types
-          default: {
-            const u32 t = std::min<u32>(tg.source - 5, 7);
-            src = {in.tex[t][0], in.tex[t][1], 1.0f};
-            break;
-          }
-        }
-        if (std::isnan(src.x)) src.x = 1.0f;
-        if (std::isnan(src.y)) src.y = 1.0f;
-        if (std::isnan(src.z)) src.z = 1.0f;
-        if (!tg.abc1) src.z = 1.0f;
-        dst = mul34(&fmem_[XF_POS_MATRICES + in.texmtx[i] * 4], src, tg.stq);
-        if (dual_tex_) {
-          const Vec3 t = tg.post_normalize ? dst.normalized() : dst;
-          dst = mul34(&fmem_[XF_POST_MATRICES + tg.post_row * 4], t, true);
-        }
-        // q = 0 is a special case on hardware.
-        if (dst.z == 0.0f) {
-          dst.x = std::clamp(dst.x / 2.0f, -1.0f, 1.0f);
-          dst.y = std::clamp(dst.y / 2.0f, -1.0f, 1.0f);
-        }
-        break;
-      }
-      case 1: {  // emboss: offset an earlier coordinate by the light direction
-        const Light& l = lights_[tg.emboss_light];
-        const Vec3 ldir = (vec(l.pos) - view).normalized();
-        const float* src = out.tex[tg.emboss_source];
-        dst = {src[0] + ldir.dot(normal[1]), src[1] + ldir.dot(normal[2]), src[2]};
-        break;
-      }
-      default: {  // colour 0 / colour 1: red and green become s and t
-        const u8* c = colors[tg.type - 2];
-        dst = {c[0] / 255.0f, c[1] / 255.0f, 1.0f};
-        break;
-      }
+    if (tg.type != 1) {
+      texgen(i, in, colors, out);
+      continue;
     }
+    // Emboss: offset an earlier coordinate by the light direction.
+    const Light& l = lights_[tg.emboss_light];
+    const Vec3 ldir = (vec(l.pos) - view).normalized();
+    const float* src = out.tex[tg.emboss_source];
+    const Vec3 dst = {src[0] + ldir.dot(normal[1]), src[1] + ldir.dot(normal[2]), src[2]};
     out.tex[i][0] = dst.x, out.tex[i][1] = dst.y, out.tex[i][2] = dst.z;
   }
-  for (u32 i = num_texgens_; i < 8; ++i) out.tex[i][0] = out.tex[i][1] = 0.0f, out.tex[i][2] = 1.0f;
 
   // The number of colour channels controls what the TEV sees (colour
   // texgens above still use both).

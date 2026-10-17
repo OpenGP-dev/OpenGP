@@ -294,6 +294,14 @@ Rendering is split in two, with plain data (`gx::Frame`, `runtime/gx/frame.h`) i
 
 A queue of at most two frames between the two paces the game if rendering falls behind.
 
+The renderer presents a frame as soon as it has drawn it, unless **even frame pacing** is on
+(`[video] even_pacing`): then the launcher presents it at the game's first retrace after the
+game finished it (`hw::ViDevice::next_retrace_ns`, from the display interrupts' schedule on the
+host's clock), as a cabinet's display would start showing its XFB. The renderer gets the
+window's image first and waits only to submit (`Renderer::redraw(at_ns)`). The game's frames
+take more or less time, but its retraces are evenly spaced, so a display with a variable refresh
+rate shows the frames evenly; it costs half a frame of latency on average.
+
 **Widescreen** (`Frontend::set_widescreen`) widens the EFB by the same number of pixels on each
 side (107 for 16:9), with the game's 640 pixels in the middle:
 - The front end maps the game's clip space onto the wide EFB without changing a draw's scale or
@@ -408,8 +416,9 @@ reads the flag); the launcher restarts it.
 The camera is such a service (`camera::NamCam`, at 192.168.29.104-107 port 80): it answers the
 game's `GET /img.jpg` with a 320x240 JPEG from its `camera::Source`, encoded by `camera/jpeg.cpp`
 (baseline 4:2:0, which the games' own decoder reads). The sources are a test pattern and
-`camera::Webcam` (SDL3's camera API), whose thread keeps the newest frame cropped to 4:3 and
-scaled. The launcher starts the source the settings ask for and tells the game whether it has a
+`camera::Webcam` (SDL3's camera API), which its thread opens when the game asks for a picture
+and closes 5 seconds after the last; while it is open, the thread keeps the newest frame cropped
+to 4:3 and scaled. The launcher starts the source the settings ask for and tells the game whether it has a
 camera (`app::Game::set_camera`), which sets the game's own "camera use" setting at start-up
 (`games/common/camera_use.cpp`).
 

@@ -74,6 +74,10 @@ struct TextureBinding {
   u32 texture = 0;  // texture handle; 0 = nothing bound
   u32 mode0 = 0;    // TX_SETMODE0: wrap, filter, LOD bias
   u32 mode1 = 0;    // TX_SETMODE1: LOD range
+  // The mip levels aren't downscaled copies of each other but an effect (GP
+  // 2's rainbows fade in with distance this way): choose them as at the
+  // game's resolution, not the internal one.
+  bool native_lod = false;
   bool operator==(const TextureBinding&) const = default;
 };
 
@@ -181,7 +185,7 @@ struct UninitAllocator : std::allocator<T> {
 
 struct Frame {
   std::vector<Vertex, UninitAllocator<Vertex>> vertices;
-  std::vector<u32> indices;
+  std::vector<u32, UninitAllocator<u32>> indices;
   std::vector<PixelUniforms> uniforms;
   std::vector<DrawState> states;
   std::vector<DrawCmd> draws;
@@ -196,6 +200,7 @@ struct Frame {
   float xfb_aspect = 4.0f / 3.0f;  // the XFB's display aspect ratio
   u32 efb_width = kEfbWidth;       // 640, or more for widescreen (see above)
   u64 number = 0;             // displayed frames before this one (partial frames share the number)
+  u64 finished_ns = 0;        // steady clock when it was finished (displayed frames only)
   std::vector<std::shared_ptr<EfbReadback>> readbacks;
 
   // Empties the frame for reuse, keeping the buffers' capacity.
@@ -214,7 +219,7 @@ struct Frame {
     xfb = xfb_width = xfb_height = 0;
     xfb_aspect = 4.0f / 3.0f;
     efb_width = kEfbWidth;
-    number = 0;
+    number = finished_ns = 0;
     readbacks.clear();
   }
 };

@@ -65,17 +65,33 @@ void ViDevice::write16(u32 offset, u16 value) {
   }
 }
 
+u64 ViDevice::next_interrupt(int index, u64 timebase) const {
+  const u16 hi = regs_[(VI_DI0 + 4 * index) / 2];
+  const u32 vct = hi & DI_VCT;
+  if (!(hi & DI_MASK) || vct == 0 || vct > kHalfLinesPerFrame / 2) return 0;
+  const u64 target = u64{2 * (vct - 1)} * kTicksPerHalfLine;  // offset within a frame
+  const u64 now = timebase - origin_;
+  u64 when = (now / kTicksPerFrame) * kTicksPerFrame + target;
+  if (when <= now) when += kTicksPerFrame;
+  return origin_ + when;
+}
+
+u64 ViDevice::next_retrace_ns(u64 after_ns) {
+  std::lock_guard lock(hw_.mutex());
+  if (hw_.paused()) return 0;
+  const u64 timebase = hw_.timebase_at(after_ns);
+  u64 next = 0;
+  for (int index = 0; index < 2; ++index)
+    if (const u64 when = next_interrupt(index, timebase); when && (!next || when < next)) next = when;
+  return next ? hw_.steady_ns_at(next) : 0;
+}
+
 void ViDevice::reschedule(int index) {
   if (events_[index]) hw_.cancel(events_[index]);
   events_[index] = 0;
-  const u16 hi = regs_[(VI_DI0 + 4 * index) / 2];
-  const u32 vct = hi & DI_VCT;
-  if (!(hi & DI_MASK) || vct == 0 || vct > kHalfLinesPerFrame / 2) return;
-  const u64 target = u64{2 * (vct - 1)} * kTicksPerHalfLine;  // offset within a frame
-  const u64 now = hw_.timebase() - origin_;
-  u64 when = (now / kTicksPerFrame) * kTicksPerFrame + target;
-  if (when <= now) when += kTicksPerFrame;
-  events_[index] = hw_.schedule_at(origin_ + when, [this, index] {
+  const u64 when = next_interrupt(index, hw_.timebase());
+  if (!when) return;
+  events_[index] = hw_.schedule_at(when, [this, index] {
     events_[index] = 0;
     regs_[(VI_DI0 + 4 * index) / 2] |= DI_INT;
     if (index == 0 || index == 1) ++retraces_;

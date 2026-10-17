@@ -4,11 +4,18 @@
 
 #include <algorithm>
 #include <bit>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+#include <intrin.h>
+#elif defined(__x86_64__) || defined(__i386__)
+#include <x86intrin.h>
+#endif
 
 #include "gx/texture.h"
 #include "os/activity.h"
@@ -62,18 +69,82 @@ u64 hash_bytes(const u8* p, std::size_t n, u64 seed = 0) {
   return h;
 }
 
+// The clock for the per-draw timers: the CPU's time-stamp counter where there
+// is one (invariant on the x86-64 CPUs OpenGP runs on), converted to ns at a
+// rate measured against steady_clock. Reading steady_clock (on Windows,
+// QueryPerformanceCounter) four times a draw cost about 0.5 ms a frame in the
+// busiest races.
+#if defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__) || defined(__i386__)
+inline u64 ticks() { return __rdtsc(); }
+#else
+inline u64 ticks() {
+  return static_cast<u64>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+#endif
+
+struct TickRate {
+  u64 tick0 = 0;
+  std::chrono::steady_clock::time_point time0;
+  std::atomic<double> ns_per_tick{1.0};
+
+  // Measures the rate since `tick0`.
+  void measure() {
+    const u64 t = ticks();
+    const double ns = std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - time0).count();
+    if (t > tick0 && ns > 0) ns_per_tick.store(ns / static_cast<double>(t - tick0), std::memory_order_relaxed);
+  }
+};
+
+TickRate& tick_rate() {
+  static TickRate* rate = [] {
+    auto* r = new TickRate;
+    r->tick0 = ticks();
+    r->time0 = std::chrono::steady_clock::now();
+    // A first estimate over a millisecond; end_frame() refines it over the run.
+    while (std::chrono::steady_clock::now() - r->time0 < std::chrono::milliseconds(1)) {}
+    r->measure();
+    return r;
+  }();
+  return *rate;
+}
+
+u64 ticks_to_ns(u64 t) {
+  return static_cast<u64>(static_cast<double>(t) * tick_rate().ns_per_tick.load(std::memory_order_relaxed));
+}
+
+// Adds to a counter that only the thread running the game writes (guest
+// threads take turns), so it needs no locked add.
+void add(std::atomic<u64>& counter, u64 v) {
+  counter.store(counter.load(std::memory_order_relaxed) + v, std::memory_order_relaxed);
+}
+
 // Adds the time from construction to destruction to a counter (ns).
 class ScopeTimer {
  public:
-  explicit ScopeTimer(std::atomic<u64>& total) : total_(total), start_(std::chrono::steady_clock::now()) {}
-  ~ScopeTimer() {
-    const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start_);
-    total_.fetch_add(static_cast<u64>(ns.count()), std::memory_order_relaxed);
-  }
+  explicit ScopeTimer(std::atomic<u64>& total) : total_(total), start_(ticks()) {}
+  ~ScopeTimer() { add(total_, ticks_to_ns(ticks() - start_)); }
 
  private:
   std::atomic<u64>& total_;
-  std::chrono::steady_clock::time_point start_;
+  u64 start_;
+};
+
+// A draw's time, and the part of it from the transform's start: three clock
+// reads a draw.
+class DrawTimer {
+ public:
+  explicit DrawTimer(Frontend::Stats& stats) : stats_(stats), start_(ticks()) {}
+  ~DrawTimer() {
+    const u64 end = ticks();
+    add(stats_.draw_ns, ticks_to_ns(end - start_));
+    if (transform_) add(stats_.transform_ns, ticks_to_ns(end - transform_));
+  }
+  void transform_starts() { transform_ = ticks(); }
+
+ private:
+  Frontend::Stats& stats_;
+  u64 start_, transform_ = 0;
 };
 
 u64 mix(u64 h, u64 v) { return (h ^ (v + 0x9E3779B97F4A7C15ull + (h << 6) + (h >> 2))) * 0xBF58476D1CE4E5B9ull; }
@@ -161,9 +232,13 @@ void Frontend::end_frame(bool present) {
   Frame& f = frame();
   f.number = frames_;
   if (present) {
+    f.finished_ns = static_cast<u64>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
+            .count());
     ++frames_;
     new_display_frame_ = true;
     peeks_[0].requested = peeks_[1].requested = false;
+    if (frames_ % 600 == 0) tick_rate().measure();
     // Evict textures not used for a while.
     for (auto it = textures_.begin(); it != textures_.end();) {
       if (it->second.last_used + 120 < frames_) {
@@ -171,6 +246,27 @@ void Frontend::end_frame(bool present) {
         it = textures_.erase(it);
       } else {
         ++it;
+      }
+    }
+    // Release EFB copies whose memory the game has written over since: a
+    // texture lookup there no longer finds them (bind_texture), so they are
+    // dead. GP 2 makes its shadow light map at a new address each race (64 MB
+    // at 8x). A copy that is merely not sampled for a while stays.
+    if (frames_ % 60 == 0) {
+      for (auto it = copies_.begin(); it != copies_.end();) {
+        const CopiedTexture& c = it->second;
+        bool dead = false;
+        if (!c.xfb && c.last_used + 300 < frames_) {
+          const u32 size = texture_level_size(c.format, c.width, c.height);
+          const u8* mem = read_(context_, it->first, size);
+          dead = !mem || hash_bytes(mem, size) != c.memory_hash;
+        }
+        if (dead) {
+          f.releases.push_back(c.handle);
+          it = copies_.erase(it);
+        } else {
+          ++it;
+        }
       }
     }
   } else {
@@ -374,8 +470,10 @@ void Frontend::efb_copy(u32 trigger) {
       auto it = copies_.find(dest);
       if (it == copies_.end() || it->second.width != width || it->second.height != c.height) {
         if (it != copies_.end()) f.releases.push_back(it->second.handle);
-        it = copies_.insert_or_assign(dest, CopiedTexture{new_handle(), width, c.height, TexFormat::RGBA8, 0}).first;
+        it = copies_.insert_or_assign(dest, CopiedTexture{new_handle(), width, c.height, TexFormat::RGBA8, 0, 0, true})
+                 .first;
       }
+      it->second.last_used = frames_;
       c.dest = it->second.handle;
       f.copies.push_back(c);
       f.commands.push_back({Command::Type::Copy, static_cast<u32>(f.copies.size() - 1)});
@@ -397,10 +495,11 @@ void Frontend::efb_copy(u32 trigger) {
       auto it = copies_.find(dest);
       if (it == copies_.end() || it->second.width != width || it->second.height != c.height) {
         if (it != copies_.end()) f.releases.push_back(it->second.handle);
-        it = copies_.insert_or_assign(dest, CopiedTexture{new_handle(), width, c.height, tf, memory_hash}).first;
+        it = copies_.insert_or_assign(dest, CopiedTexture{new_handle(), width, c.height, tf, memory_hash, 0, false}).first;
       }
       it->second.format = tf;
       it->second.memory_hash = memory_hash;
+      it->second.last_used = frames_;
       c.dest = it->second.handle;
       f.copies.push_back(c);
       f.commands.push_back({Command::Type::Copy, static_cast<u32>(f.copies.size() - 1)});
@@ -699,6 +798,7 @@ TextureBinding Frontend::bind_texture(u32 map, s32* size) {
       const u32 copy_bytes = texture_level_size(it->second.format, width, height);
       const u8* mem = read_(context_, address, copy_bytes);
       if (mem && memory_hash(mem, address, copy_bytes) == it->second.memory_hash) {
+        it->second.last_used = frames_;
         binding.texture = it->second.handle;
         return binding;
       }
@@ -718,6 +818,7 @@ TextureBinding Frontend::bind_texture(u32 map, s32* size) {
   if (auto it = textures_.find(key); it != textures_.end()) {
     it->second.last_used = frames_;
     binding.texture = it->second.handle;
+    binding.native_lod = it->second.native_lod;
     return binding;
   }
 
@@ -738,7 +839,9 @@ TextureBinding Frontend::bind_texture(u32 map, s32* size) {
     h = std::max(1u, h / 2);
   }
   f.uploads.push_back(up);
-  textures_.emplace(key, CachedTexture{up.handle, frames_});
+  binding.native_lod =
+      levels > 1 && fades_with_distance(reinterpret_cast<const u32*>(f.texels.data() + up.offset), width, height, levels);
+  textures_.emplace(key, CachedTexture{up.handle, frames_, binding.native_lod});
   if (dumping_)
     std::fprintf(stderr, "[gx]  texture %u: %08X format %u %ux%u, %u levels%s\n", up.handle, address,
                  static_cast<u32>(format), width, height, levels, from_tmem ? " (TMEM)" : "");
@@ -760,7 +863,7 @@ u64 Frontend::memory_hash(const u8* data, u32 address, u32 size) {
 
 void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertices, const u32* cp) {
   if (!output_ || count == 0) return;
-  const ScopeTimer timer(stats_.draw_ns);
+  DrawTimer timer(stats_);
   Frame& f = frame();
 
   const u32 state = draw_state();
@@ -785,12 +888,14 @@ void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertice
   clip_.resize(count);
   skip_.resize(count);
   const u32 mia = xf_.reg(XF_MATRIX_INDEX_A), mib = xf_.reg(XF_MATRIX_INDEX_B);
-  TransformedVertex t;
-  const ScopeTimer transform_timer(stats_.transform_ns);
-  stats_.vertices.fetch_add(count, std::memory_order_relaxed);
+  TransformedVertex t{};  // an emboss generator may read a later, not yet written coordinate
+  timer.transform_starts();
+  add(stats_.vertices, count);
   xf_.prepare();
+  loader_.begin(mia, mib, input_);
+  xf_.begin(t);
   for (u32 i = 0; i < count; ++i) {
-    loader_.load(vertices.data() + std::size_t{i} * stride, input_, mia, mib);
+    loader_.load(vertices.data() + std::size_t{i} * stride, input_);
     xf_.transform(input_, t);
     Vertex& v = f.vertices[base + i];
     vp.apply(t.clip, v.pos);
@@ -1030,6 +1135,21 @@ void Frontend::assemble(u8 primitive, u32 base, u16 count, const Viewport& vp) {
   const u32 cull = genmode_cull_mode(bp_[BP_GENMODE]);
   const bool flip = vp.ht > 0;  // a positive viewport height mirrors y, and with it the winding
 
+  // Triangles write their indices straight into room made for all of them
+  // (a vector insert per triangle was a measurable part of a draw).
+  u32 max_triangles = 0;
+  switch (primitive) {
+    case 0:
+    case 1: max_triangles = count / 4 * 2; break;
+    case 2: max_triangles = count / 3; break;
+    case 3:
+    case 4: max_triangles = count >= 3 ? count - 2u : 0u; break;
+    default: break;
+  }
+  const std::size_t first_index = f.indices.size();
+  f.indices.resize(first_index + std::size_t{max_triangles} * 3);
+  u32* out = f.indices.data() + first_index;
+
   auto tri = [&](u32 a, u32 b, u32 c) {
     if (skip_[a] || skip_[b] || skip_[c]) return;
     if (cull != 0) {
@@ -1045,7 +1165,8 @@ void Frontend::assemble(u8 primitive, u32 base, u16 count, const Viewport& vp) {
       const bool back = (nz <= 0.0f) != flip;
       if ((cull == 1 && !back) || (cull == 2 && back)) return;
     }
-    f.indices.insert(f.indices.end(), {base + a, base + b, base + c});
+    out[0] = base + a, out[1] = base + b, out[2] = base + c;
+    out += 3;
   };
 
   // Lines and points become quads of the configured width (in 1/6 pixels).
@@ -1123,6 +1244,7 @@ void Frontend::assemble(u8 primitive, u32 base, u16 count, const Viewport& vp) {
       break;
     default: break;
   }
+  if (max_triangles) f.indices.resize(static_cast<std::size_t>(out - f.indices.data()));
 }
 
 }  // namespace gx

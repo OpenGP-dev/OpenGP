@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <new>
 #include <string_view>
 
 #include "disc/sha1.h"
@@ -50,7 +51,32 @@ u64 tell64(std::FILE* f) {
 }  // namespace
 
 Image::~Image() {
+  stop_ = true;
+  if (preload_thread_.joinable()) preload_thread_.join();
   if (file_) std::fclose(file_);
+}
+
+void Image::preload() {
+  if (!file_ || memory_) return;
+  memory_.reset(new (std::nothrow) u8[size_]);
+  if (!memory_) return;  // not enough memory: everything stays on the file
+  preload_thread_ = std::thread([this] {
+#ifdef _WIN32
+    // Low CPU and I/O priority: the game's own reads go first.
+    SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
+#endif
+    std::FILE* f = open_utf8(path_);
+    if (!f) return;
+    constexpr u64 kChunk = 4 << 20;
+    u64 pos = 0;
+    while (pos < size_ && !stop_) {
+      const u64 n = std::min(kChunk, size_ - pos);
+      if (std::fread(memory_.get() + pos, 1, n, f) != n) break;  // the rest stays on the file
+      pos += n;
+      loaded_.store(pos, std::memory_order_release);
+    }
+    std::fclose(f);
+  });
 }
 
 bool Image::open(const std::string& path, std::string* error) {
@@ -78,8 +104,10 @@ bool Image::read(u64 offset, void* dst, u64 size) const {
   if (!file_ || offset >= size_) return false;
   const u64 avail = size_ - offset;
   const u64 n = size < avail ? size : avail;
-  bool ok;
-  {
+  bool ok = true;
+  if (offset + n <= loaded_.load(std::memory_order_acquire)) {
+    std::memcpy(dst, memory_.get() + offset, n);
+  } else {
     std::lock_guard lock(mutex_);
     ok = seek64(file_, offset) == 0 && std::fread(dst, 1, n, file_) == n;
   }
