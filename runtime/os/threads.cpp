@@ -15,7 +15,7 @@ namespace os {
 
 namespace {
 
-// OSContext layout (Dolphin SDK <dolphin/os/OSContext.h>).
+// The SDK's OSContext layout, as the games' own code uses it (offsets only).
 constexpr u32 CTX_GPR = 0x000;
 constexpr u32 CTX_CR = 0x080;
 constexpr u32 CTX_LR = 0x084;

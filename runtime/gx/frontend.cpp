@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Based on Dolphin's VideoCommon (BPStructs.cpp, BPFunctions.cpp,
+// RenderState.cpp, PixelShaderManager.cpp; Copyright Dolphin Emulator
+// Project, GPL-2.0-or-later).
 
 #include "gx/frontend.h"
 
@@ -26,7 +30,8 @@ namespace {
 
 u32 be32(const u8* p) { return (u32{p[0]} << 24) | (u32{p[1]} << 16) | (u32{p[2]} << 8) | p[3]; }
 
-// XXH64 (Yann Collet, BSD-2-Clause), for texture contents.
+// XXH64, for texture contents: an implementation of Yann Collet's algorithm
+// (xxHash, BSD-2-Clause; see THIRD-PARTY-NOTICES.md).
 u64 hash_bytes(const u8* p, std::size_t n, u64 seed = 0) {
   constexpr u64 P1 = 0x9E3779B185EBCA87ull, P2 = 0xC2B2AE3D27D4EB4Full, P3 = 0x165667B19E3779F9ull,
                 P4 = 0x85EBCA77C2B2AE63ull, P5 = 0x27D4EB2F165667C5ull;
@@ -1157,9 +1162,11 @@ void Frontend::assemble(u8 primitive, u32 base, u16 count, const Viewport& vp) {
       const float* p0 = clip_[a].data();
       const float* p1 = clip_[b].data();
       const float* p2 = clip_[c].data();
-      // Homogeneous orientation test (Dolphin's Clipper::IsBackface). Note
-      // the sense: GX "cull back" removes the triangles this calls front
-      // facing (see Dolphin's Clipper::ProcessTriangle).
+      // Homogeneous orientation test (Dolphin's Clipper::IsBackface; Dolphin's
+      // Clipper.cpp has portions by Markus Trenkwalder, BSD-3-Clause, see
+      // THIRD-PARTY-NOTICES.md). Note the sense: GX "cull back" removes the
+      // triangles this calls front facing (see Dolphin's
+      // Clipper::ProcessTriangle).
       const float nz = (p0[0] * p2[3] - p2[0] * p0[3]) * p1[1] + (p2[0] * p0[1] - p0[0] * p2[1]) * p1[3] +
                        (p2[1] * p0[3] - p0[1] * p2[3]) * p1[0];
       const bool back = (nz <= 0.0f) != flip;

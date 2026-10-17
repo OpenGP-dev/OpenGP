@@ -77,7 +77,11 @@ class Dol:
 
 
 def checksum(dol: Dol, start: int, size: int) -> int | None:
-    """Dolphin's HashSignatureDB::ComputeCodeChecksum over [start, start + size)."""
+    """Dolphin's HashSignatureDB::ComputeCodeChecksum over [start, start + size).
+
+    Ported from Dolphin's Core/PowerPC/SignatureDB/SignatureDB.cpp (Copyright
+    Dolphin Emulator Project, GPL-2.0-or-later).
+    """
     total = 0
     for addr in range(start, start + size, 4):
         opcode = dol.word(addr)

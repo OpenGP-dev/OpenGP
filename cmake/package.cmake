@@ -115,7 +115,22 @@ install(DIRECTORY ${PROJECT_SOURCE_DIR}/games/common/ DESTINATION sdk/games/comm
 
 # Documents, and the folder for the player's images.
 install(FILES ${PROJECT_SOURCE_DIR}/README.md ${PROJECT_SOURCE_DIR}/LICENSE ${PROJECT_SOURCE_DIR}/CHANGELOG.md
+              ${PROJECT_SOURCE_DIR}/THIRD-PARTY-NOTICES.md
         DESTINATION .)
+
+# The licences of the third-party code the package and the games it builds
+# contain (THIRD-PARTY-NOTICES.md lists them all), from the sources the
+# package was built with.
+include(FetchContent)
+FetchContent_GetProperties(imgui)
+FetchContent_GetProperties(SDL3)
+install(FILES ${imgui_SOURCE_DIR}/LICENSE.txt DESTINATION licenses RENAME imgui-LICENSE.txt)
+install(FILES ${sdl3_SOURCE_DIR}/LICENSE.txt DESTINATION licenses RENAME SDL3-LICENSE.txt)
+install(FILES ${sdl3_SOURCE_DIR}/src/hidapi/LICENSE-bsd.txt DESTINATION licenses RENAME SDL3-hidapi-LICENSE.txt)
+install(FILES ${sdl3_SOURCE_DIR}/src/video/yuv2rgb/LICENSE DESTINATION licenses RENAME SDL3-yuv2rgb-LICENSE.txt)
+install(FILES ${PROJECT_SOURCE_DIR}/thirdparty/tomlplusplus/LICENSE DESTINATION licenses RENAME tomlplusplus-LICENSE.txt)
+install(FILES ${PROJECT_SOURCE_DIR}/thirdparty/gc-fonts/LICENSE DESTINATION licenses RENAME gc-fonts-LICENSE.txt)
+install(FILES ${PROJECT_SOURCE_DIR}/thirdparty/gc-fonts/README.md DESTINATION licenses RENAME gc-fonts-README.md)
 install(FILES ${PROJECT_SOURCE_DIR}/docs/playing.md ${PROJECT_SOURCE_DIR}/docs/game-files.md
         DESTINATION docs)
 install(FILES ${PROJECT_SOURCE_DIR}/tools/installer/ISO-README.txt DESTINATION ISO RENAME README.txt)

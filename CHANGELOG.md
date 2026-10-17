@@ -4,7 +4,8 @@
 
 1.0 follows a full audit of OpenGP: its code, build, installer packages, documents and licences.
 This section lists everything that has changed since 0.4.0, including each fix from the audit as
-it lands. 1.0 is released once all of them are done and tested.
+it lands. 1.0 has the essential fixes (licences, saves, crashes, security, paths, the installer,
+the documents); the larger improvements the audit found follow in 1.1.
 
 ### Even frame pacing
 
@@ -40,6 +41,15 @@ From a profile of a whole playthrough of GP 2:
 - The webcam is on only while the game uses it: while your photo is taken, for a moment as the
   game starts, and on the test menu's camera page. It used to stay on, light and all, for as long
   as the game ran, taking about 5% of a CPU core for pictures nothing used.
+
+### Licences
+
+- The installer packages now carry the licences of the third-party code in them:
+  `THIRD-PARTY-NOTICES.md` lists SDL 3, Dear ImGui, toml++, the boot ROM fonts, the XXH64 hash and
+  the parts ported from Dolphin, and `licenses/` holds their licence files. README's Legal section
+  names them and where OpenGP's source is.
+- Every source file with code ported from Dolphin now says so itself, with Dolphin's copyright, not
+  only its header.
 
 ## 0.4.0 (2026-10-16)
 

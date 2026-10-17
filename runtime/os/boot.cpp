@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Based on Dolphin's Boot_BS2Emu.cpp (CBoot::EmulatedBS2_GC, SetupGCMemory,
+// RunApploader), Copyright Dolphin Emulator Project, GPL-2.0-or-later.
 
 #include "os/boot.h"
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Replacements for Dolphin SDK functions, shared by the games. Each one
+// Replacements for GameCube SDK functions, shared by the games. Each one
 // overrides the recompiled (weak) function of the same name; see
 // runtime/os/threads.h for why the context functions are replaced.
 //

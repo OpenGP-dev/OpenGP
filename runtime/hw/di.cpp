@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Based on Dolphin's DVDInterface.cpp (Copyright Dolphin Emulator Project,
+// GPL-2.0-or-later).
 
 #include "hw/di.h"
 
