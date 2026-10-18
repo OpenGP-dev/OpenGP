@@ -415,11 +415,14 @@ struct HostInput::Impl {
     SDL_Haptic* haptic = nullptr;
     // Wheel effects (-1: not supported).
     int spring = -1, friction = -1, torque = -1;
+    bool wheel = false;  // SDL says it is a steering wheel
+    int axes = 0, buttons = 0, hats = 0;
   };
 
   Config config;
   std::string path;
-  bool dirty = false;  // bindings changed since load() or save()
+  bool dirty = false;      // bindings changed since load() or save()
+  bool keep_file = false;  // the file could not be read nor set aside: never overwritten
 
   // Gamepads' events come to a window in the background only if SDL is told.
   void apply_background() {
@@ -476,6 +479,17 @@ struct HostInput::Impl {
     return 0.0f;
   }
   static bool is_axis(const Source& s) { return s.kind == Source::Kind::PadAxis || s.kind == Source::Kind::JoyAxis; }
+  // Whether the device has the input at all: SDL reads one it lacks as 0,
+  // which a whole-axis pedal would take as half pressed.
+  static bool present(const Source& s, const Device* d) {
+    if (!d) return true;
+    switch (s.kind) {
+      case Source::Kind::JoyAxis: return s.index < d->axes;
+      case Source::Kind::JoyButton: return s.index < d->buttons;
+      case Source::Kind::JoyHat: return s.index < d->hats;
+      default: return true;
+    }
+  }
   // As a whole axis (steering): -1..1.
   static float axis_value(const Source& s, const Device* d, float deadzone) {
     float v = raw(s, d);
@@ -532,8 +546,14 @@ bool HostInput::load(const std::string& path, std::string* error) {
   if (!ok) {
     // Kept aside, not overwritten by the next save: the player can fix it.
     fs::rename(file, os::utf8_path(path + ".bad"), ec);
-    impl_->dirty = true;
-    if (error) *error = path + ": " + why + ". It was kept as controls.toml.bad; the default controls are used.";
+    if (ec) {
+      impl_->keep_file = true;  // never overwrite it
+      if (error)
+        *error = path + ": " + why + ". The default controls are used, and changes are not saved until it is fixed.";
+    } else {
+      impl_->dirty = true;
+      if (error) *error = path + ": " + why + ". It was kept as controls.toml.bad; the default controls are used.";
+    }
   } else if (!why.empty() && error) {
     *error = path + ": " + why;
   }
@@ -571,6 +591,10 @@ void HostInput::Impl::open(SDL_JoystickID id) {
     d.joystick = SDL_OpenJoystick(id);
   }
   if (!d.joystick) return;
+  d.wheel = SDL_GetJoystickType(d.joystick) == SDL_JOYSTICK_TYPE_WHEEL;
+  d.axes = SDL_GetNumJoystickAxes(d.joystick);
+  d.buttons = SDL_GetNumJoystickButtons(d.joystick);
+  d.hats = SDL_GetNumJoystickHats(d.joystick);
   const char* name = d.gamepad ? SDL_GetGamepadName(d.gamepad) : SDL_GetJoystickName(d.joystick);
   std::fprintf(stderr, "[input] %s connected: %s\n", d.gamepad ? "gamepad" : "joystick", name ? name : "?");
   d.haptic = SDL_OpenHapticFromJoystick(d.joystick);
@@ -676,12 +700,20 @@ triforce::Controls HostInput::poll() {
 
   std::array<float, kControlCount> amount{};  // strongest input for each control
   float steer_axis = 0.0f;
+  // With a steering wheel connected, the joysticks' steering comes from
+  // wheels only: the same [joystick] bindings apply to every joystick, and a
+  // separate set of pedals, a handbrake or a throttle could otherwise turn
+  // the wheel by its own axis 0.
+  bool have_wheel = false;
+  for (const auto& [id, d] : m.devices) have_wheel |= !d.gamepad && d.wheel;
   auto gather = [&](const Bindings& b, const Impl::Device* d) {
     for (std::size_t c = 0; c < kControlCount; ++c) {
       if (c == kPause && !d) continue;  // pause keys: see handle_event()
       for (const Source& s : b.sources[c]) {
+        if (!Impl::present(s, d)) continue;
         if (c == kSteer) {
           if (!Impl::is_axis(s)) continue;
+          if (d && !d->gamepad && have_wheel && !d->wheel) continue;
           const float v = Impl::axis_value(s, d, b.deadzone);
           if (std::fabs(v) > std::fabs(steer_axis)) steer_axis = v;
         } else {
@@ -913,7 +945,7 @@ void HostInput::restore_defaults() {
 
 bool HostInput::save(std::string* error) {
   Impl& m = *impl_;
-  if (!m.dirty || m.path.empty()) return true;
+  if (!m.dirty || m.path.empty() || m.keep_file) return true;
   const std::string text = config_text(m.config);
   if (!os::write_file_atomically(m.path, text.data(), text.size(), error)) return false;
   m.dirty = false;

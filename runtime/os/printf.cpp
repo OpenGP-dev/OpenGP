@@ -21,8 +21,11 @@ namespace os {
 
 namespace {
 
-bool readable(u32 addr) {
-  return (addr >= 0x80000000 && addr < 0x84000000) || (addr >= 0xC0000000 && addr < 0xC4000000);
+// In MEM1 as mapped (48 MiB for the Triforce games): through the cached or
+// the uncached view.
+bool readable(u32 addr, u32 bytes = 1) {
+  const u64 size = ppc::g_mem1_size ? ppc::g_mem1_size : 24u << 20;
+  return u64{addr - 0x80000000u} + bytes <= size || u64{addr - 0xC0000000u} + bytes <= size;
 }
 
 }  // namespace
@@ -44,14 +47,14 @@ std::string format_guest(const ppc::Context& ctx, const u8* base, u32 fmt_addr, 
   u32 stack = ctx.gpr[1] + 8;
   auto next_int = [&]() -> u32 {
     if (next_gpr <= 10) return ctx.gpr[next_gpr++];
-    const u32 v = readable(stack) ? ppc::load_be<u32>(base + stack) : 0;
+    const u32 v = readable(stack, 4) ? ppc::load_be<u32>(base + stack) : 0;
     stack += 4;
     return v;
   };
   auto next_double = [&]() -> double {
     if (next_fpr <= 8) return ctx.fpr[next_fpr++].d0();
     stack = (stack + 7) & ~7u;
-    const u64 v = readable(stack) ? ppc::load_be<u64>(base + stack) : 0;
+    const u64 v = readable(stack, 8) ? ppc::load_be<u64>(base + stack) : 0;
     stack += 8;
     return std::bit_cast<double>(v);
   };

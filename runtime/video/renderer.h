@@ -149,8 +149,10 @@ class Renderer {
   // EFB peeks follow the design of Dolphin's FramebufferManager and
   // EFBInterface: depth is scaled by 2^24 and clamped to 24 bits.
   void read_efb(SDL_GPUCommandBuffer* cmd, std::shared_ptr<gx::EfbReadback> request);
+  u32 failed_frames_ = 0;  // frames in a row that could not be drawn
   void poll_reads(bool wait_all);
-  void grow_buffer(SDL_GPUBuffer*& buffer, u32& capacity, u32 needed, u32 usage);
+  bool grow_buffer(SDL_GPUBuffer*& buffer, u32& capacity, u32 needed, u32 usage);
+  void abandon(const gx::Frame& f, const char* why);
 
   SDL_Window* window_ = nullptr;
   SDL_GPUDevice* device_ = nullptr;

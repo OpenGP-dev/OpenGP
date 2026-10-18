@@ -65,8 +65,11 @@ const char* state_name(u16 state) {
 std::string describe_threads(opengp::Machine& machine, const FunctionNames& names) {
   const u8* base = machine.base();
   const u32 end = 0x80000000u + machine.mem1_size();
-  auto valid = [&](u32 a) { return a >= 0x80000000u && a + 8 <= end && (a & 3) == 0; };
-  auto word = [&](u32 a) { return valid(a) ? ppc::load_be<u32>(base + a) : 0u; };
+  auto in_ram = [&](u32 a, u32 size) { return a >= 0x80000000u && u64{a} + size <= end && (a & 3) == 0; };
+  auto valid = [&](u32 a) { return in_ram(a, 8); };
+  auto word = [&](u32 a) { return in_ram(a, 4) ? ppc::load_be<u32>(base + a) : 0u; };
+  // An OSThread: every field read, within MEM1.
+  auto valid_thread = [&](u32 t) { return in_ram(t, kThreadNextActive + 4); };
   // Return addresses from the back chain: each frame starts with the caller's
   // frame, whose second word is where the frame's function returns to.
   auto backtrace = [&](std::string& out, u32 sp) {
@@ -106,8 +109,8 @@ std::string describe_threads(opengp::Machine& machine, const FunctionNames& name
 
   const u32 current = word(kCurrentThread);
   u32 t = word(kActiveThreads);
-  for (int n = 0; n < 32 && valid(t); ++n, t = word(t + kThreadNextActive)) {
-    const u16 state = valid(t) ? ppc::load_be<u16>(base + t + kThreadState) : 0;
+  for (int n = 0; n < 32 && valid_thread(t); ++n, t = word(t + kThreadNextActive)) {
+    const u16 state = ppc::load_be<u16>(base + t + kThreadState);
     out += format("thread %08X%s: %s, priority %d, waiting on %08X, resumes at %s\n", t,
                   t == current ? " (current)" : "", state_name(state), static_cast<int>(word(t + kThreadPriority)),
                   word(t + kThreadQueue), function_at(names, word(t + kThreadSrr0)).c_str());

@@ -62,12 +62,27 @@ From a profile of a whole playthrough of GP 2:
   is no longer taken for a hang.
 - If a game cannot start (no disc image, no Vulkan or Metal driver), it says why in a message too,
   not only on a console window that closes with it.
-- A second copy of OpenGP can no longer use the same user folder as one that is running: it says
-  so and stops, instead of the two overwriting each other's saves.
+- A second copy of a game can no longer use the same user folder as one that is running: it says
+  so and stops, instead of the two overwriting each other's saves. (GP and GP 2 can still run side
+  by side from one package.)
 - The menu's Resume button now saves the settings, as Esc does. Closing the console window saves
   and tells linked cabinets, as closing the game's window does. A wheel's forces and a gamepad's
   rumble stop when the game quits or restarts.
 - A card name from `settings.toml` that cannot be a file name (`..`, `/`, `CON`...) holds no card.
+- Widescreen: GP no longer leaves out objects in the side strips either (GP 2 was fixed earlier in
+  this release).
+- Wheels: with a steering wheel connected, steering comes from the wheel only, so separate pedals,
+  a handbrake or a throttle can no longer turn it by their own first axis (an idle pedal used to
+  hold the steering at full lock). An input a device does not have (an axis number past its last)
+  is skipped instead of read as half pressed.
+- Fixed a possible freeze in games that read the picture back (an EFB peek waited for the window's
+  thread while holding what that thread needed).
+- Crashes and freezes from bad game data or a struggling GPU: textures, palettes and copies above
+  32 MB of memory are found (GP 2 has 48 MB), and out-of-range values in the game's graphics and
+  sound commands, a damaged disc image's executable table, or the hang report's thread list are
+  checked instead of read past their ends. A GPU that runs out of memory, or whose driver crashes,
+  no longer crashes OpenGP or freezes a game waiting for a readback: the frame is skipped and, if
+  it goes on, the player is told.
 - Linked cabinets on different computers: each cabinet's messages now go out as soon as the game
   sends them. They used to wait for the other computer to acknowledge the one before, which it can
   delay by up to 200 ms, so they arrived in bursts and the other players' karts lagged behind

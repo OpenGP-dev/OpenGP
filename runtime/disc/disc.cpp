@@ -123,13 +123,18 @@ bool Image::read_dol(std::vector<u8>* out) const {
   constexpr u32 kHeaderSize = 0x100, kSections = 18;
   const u64 dol = read_u32(kDolOffset);
   if (dol == 0 || dol >= size_) return false;
-  u32 end = kHeaderSize;
+  // The section table comes from the image: in 64 bits, inside the image,
+  // and no bigger than a GameCube executable can be.
+  constexpr u64 kMaxDol = 32u << 20;
+  u64 end = kHeaderSize;
   for (u32 i = 0; i < kSections; ++i) {
-    const u32 offset = read_u32(dol + 4 * i), size = read_u32(dol + 0x90 + 4 * i);
-    if (size && offset + size > end) end = offset + size;
+    const u64 offset = read_u32(dol + 4 * i), size = read_u32(dol + 0x90 + 4 * i);
+    if (!size) continue;
+    if (offset < kHeaderSize || offset + size > kMaxDol || dol + offset + size > size_) return false;
+    end = std::max(end, offset + size);
   }
-  out->resize(end);
-  return read(dol, out->data(), end);
+  out->resize(static_cast<std::size_t>(end));
+  return read(dol, out->data(), static_cast<u32>(end));
 }
 
 bool Image::find_file(const std::string& path, u64* offset, u32* size) const {

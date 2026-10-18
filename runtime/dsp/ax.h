@@ -41,7 +41,7 @@ class AxUcode : public hw::DspUcode {
   struct Pb;
   enum class MailState { CmdListSize, CmdListAddress, NextTask };
 
-  void copy_cmdlist(u32 addr, u16 size);
+  bool copy_cmdlist(u32 addr, u16 size);
   void handle_cmdlist();
   u32 mixer_control(u32 mixer_control) const;
 

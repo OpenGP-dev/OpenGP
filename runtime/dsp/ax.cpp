@@ -228,8 +228,7 @@ void AxUcode::handle_mail(u32 mail) {
       }
       break;
     case MailState::CmdListAddress:
-      copy_cmdlist(mail, cmdlist_size_);
-      handle_cmdlist();
+      if (copy_cmdlist(mail, cmdlist_size_)) handle_cmdlist();
       cmdlist_size_ = 0;
       dsp_.push_mail(DSP_YIELD, true, kCmdListTicks);
       mail_state_ = MailState::NextTask;
@@ -253,12 +252,16 @@ void AxUcode::handle_mail(u32 mail) {
   }
 }
 
-void AxUcode::copy_cmdlist(u32 addr, u16 size) {
-  if (size >= std::size(cmdlist_)) {
-    std::fprintf(stderr, "[dsp] AX: command list at %08X is too large (%u words)\n", addr, size);
-    return;
+bool AxUcode::copy_cmdlist(u32 addr, u16 size) {
+  if (size == 0 || size >= std::size(cmdlist_)) {
+    std::fprintf(stderr, "[dsp] AX: command list at %08X has a bad size (%u words)\n", addr, size);
+    return false;
   }
-  read_be16(addr, cmdlist_, size);
+  if (!read_be16(addr, cmdlist_, size)) {
+    std::fprintf(stderr, "[dsp] AX: command list at %08X is outside memory\n", addr);
+    return false;
+  }
+  return true;
 }
 
 // --- Guest memory ------------------------------------------------------------------------
@@ -301,7 +304,9 @@ void AxUcode::handle_cmdlist() {
     const u32 hi = next();
     return (hi << 16) | next();
   };
-  for (;;) {
+  // A list that keeps chaining to itself (CMD_MORE) ends after this many
+  // commands, rather than holding the game's thread for ever.
+  for (int commands = 0; commands < 65536; ++commands) {
     const u16 cmd = next();
     switch (cmd) {
       case CMD_SETUP: setup_processing(next32()); break;
@@ -330,7 +335,9 @@ void AxUcode::handle_cmdlist() {
       case CMD_MORE: {
         const u32 addr = next32();
         const u16 size = next();
-        copy_cmdlist(addr, size);
+        // A list it cannot copy ends here (replaying the old one would loop
+        // for ever on the game's thread).
+        if (!copy_cmdlist(addr, size)) return;
         idx = 0;
         break;
       }
@@ -455,7 +462,9 @@ void AxUcode::process_pb_list(u32 pb_addr) {
     struct Update {
       u16 offset, value;
     } updates[32]{};
-    read_be16(HILO(pb.updates.data), reinterpret_cast<u16*>(updates), 64);
+    // Not applied if the list is outside memory (zeroed updates would write
+    // word 0, the link to the next voice).
+    const bool have_updates = read_be16(HILO(pb.updates.data), reinterpret_cast<u16*>(updates), 64);
 
     int* buffers[kBuses];
     for (u32 b = 0; b < kBuses; ++b) buffers[b] = buses_[b];
@@ -466,7 +475,7 @@ void AxUcode::process_pb_list(u32 pb_addr) {
       const u32 count = pb.updates.num_updates[ms];
       if (first < std::size(updates) && count <= std::size(updates) - first) {
         for (u32 i = first; i < first + count; ++i)
-          if (updates[i].offset < kWords) words[updates[i].offset] = updates[i].value;
+          if (have_updates && updates[i].offset < kWords) words[updates[i].offset] = updates[i].value;
       }
 
       process_voice(pb, buffers, mixer_control(pb.mixer_control));

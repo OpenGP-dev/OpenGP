@@ -30,6 +30,11 @@ namespace {
 
 u32 be32(const u8* p) { return (u32{p[0]} << 24) | (u32{p[1]} << 16) | (u32{p[2]} << 8) | p[3]; }
 
+// Physical addresses the GPU takes from the game (textures, TLUTs, preloads,
+// EFB copies): MEM1 is up to 64 MiB (48 for the Triforce games), as for the
+// vertex arrays; reading checks the actual size.
+constexpr u32 kPhysicalMask = 0x03FFFFFF;
+
 // XXH64, for texture contents: an implementation of Yann Collet's algorithm
 // (xxHash, BSD-2-Clause; see THIRD-PARTY-NOTICES.md).
 u64 hash_bytes(const u8* p, std::size_t n, u64 seed = 0) {
@@ -351,7 +356,10 @@ void Frontend::bp_write(u8 reg, u32 value) {
   bp_[reg] = v;
   state_dirty_ = true;
 
-  if (reg >= 0x80 && reg < 0xC0) textures_dirty_ = true;
+  // Texture registers, and which maps the TEV stages read (GENMODE's stage
+  // counts, the stage orders, the indirect references).
+  if ((reg >= 0x80 && reg < 0xC0) || reg == BP_GENMODE || reg == BP_IREF || (reg >= BP_TREF && reg < BP_TREF + 8))
+    textures_dirty_ = true;
   switch (reg) {
     case BP_TRIGGER_EFB_COPY: efb_copy(v); break;
     case BP_LOAD_TLUT1: load_tlut(); break;
@@ -384,6 +392,7 @@ void Frontend::bp_write(u8 reg, u32 value) {
 void Frontend::xf_write(u16 address, std::span<const u8> words) {
   for (std::size_t i = 0; i + 4 <= words.size(); i += 4) {
     const u32 addr = address + static_cast<u32>(i / 4);
+    if (addr >= XF_END) break;  // not round into the matrices
     xf_.write(static_cast<u16>(addr), be32(words.data() + i));
     if (addr >= XF_REGISTERS) state_dirty_ = true;  // viewport (fog range) etc.
   }
@@ -403,7 +412,7 @@ void Frontend::indexed_load(u8 opcode, u32 value, const u32* cp) {
 
 void Frontend::load_tlut() {
   // Copies a palette from memory into TMEM.
-  const u32 src = (bp_[BP_LOAD_TLUT0] << 5) & 0x01FFFFFF;
+  const u32 src = (bp_[BP_LOAD_TLUT0] << 5) & kPhysicalMask;
   const u32 dst = bits(bp_[BP_LOAD_TLUT1], 0, 10) << 9;
   const u32 size = bits(bp_[BP_LOAD_TLUT1], 10, 11) * 32;
   if (dst + size > kTmemSize) return;
@@ -413,7 +422,7 @@ void Frontend::load_tlut() {
 
 void Frontend::preload_tmem() {
   // GXPreLoadEntireTexture: copies a texture into TMEM ahead of use.
-  const u32 src = (bp_[BP_PRELOAD_ADDR] << 5) & 0x01FFFFFF;
+  const u32 src = (bp_[BP_PRELOAD_ADDR] << 5) & kPhysicalMask;
   const u32 even = bits(bp_[BP_PRELOAD_TMEM_EVEN], 0, 15) * 32;
   const u32 count = bits(bp_[BP_PRELOAD_MODE], 0, 15);
   const u32 type = bits(bp_[BP_PRELOAD_MODE], 15, 2);
@@ -446,7 +455,7 @@ void Frontend::efb_copy(u32 trigger) {
 
   if (output_) {
     Frame& f = frame();
-    const u32 dest = (bp_[BP_EFB_ADDR] << 5) & 0x01FFFFFF;
+    const u32 dest = (bp_[BP_EFB_ADDR] << 5) & kPhysicalMask;
     // Widescreen: a copy of the whole width copies the wide EFB, and its
     // texture is as much wider.
     const bool wide = side_ && x == 0 && w == kEfbWidth;
@@ -470,7 +479,7 @@ void Frontend::efb_copy(u32 trigger) {
                                                       : static_cast<float>(yscale_reg) / 256.0f;
       c.format = CopyFormat::XFB;
       const u32 width = w;
-      c.height = std::max(1u, static_cast<u32>(1.0f + static_cast<float>(bits(wh, 10, 10)) * yscale));
+      c.height = std::clamp(static_cast<u32>(1.0f + static_cast<float>(bits(wh, 10, 10)) * yscale), 1u, 2 * kEfbHeight);
       c.width = host_width(width);
       auto it = copies_.find(dest);
       if (it == copies_.end() || it->second.width != width || it->second.height != c.height) {
@@ -514,7 +523,7 @@ void Frontend::efb_copy(u32 trigger) {
 
   if (dumping_)
     std::fprintf(stderr, "[gx]  copy %s %u,%u %ux%u to %08X format %u (trigger %06X, EFB format %u)%s\n",
-                 copy_to_xfb(trigger) ? "XFB" : "texture", x, y, w, h, (bp_[BP_EFB_ADDR] << 5) & 0x01FFFFFF,
+                 copy_to_xfb(trigger) ? "XFB" : "texture", x, y, w, h, (bp_[BP_EFB_ADDR] << 5) & kPhysicalMask,
                  static_cast<u32>(copy_format(trigger)), trigger, static_cast<u32>(pixel_format()),
                  copy_clear(trigger) ? " + clear" : "");
   if (copy_clear(trigger)) clear(x, y, w, h);
@@ -769,7 +778,7 @@ TextureBinding Frontend::bind_texture(u32 map, s32* size) {
   size[1] = static_cast<s32>(height);
   if (!is_valid_format(bits(image0, 20, 4))) return {};
   const TexFormat format = static_cast<TexFormat>(bits(image0, 20, 4));
-  const u32 address = (bits(image3, 0, 24) << 5) & 0x01FFFFFF;
+  const u32 address = (bits(image3, 0, 24) << 5) & kPhysicalMask;
 
   u32 levels = 1;
   if (bits(mode0, 5, 2) != 0) {  // mipmapping on
@@ -1089,7 +1098,7 @@ void Frontend::widen_overlay(u32 first_vertex, const DrawState& state) {
   bool carry = true;
   for (const TextureBinding& t : state.textures)
     if (t.texture && (t.mode0 & 3) == 0) carry = false;  // clamped in s
-  const u32 texgens = xf_.num_texgens();
+  const u32 texgens = std::min(xf_.num_texgens(), 8u);  // the register holds up to 15
   float slope[8][3] = {};
   if (carry && texgens > 0) {
     auto ndc = [&](u32 i, u32 axis) { return f.vertices[i].pos[axis] / w; };
