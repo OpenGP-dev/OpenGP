@@ -416,6 +416,7 @@ struct HostInput::Impl {
     // Wheel effects (-1: not supported).
     int spring = -1, friction = -1, torque = -1;
     bool wheel = false;  // SDL says it is a steering wheel
+    float sent[3] = {-2.0f, -2.0f, -2.0f};  // the spring, friction and roll last sent
     int axes = 0, buttons = 0, hats = 0;
   };
 
@@ -513,6 +514,7 @@ HostInput::HostInput() : impl_(std::make_unique<Impl>()) {}
 void HostInput::stop_outputs() {
   for (auto& [id, d] : impl_->devices) {
     if (d.haptic) SDL_StopHapticEffects(d.haptic);
+    for (float& s : d.sent) s = -2.0f;
     if (d.gamepad) SDL_RumbleGamepad(d.gamepad, 0, 0, 0);
   }
 }
@@ -663,10 +665,21 @@ void HostInput::Impl::play(Device& d) {
   const float friction = std::clamp(outputs.friction / 32767.0f * strength, 0.0f, 1.0f);
   const float roll = outputs.roll ? std::clamp((outputs.roll - 0x8000) / 32767.0f * strength, -1.0f, 1.0f) : 0.0f;
   if (d.haptic && (d.spring >= 0 || d.friction >= 0 || d.torque >= 0)) {
+    // Only what changed: the road's roll changes most frames, the spring and
+    // friction seldom, and each update is a report to the wheel.
     SDL_HapticEffect e;
-    if (d.spring >= 0) SDL_UpdateHapticEffect(d.haptic, d.spring, &(e = condition_effect(SDL_HAPTIC_SPRING, centering)));
-    if (d.friction >= 0) SDL_UpdateHapticEffect(d.haptic, d.friction, &(e = condition_effect(SDL_HAPTIC_FRICTION, friction)));
-    if (d.torque >= 0) SDL_UpdateHapticEffect(d.haptic, d.torque, &(e = constant_effect(roll)));
+    if (d.spring >= 0 && centering != d.sent[0]) {
+      SDL_UpdateHapticEffect(d.haptic, d.spring, &(e = condition_effect(SDL_HAPTIC_SPRING, centering)));
+      d.sent[0] = centering;
+    }
+    if (d.friction >= 0 && friction != d.sent[1]) {
+      SDL_UpdateHapticEffect(d.haptic, d.friction, &(e = condition_effect(SDL_HAPTIC_FRICTION, friction)));
+      d.sent[1] = friction;
+    }
+    if (d.torque >= 0 && roll != d.sent[2]) {
+      SDL_UpdateHapticEffect(d.haptic, d.torque, &(e = constant_effect(roll)));
+      d.sent[2] = roll;
+    }
     return;
   }
   if (d.gamepad && config.rumble) {

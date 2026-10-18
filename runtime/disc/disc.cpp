@@ -90,16 +90,20 @@ bool Image::open(const std::string& path, std::string* error) {
 }
 
 bool Image::read(u64 offset, void* dst, u64 size) const {
-  std::memset(dst, 0, size);
-  if (!file_ || offset >= size_) return false;
+  if (!file_ || offset >= size_) {
+    std::memset(dst, 0, size);
+    return false;
+  }
   const u64 avail = size_ - offset;
   const u64 n = size < avail ? size : avail;
+  if (n < size) std::memset(static_cast<u8*>(dst) + n, 0, size - n);  // past the image's end
   bool ok = true;
   if (offset + n <= loaded_.load(std::memory_order_acquire)) {
     std::memcpy(dst, memory_.get() + offset, n);
   } else {
     std::lock_guard lock(mutex_);
     ok = seek64(file_, offset) == 0 && std::fread(dst, 1, n, file_) == n;
+    if (!ok) std::memset(dst, 0, n);
   }
   if (id_override_)
     for (u64 i = offset; i < game_id_.size() && i < offset + n; ++i)

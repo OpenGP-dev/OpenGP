@@ -40,6 +40,11 @@ From a profile of a whole playthrough of GP 2:
   skip hidden pixels, the shader works only on the texture coordinates a surface has, and
   surfaces the game culls entirely are no longer sent to the GPU. A mesh's matrix change no longer
   rebuilds the draw state.
+- Steering wheels get fewer force-feedback reports: only the force that changed is sent (the road's
+  feel changes almost every frame; the centring spring and friction seldom).
+- Smaller costs gone: the game's graphics data no longer waits on a lock for every 32 bytes it
+  sends, new textures and disc reads are no longer cleared before being filled, and on Apple
+  Silicon the per-draw timers are as cheap as on PCs.
 
 ### Fixes
 

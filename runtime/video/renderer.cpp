@@ -90,10 +90,12 @@ struct CopyUniforms {
 void FrameQueue::submit(std::unique_ptr<gx::Frame> frame) {
   std::lock_guard lock(mutex_);
   frames_.push_back(std::move(frame));
+  pending_.store(frames_.size(), std::memory_order_release);
   cv_.notify_all();
 }
 
 void FrameQueue::wait_for_room() {
+  if (pending_.load(std::memory_order_acquire) < max_pending_) return;
   std::unique_lock lock(mutex_);
   if (frames_.size() < max_pending_) return;
   os::g_guest_wait.set("waiting for the renderer to take a frame");
@@ -119,6 +121,7 @@ std::unique_ptr<gx::Frame> FrameQueue::pop(int timeout_ms) {
   if (!cv_.wait_for(lock, std::chrono::milliseconds(timeout_ms), [this] { return !frames_.empty(); })) return nullptr;
   auto frame = std::move(frames_.front());
   frames_.pop_front();
+  pending_.store(frames_.size(), std::memory_order_release);
   cv_.notify_all();
   return frame;
 }

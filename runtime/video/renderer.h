@@ -14,6 +14,7 @@
 // Frames are produced on the guest thread and handed over by FrameQueue.
 #pragma once
 
+#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <memory>
@@ -66,6 +67,9 @@ class FrameQueue final : public gx::FrameOutput {
   std::deque<std::unique_ptr<gx::Frame>> frames_;
   std::vector<std::unique_ptr<gx::Frame>> free_;
   std::size_t max_pending_;
+  // frames_.size(), readable without the lock: only the guest thread adds
+  // frames, so what it reads is never fewer than there are.
+  std::atomic<std::size_t> pending_{0};
 };
 
 // Something drawn over the presented picture (the menu).

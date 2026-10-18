@@ -86,6 +86,13 @@ u64 hash_bytes(const u8* p, std::size_t n, u64 seed = 0) {
 // busiest races.
 #if defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__) || defined(__i386__)
 inline u64 ticks() { return __rdtsc(); }
+#elif defined(__aarch64__)
+// The generic timer's virtual count (Apple Silicon: 24 MHz).
+inline u64 ticks() {
+  u64 v;
+  __asm__ volatile("mrs %0, cntvct_el0" : "=r"(v));
+  return v;
+}
 #else
 inline u64 ticks() {
   return static_cast<u64>(
