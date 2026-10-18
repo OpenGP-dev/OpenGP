@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "input/host.h"
+#include "test_temp.h"
 
 namespace fs = std::filesystem;
 using input::HostInput;
@@ -22,8 +23,7 @@ using Kind = HostInput::DeviceKind;
 namespace {
 
 fs::path temp_file(const char* name) {
-  const fs::path dir = fs::temp_directory_path() / "opengp_tests" / "controls";
-  fs::create_directories(dir);
+  static const fs::path dir = opengp_test::temp_dir("controls");
   fs::remove(dir / name);
   return dir / name;
 }

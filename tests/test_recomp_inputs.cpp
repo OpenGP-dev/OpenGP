@@ -12,6 +12,7 @@
 #include "config.h"
 #include "dol.h"
 #include "symbols.h"
+#include "test_temp.h"
 
 using namespace recomp;
 
@@ -59,8 +60,7 @@ TEST_CASE("symbols.txt parsing") {
 }
 
 TEST_CASE("recomp.toml parsing") {
-  const auto dir = std::filesystem::temp_directory_path() / "opengp_test_config";
-  std::filesystem::create_directories(dir);
+  const auto dir = opengp_test::temp_dir("config");
   const auto path = dir / "recomp.toml";
   const std::string abs_symbols = (dir / "elsewhere" / "symbols.txt").string();
   {

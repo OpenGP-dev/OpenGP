@@ -24,6 +24,7 @@
 #include "os/utf8.h"
 #include "symbols.h"
 #include "triforce/card_folder.h"
+#include "test_temp.h"
 
 namespace fs = std::filesystem;
 
@@ -34,8 +35,7 @@ std::string u8s(const char8_t* s) { return std::string(reinterpret_cast<const ch
 // A fresh folder whose name has Latin, Cyrillic and CJK characters (none of
 // them in one Windows code page).
 fs::path strange_dir(const char* test) {
-  const fs::path dir = fs::temp_directory_path() / "opengp_tests" / test / os::utf8_path(u8s(u8"José Ж 日本"));
-  fs::remove_all(dir.parent_path());
+  const fs::path dir = opengp_test::temp_dir(test) / os::utf8_path(u8s(u8"José Ж 日本"));
   fs::create_directories(dir);
   return dir;
 }

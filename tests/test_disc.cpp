@@ -17,6 +17,7 @@
 
 #include "disc/disc.h"
 #include "disc/sha1.h"
+#include "test_temp.h"
 
 namespace {
 
@@ -54,7 +55,7 @@ TEST_CASE("the executable is found from the disc header and its section table") 
   put_be32(image, 0x2000 + 0xAC, 0x20);    // data 0 size
   for (int i = 0; i < 0x60; ++i) image[0x2100 + i] = static_cast<gekko::u8>(i + 1);
 
-  const auto path = std::filesystem::temp_directory_path() / "opengp_test_disc.iso";
+  const auto path = opengp_test::temp_dir("disc") / "opengp_test_disc.iso";
   {
     std::FILE* f = std::fopen(path.string().c_str(), "wb");
     REQUIRE(f);
@@ -96,7 +97,7 @@ TEST_CASE("files are found by their path in the disc's file system") {
   std::copy(std::begin(names), std::end(names), image.begin() + name_table);
   for (int i = 0; i < 0x30; ++i) image[0x2000 + i] = static_cast<gekko::u8>(0x80 + i);
 
-  const auto path = std::filesystem::temp_directory_path() / "opengp_test_fst.iso";
+  const auto path = opengp_test::temp_dir("fst") / "opengp_test_fst.iso";
   {
     std::FILE* f = std::fopen(path.string().c_str(), "wb");
     REQUIRE(f);
@@ -129,7 +130,7 @@ TEST_CASE("a preloaded image reads the same from memory") {
   image[0] = 'G', image[1] = 'T', image[2] = 'S', image[3] = 'T', image[4] = '0', image[5] = '1';
   put_be32(image, 0x1C, disc::GC_MAGIC);
 
-  const auto path = std::filesystem::temp_directory_path() / "opengp_test_preload.iso";
+  const auto path = opengp_test::temp_dir("preload") / "opengp_test_preload.iso";
   {
     std::FILE* f = std::fopen(path.string().c_str(), "wb");
     REQUIRE(f);

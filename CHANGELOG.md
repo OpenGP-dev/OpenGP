@@ -160,6 +160,10 @@ From a profile of a whole playthrough of GP 2:
   packages (with a `SHA256SUMS` file) to a draft release.
 - `.gitattributes` keeps line endings LF on every platform, and `.gitignore` covers more build,
   editor and dump files.
+- Steadier tests: the link tests pick free ports instead of always 47600, the pause tests have no
+  deadline a busy computer can miss, every test process keeps its files in a folder of its own,
+  the differential test's random functions are the same on every platform, and the vertex test
+  checks for determinism on ARM64 as well as for exact values on x86-64.
 - The games' hand-written sources are listed once (`cmake/game_sources.cmake`), for the source
   build and the installer alike, and the package check fails if one is missing.
 - `tools/devshell.ps1` finds the Visual Studio installation that has Clang when a newer one

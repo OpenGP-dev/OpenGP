@@ -229,9 +229,7 @@ Snapshot run_recompiled(const Case& k, u32 seed) {
   return capture(c, e.base);
 }
 
-// A function's instructions up to its first blr, for failure reports: the
-// random functions differ between standard libraries (their distributions),
-// so a failure elsewhere cannot be reproduced from the name alone.
+// A function's instructions up to its first blr, for failure reports.
 std::string listing(const Case& k) {
   const u8* base = env().base;
   std::string out;

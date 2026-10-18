@@ -37,7 +37,42 @@ using namespace gekko;
 namespace {
 
 constexpr u32 kError = 0xFFFFFFFF;
-constexpr u16 kPort = 47600;  // the tests' first host port
+
+void close_socket(decltype(::socket(0, 0, 0)) s) {
+#ifdef _WIN32
+  ::closesocket(s);
+#else
+  ::close(s);
+#endif
+}
+
+// The tests' first host port: the first base from 47600 on whose 40 ports
+// (four cabinets, ten each) are free on this computer, so another program
+// holding 47600, or another test run, doesn't fail the tests.
+u16 pick_port() {
+#ifdef _WIN32
+  WSADATA data;
+  WSAStartup(MAKEWORD(2, 2), &data);
+#endif
+  for (u32 base = 47600; base + 40 <= 65535; base += 40) {
+    bool free = true;
+    for (u32 port = base; port < base + 40 && free; ++port) {
+      for (const int type : {SOCK_STREAM, SOCK_DGRAM}) {
+        const auto s = ::socket(AF_INET, type, 0);
+        sockaddr_in a{};
+        a.sin_family = AF_INET;
+        a.sin_port = htons(static_cast<u16>(port));
+        a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        free = free && ::bind(s, reinterpret_cast<const sockaddr*>(&a), sizeof(a)) == 0;
+        close_socket(s);
+      }
+    }
+    if (free) return static_cast<u16>(base);
+  }
+  return 47600;
+}
+
+const u16 kPort = pick_port();
 
 // A cabinet: media board memory at 0x1000 and its network, linked.
 struct Cabinet {
@@ -48,6 +83,7 @@ struct Cabinet {
 
   Cabinet(int number, const char* game = "GGPE02") {
     net.enable_link({game, kPort, false, "test"});
+    CHECK(net.link_status().error == "");
     const std::string address = "192.168.29." + std::to_string(149 + number);
     std::memcpy(at(0x1F00), address.c_str(), address.size() + 1);
     run(triforce::NET_MODIFY_MY_IP_ADDR, {0x1F00});

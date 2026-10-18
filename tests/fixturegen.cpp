@@ -530,7 +530,13 @@ class RandomGen {
  public:
   explicit RandomGen(u32 seed) : rng_(seed) {}
 
-  u32 range(u32 lo, u32 hi) { return std::uniform_int_distribution<u32>(lo, hi)(rng_); }
+  // Not uniform_int_distribution: its results differ between standard
+  // libraries, and the fixture must be the same on every platform (mt19937's
+  // output is). The bias is of no consequence here.
+  u32 range(u32 lo, u32 hi) {
+    const u64 span = u64{hi} - lo + 1;
+    return lo + static_cast<u32>(rng_() % span);
+  }
   bool chance(u32 percent) { return range(0, 99) < percent; }
   s32 simm() { return static_cast<s16>(range(0, 0xFFFF)); }
 

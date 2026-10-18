@@ -49,10 +49,13 @@ TEST_CASE("the time base stops while paused and carries on where it stopped") {
   const u64 at_pause = h.timebase();
   std::this_thread::sleep_for(50ms);
   CHECK(h.timebase() == at_pause);
+  const auto before = std::chrono::steady_clock::now();
   h.set_paused(false);
+  const u64 counted = h.timebase() - at_pause;
+  const auto taken = std::chrono::steady_clock::now() - before;
   CHECK_FALSE(h.paused());
-  // The 50 ms paused are not counted (allow for a slow scheduler).
-  CHECK(h.timebase() - at_pause < ms_ticks(25));
+  // The 50 ms paused are not counted: only the time since unpausing is.
+  CHECK(counted <= ms_ticks(1 + std::chrono::duration_cast<std::chrono::milliseconds>(taken).count()));
   std::this_thread::sleep_for(20ms);
   CHECK(h.timebase() - at_pause >= ms_ticks(20));
 }
@@ -61,12 +64,14 @@ TEST_CASE("timed events wait while paused") {
   Rig rig;
   hw::Hardware& h = *rig.hw;
   std::atomic<bool> fired{false};
-  h.schedule_after(ms_ticks(20), [&] { fired = true; });
+  // Paused first: an event due 20 ms later must wait for the unpause, however
+  // slowly this thread runs.
   h.set_paused(true);
+  h.schedule_after(ms_ticks(20), [&] { fired = true; });
   std::this_thread::sleep_for(80ms);
   CHECK_FALSE(fired.load());
   h.set_paused(false);
-  for (int i = 0; i < 200 && !fired; ++i) std::this_thread::sleep_for(1ms);
+  for (int i = 0; i < 2000 && !fired; ++i) std::this_thread::sleep_for(1ms);
   CHECK(fired.load());
 }
 

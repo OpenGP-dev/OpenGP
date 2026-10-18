@@ -13,18 +13,14 @@
 #include "os/atomic_file.h"
 #include "os/reboot.h"
 #include "triforce/card_folder.h"
+#include "test_temp.h"
 
 namespace fs = std::filesystem;
 
 namespace {
 
 // A fresh folder for a test's files.
-fs::path temp_dir(const char* name) {
-  const fs::path dir = fs::temp_directory_path() / "opengp_tests" / name;
-  fs::remove_all(dir);
-  fs::create_directories(dir);
-  return dir;
-}
+fs::path temp_dir(const char* name) { return opengp_test::temp_dir(name); }
 
 void write(const fs::path& path, const std::string& text) { std::ofstream(path, std::ios::binary) << text; }
 
