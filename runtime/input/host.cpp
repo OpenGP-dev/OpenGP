@@ -272,27 +272,26 @@ bool parse_bindings(const toml::table* table, Source::Kind device, const char* s
     const toml::node* node = table->get(kControlNames[c]);
     if (!node) continue;
     std::vector<Source> sources;
+    // An input it does not know is left out, with a warning: the rest of the
+    // file still counts.
     auto add = [&](const toml::node& item) {
       const auto name = item.value<std::string>();
       Source s;
       if (!name || !parse_source(*name, device, &s)) {
-        *error = std::string("[") + section + "] " + kControlNames[c] + ": unknown input \"" +
-                 (name ? *name : std::string("?")) + "\"";
-        return false;
+        *error += std::string(error->empty() ? "" : "; ") + "[" + section + "] " + kControlNames[c] +
+                  ": unknown input \"" + (name ? *name : std::string("?")) + "\" (left out)";
+        return;
       }
       sources.push_back(s);
-      return true;
     };
     if (const toml::array* list = node->as_array()) {
-      for (const toml::node& item : *list) {
-        if (!add(item)) return false;
-      }
-    } else if (!add(*node)) {
-      return false;
+      for (const toml::node& item : *list) add(item);
+    } else {
+      add(*node);
     }
     out->sources[c] = std::move(sources);
   }
-  if (const auto deadzone = (*table)["deadzone"].value<double>()) {
+  if (const auto deadzone = (*table)["deadzone"].value<double>(); deadzone && std::isfinite(*deadzone)) {
     out->deadzone = std::clamp(static_cast<float>(*deadzone), 0.0f, 0.9f);
   }
   return true;
@@ -313,9 +312,11 @@ bool parse_config(std::string_view text, Config* config, std::string* error) {
       !parse_bindings(root["joystick"].as_table(), Source::Kind::JoyButton, "joystick", &c.joystick, error)) {
     return false;
   }
-  c.steer_speed = std::max(0.1f, static_cast<float>(root["steering"]["speed"].value_or(double{c.steer_speed})));
-  c.ffb_strength =
-      std::clamp(static_cast<float>(root["force_feedback"]["strength"].value_or(double{c.ffb_strength})), 0.0f, 2.0f);
+  // nan and inf are TOML numbers too: they would pass the clamps.
+  if (const double v = root["steering"]["speed"].value_or(double{c.steer_speed}); std::isfinite(v))
+    c.steer_speed = std::max(0.1f, static_cast<float>(v));
+  if (const double v = root["force_feedback"]["strength"].value_or(double{c.ffb_strength}); std::isfinite(v))
+    c.ffb_strength = std::clamp(static_cast<float>(v), 0.0f, 2.0f);
   c.rumble = root["force_feedback"]["rumble"].value_or(c.rumble);
   c.background = root["background"]["input"].value_or(c.background);
   *config = std::move(c);
@@ -370,14 +371,17 @@ std::string config_text(const Config& c) {
     for (std::size_t control = 0; control < kControlCount; ++control) {
       if (control == kSteer && !axes) continue;
       out += std::string(kControlNames[control]) + " = [";
+      bool first = true;
       for (std::size_t i = 0; i < b.sources[control].size(); ++i) {
         std::string name = source_name(b.sources[control][i]);
+        if (name.empty()) continue;  // an input with no name could not be read back
         std::string quoted = "\"";
         for (const char ch : name) {
           if (ch == '"' || ch == '\\') quoted += '\\';
           quoted += ch;
         }
-        out += (i ? ", " : "") + quoted + "\"";
+        out += (first ? "" : ", ") + quoted + "\"";
+        first = false;
       }
       out += "]\n";
     }
@@ -492,6 +496,13 @@ struct HostInput::Impl {
 
 HostInput::HostInput() : impl_(std::make_unique<Impl>()) {}
 
+void HostInput::stop_outputs() {
+  for (auto& [id, d] : impl_->devices) {
+    if (d.haptic) SDL_StopHapticEffects(d.haptic);
+    if (d.gamepad) SDL_RumbleGamepad(d.gamepad, 0, 0, 0);
+  }
+}
+
 HostInput::~HostInput() {
   if (!impl_) return;
   std::vector<SDL_JoystickID> ids;
@@ -516,8 +527,16 @@ bool HostInput::load(const std::string& path, std::string* error) {
   std::string why;
   impl_->config = Config{};
   parse_config(kDefaultConfig, &impl_->config, &why);
+  why.clear();
   const bool ok = parse_config(text, &impl_->config, &why);
-  if (!ok && error) *error = path + ": " + why + " (using the default controls)";
+  if (!ok) {
+    // Kept aside, not overwritten by the next save: the player can fix it.
+    fs::rename(file, os::utf8_path(path + ".bad"), ec);
+    impl_->dirty = true;
+    if (error) *error = path + ": " + why + ". It was kept as controls.toml.bad; the default controls are used.";
+  } else if (!why.empty() && error) {
+    *error = path + ": " + why;
+  }
   impl_->apply_background();
   return ok;
 }
@@ -782,6 +801,8 @@ bool HostInput::capture_event(const SDL_Event& e) {
         return true;
       }
       if (kind != DeviceKind::Keyboard || steering || e.key.repeat) return true;
+      // A key SDL has no name for could not be saved: keep waiting.
+      if (e.key.scancode == SDL_SCANCODE_UNKNOWN || !*SDL_GetScancodeName(e.key.scancode)) return true;
       s.kind = Source::Kind::Key;
       s.index = e.key.scancode;
       return m.finish_capture(s);
@@ -839,6 +860,7 @@ bool HostInput::capture_event(const SDL_Event& e) {
 
 float HostInput::force_feedback() const { return impl_->config.ffb_strength; }
 void HostInput::set_force_feedback(float strength) {
+  if (!std::isfinite(strength)) return;
   strength = std::clamp(strength, 0.0f, 2.0f);
   if (strength == impl_->config.ffb_strength) return;
   impl_->config.ffb_strength = strength;
@@ -848,6 +870,7 @@ void HostInput::set_force_feedback(float strength) {
 
 float HostInput::steer_speed() const { return impl_->config.steer_speed; }
 void HostInput::set_steer_speed(float speed) {
+  if (!std::isfinite(speed)) return;
   speed = std::max(0.1f, speed);
   if (speed == impl_->config.steer_speed) return;
   impl_->config.steer_speed = speed;
@@ -872,6 +895,7 @@ bool HostInput::background_keyboard() {
 
 float HostInput::deadzone(DeviceKind kind) const { return impl_->bindings(kind).deadzone; }
 void HostInput::set_deadzone(DeviceKind kind, float deadzone) {
+  if (!std::isfinite(deadzone)) return;
   deadzone = std::clamp(deadzone, 0.0f, 0.9f);
   if (deadzone == impl_->bindings(kind).deadzone) return;
   impl_->bindings(kind).deadzone = deadzone;
@@ -891,10 +915,7 @@ bool HostInput::save(std::string* error) {
   Impl& m = *impl_;
   if (!m.dirty || m.path.empty()) return true;
   const std::string text = config_text(m.config);
-  if (!os::write_file_atomically(m.path, text.data(), text.size())) {
-    if (error) *error = "cannot write " + m.path;
-    return false;
-  }
+  if (!os::write_file_atomically(m.path, text.data(), text.size(), error)) return false;
   m.dirty = false;
   return true;
 }

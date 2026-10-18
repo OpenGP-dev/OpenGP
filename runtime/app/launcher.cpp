@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <exception>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -33,6 +34,7 @@
 #include "os/activity.h"
 #include "os/atomic_file.h"
 #include "os/crash.h"
+#include "os/notice.h"
 #include "os/printf.h"
 #include "os/profiler.h"
 #include "os/reboot.h"
@@ -222,6 +224,17 @@ void stop_link() {
   if (g_network) g_network->stop_link();
 }
 
+// The player's devices, so that a wheel's forces stop with the process (it
+// ends with std::_Exit, without destructors).
+#ifdef OPENGP_VIDEO
+input::HostInput* g_host_input = nullptr;
+#endif
+void stop_outputs() {
+#ifdef OPENGP_VIDEO
+  if (g_host_input) g_host_input->stop_outputs();
+#endif
+}
+
 // The reboot the game asked for (set on the guest thread; the main thread
 // restarts the process).
 std::mutex g_reboot_mutex;
@@ -238,6 +251,7 @@ std::atomic<bool> g_reboot_requested{false};
     std::_Exit(1);
   }
   stop_link();
+  stop_outputs();
   std::vector<std::string> args = o.args;
   args.push_back("--reboot");
   args.push_back(path);
@@ -259,6 +273,19 @@ os::Reboot next_boot(const os::Reboot& requested) {
     return fresh;
   }
   return requested;
+}
+
+// Whether start-up failures also show a message box: for a game started for a
+// window, whose console (if any) may close with it.
+bool g_error_box = false;
+
+// Reports a problem that stops the game from starting; returns the exit code.
+int start_failed(const std::string& message) {
+  std::fprintf(stderr, "%s\n", message.c_str());
+#ifdef OPENGP_VIDEO
+  if (g_error_box) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "OpenGP", message.c_str(), nullptr);
+#endif
+  return 1;
 }
 
 // The game's image: the one it was installed from (user/images.toml), else
@@ -303,7 +330,7 @@ bool check_image(const Game& game, const std::string& path) {
   disc::Image img;
   std::string error;
   if (!img.open(path, &error)) {
-    std::fprintf(stderr, "%s\n", error.c_str());
+    start_failed(error);
     return false;
   }
   const std::string actual = game.dol_sha1 ? disc::dol_sha1(img) : std::string();
@@ -314,14 +341,13 @@ bool check_image(const Game& game, const std::string& path) {
     return true;
   }
   if (img.game_id() != game.id) {
-    std::fprintf(stderr, "%s is %s, not %s (%s).\n", path.c_str(), img.game_id().c_str(), game.title, game.id);
+    start_failed(path + " is " + img.game_id() + ", not " + game.title + " (" + game.id + ").");
     return false;
   }
   if (!game.dol_sha1) return true;
-  std::fprintf(stderr,
-               "%s: its main.dol (SHA-1 %s) is not the release of %s this build supports (SHA-1 %s). "
-               "See docs/game-files.md.\n",
-               path.c_str(), actual.empty() ? "unreadable" : actual.c_str(), game.title, game.dol_sha1);
+  start_failed(path + ": its main.dol (SHA-1 " + (actual.empty() ? std::string("unreadable") : actual) +
+               ") is not the release of " + game.title + " this build supports (SHA-1 " + game.dol_sha1 +
+               "). See docs/game-files.md.");
   return false;
 }
 
@@ -412,11 +438,17 @@ int run(const Game& game, int argc, char** argv) {
   // With a window the game runs until it is closed; otherwise for 20 seconds.
   const bool windowed = o.use_video && !o.headless;
   if (o.timeout_s < 0) o.timeout_s = windowed ? 0 : 20;
+  g_error_box = windowed;
   const fs::path user_dir = o.user_dir.empty() ? home_dir() / "user" : os::utf8_path(o.user_dir);
+  if (!lock_user_dir(user_dir, !o.reboot.empty())) {
+    return start_failed("Another copy of OpenGP is using the folder " + os::utf8(user_dir) +
+                        ". Give each copy its own folder with --user-dir (see Linked cabinets in docs/playing.md).");
+  }
   if (o.image.empty()) o.image = find_image(game, user_dir);
   if (o.image.empty()) {
-    std::fprintf(stderr, "No %s image found in ISO/ or private/ (see docs/game-files.md), or pass --iso.\n", game.id);
-    return 1;
+    return start_failed(std::string("No disc image of ") + game.title + " (" + game.id +
+                        ") found. Put it in the ISO folder next to OpenGP, or start the game with --iso PATH. If "
+                        "you moved it, drop it on the OpenGP installer so the game knows where it is.");
   }
   if (!check_image(game, o.image)) return 1;
 
@@ -424,10 +456,17 @@ int run(const Game& game, int argc, char** argv) {
   std::string error;
   const std::string settings_path = os::utf8(user_dir / "settings.toml");
   static Settings file_settings;
+  static std::string settings_problem;
   if (!load_settings(settings_path, &file_settings, &error)) {
-    std::fprintf(stderr, "[settings] %s (using the defaults)\n", error.c_str());
+    // Kept aside, not overwritten by the next save: the player can fix it.
+    std::error_code ec;
+    fs::rename(os::utf8_path(settings_path), os::utf8_path(settings_path + ".bad"), ec);
+    settings_problem = error + ". It was kept as settings.toml.bad; the default settings are used.";
     file_settings = Settings{};
+  } else {
+    settings_problem = error;
   }
+  if (!settings_problem.empty()) std::fprintf(stderr, "[settings] %s\n", settings_problem.c_str());
   static Settings settings = file_settings;
   apply_options(o, settings);
   static const Settings start_settings = settings;
@@ -463,10 +502,7 @@ int run(const Game& game, int argc, char** argv) {
 
   os::BootResult boot;
   machine.set_game_id(game.id);
-  if (!machine.boot(o.image, &boot, &error)) {
-    std::fprintf(stderr, "boot failed: %s\n", error.c_str());
-    return 1;
-  }
+  if (!machine.boot(o.image, &boot, &error)) return start_failed("The game could not start: " + error);
   machine.install(*game.module);
   machine.cards().hold(settings.card);
   if (game.set_free_play) game.set_free_play(machine.base(), settings.free_play);
@@ -509,9 +545,9 @@ int run(const Game& game, int argc, char** argv) {
   std::fflush(stdout);
 
   static const auto names = load_function_names(game.symbols);
-  auto print_status = [](const char* why) {
+  auto print_status = [](const char* why, std::FILE* out = stderr) {
     auto* vi = machine.hardware().device<hw::ViDevice>();
-    std::fprintf(stderr,
+    std::fprintf(out,
                  "[opengp] %s: %llu retraces, %llu frames (%llu rendered), %llu draws, %d guest threads, "
                  "PI cause %05X mask %05X\n",
                  why, static_cast<unsigned long long>(vi ? vi->retrace_count() : 0),
@@ -520,7 +556,7 @@ int run(const Game& game, int argc, char** argv) {
                  machine.hardware().interrupt_cause(), machine.hardware().interrupt_mask());
     const gx::Frontend::Stats& st = machine.gpu().frontend().stats();
     auto sec = [](const std::atomic<u64>& ns) { return static_cast<double>(ns.load()) * 1e-9; };
-    std::fprintf(stderr,
+    std::fprintf(out,
                  "  guest: draws %.1f s (state %.1f s, textures %.1f s, %llu vertices %.1f s), %llu EFB readbacks "
                  "%.1f s; renderer: %.1f s, idle %.1f s; exceptions %llu (%llu unwound)\n",
                  sec(st.draw_ns), sec(st.state_ns), sec(st.texture_ns), static_cast<unsigned long long>(st.vertices.load()),
@@ -530,24 +566,50 @@ int run(const Game& game, int argc, char** argv) {
                  static_cast<unsigned long long>(machine.exception_returns()));
 #ifdef OPENGP_VIDEO
     if (g_audio_out)
-      std::fprintf(stderr, "  audio: queue %.0f ms, %llu underruns, %llu overflows\n", g_audio_out->queue_ms(),
+      std::fprintf(out, "  audio: queue %.0f ms, %llu underruns, %llu overflows\n", g_audio_out->queue_ms(),
                    static_cast<unsigned long long>(g_audio_out->underruns()),
                    static_cast<unsigned long long>(g_audio_out->overflows()));
 #endif
     for (ppc::TraceStack* s : ppc::trace_all_stacks()) {
       const auto frames = ppc::trace_snapshot(*s);
       if (frames.empty()) continue;
-      std::fprintf(stderr, "  stack:");
+      std::fprintf(out, "  stack:");
       const std::size_t first = frames.size() > 12 ? frames.size() - 12 : 0;
-      for (std::size_t i = frames.size(); i-- > first;) std::fprintf(stderr, "\n    %s", describe(names, frames[i]).c_str());
-      std::fprintf(stderr, "\n");
+      for (std::size_t i = frames.size(); i-- > first;) std::fprintf(out, "\n    %s", describe(names, frames[i]).c_str());
+      std::fprintf(out, "\n");
     }
-    std::fflush(stderr);
+    std::fflush(out);
   };
-  ppc::g_hooks.fatal = [](const char* message) { std::fprintf(stderr, "[opengp] fatal: %s\n", message); };
+  // Crashes, fatal errors and uncaught exceptions end in a crash report:
+  // user/crash-report.txt and the console, with the guest threads' stacks.
   static const auto status_on_crash = print_status;
-  os::install_crash_handler(machine.base(), [] { status_on_crash("crash"); });
-  app::start_hang_watch(machine, names, user_dir / "hang-report.txt");
+  const std::string header = std::string("OpenGP ") + OPENGP_VERSION + ", " + game.title + " (" + game.id + ")";
+  os::install_crash_handler(
+      machine.base(),
+      [](std::FILE* out) {
+        if (out == stderr) {
+          stop_link();
+          stop_outputs();
+        }
+        status_on_crash("crash", out);
+      },
+      os::utf8(user_dir / "crash-report.txt"), header);
+  ppc::g_hooks.fatal = [](const char* message) {
+    char reason[512];
+    std::snprintf(reason, sizeof(reason), "fatal: %s", message);
+    os::crash_now(reason);
+  };
+  std::set_terminate([] {
+    std::string reason = "uncaught exception";
+    try {
+      if (const std::exception_ptr e = std::current_exception()) std::rethrow_exception(e);
+    } catch (const std::exception& e) {
+      reason += std::string(": ") + e.what();
+    } catch (...) {
+    }
+    os::crash_now(reason.c_str());
+  });
+  app::start_hang_watch(machine, names, user_dir / "hang-report.txt", header);
   os::start_profiler_from_env();
 
   std::thread([timeout_s = o.timeout_s, status_s = o.status_s, print_status] {
@@ -571,25 +633,27 @@ int run(const Game& game, int argc, char** argv) {
   if (o.use_video) {
     main_thread_restarts = true;
     SDL_SetMainReady();
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
-      std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
-      return 1;
-    }
+    if (!SDL_Init(SDL_INIT_VIDEO)) return start_failed(std::string("SDL_Init failed: ") + SDL_GetError());
+    // Closing the console window quits as closing the game's window does:
+    // the settings are saved and the other cabinets told.
+    os::on_console_close([] {
+      SDL_Event quit_event{};
+      quit_event.type = SDL_EVENT_QUIT;
+      SDL_PushEvent(&quit_event);
+    });
     SDL_Window* window = nullptr;
     if (!o.headless) {
       const std::string title = std::string("OpenGP - ") + game.title;
       window = SDL_CreateWindow(title.c_str(), settings.window_width, settings.window_height,
                                 SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY |
                                     (settings.fullscreen ? SDL_WINDOW_FULLSCREEN : 0));
-      if (!window) {
-        std::fprintf(stderr, "could not create a window: %s\n", SDL_GetError());
-        return 1;
-      }
+      if (!window) return start_failed(std::string("Could not create a window: ") + SDL_GetError());
     }
     static video::Renderer renderer;
     if (!renderer.init(window, internal_scale(settings.internal_resolution, 0), &error)) {
-      std::fprintf(stderr, "renderer: %s\n", error.c_str());
-      return 1;
+      return start_failed("The game cannot draw: " + error +
+                          "\n\nOpenGP needs a graphics card and driver with Vulkan (Windows and Linux) or Metal "
+                          "(macOS). Updating the graphics driver often helps.");
     }
     std::printf("  video:  %s%s\n", renderer.driver(), o.headless ? ", headless" : "");
     std::fflush(stdout);
@@ -597,12 +661,16 @@ int run(const Game& game, int argc, char** argv) {
     // The player's controls, sound and menu (not when headless: scripted
     // input only, no sound).
     static input::HostInput host_input;
+    g_host_input = &host_input;
     bool use_input = false;
     static Menu menu;
     bool use_menu = false;
     if (!o.headless) {
       const std::string controls_path = os::utf8(user_dir / "controls.toml");
-      if (!host_input.load(controls_path, &error)) std::fprintf(stderr, "[input] %s\n", error.c_str());
+      error.clear();
+      host_input.load(controls_path, &error);
+      if (!error.empty()) os::notify_player(error);
+      if (!settings_problem.empty()) os::notify_player(settings_problem);
       use_input = host_input.init(&error);
       if (!use_input) std::fprintf(stderr, "[input] controllers unavailable: %s\n", error.c_str());
       std::printf("  input:  %s\n", controls_path.c_str());
@@ -633,19 +701,20 @@ int run(const Game& game, int argc, char** argv) {
     auto save = [&settings_path, &use_input] {
       if (use_input) {
         std::string why;
-        if (!host_input.save(&why)) std::fprintf(stderr, "[input] %s\n", why.c_str());
+        if (!host_input.save(&why)) os::notify_player("The controls could not be saved: " + why);
       }
       if (settings == start_settings) return;
       const Settings s = settings_to_save(file_settings, start_settings, settings);
       if (s == file_settings) return;
       std::string why;
       if (save_settings(settings_path, s, &why)) file_settings = s;
-      else std::fprintf(stderr, "[settings] %s\n", why.c_str());
+      else os::notify_player("The settings could not be saved: " + why);
     };
     auto quit = [&save, &print_status](const char* why) {
       save();
       print_status(why);
       stop_link();
+      stop_outputs();
       std::fflush(stdout);
       std::_Exit(0);
     };
@@ -699,11 +768,19 @@ int run(const Game& game, int argc, char** argv) {
         restart(o, user_dir, argv[0], game.test_menu(), machine.frame_offset() + machine.gpu().frames());
       };
     }
+    bool menu_was_open = false;
     for (;;) {
       if (g_reboot_requested) {
         save();
         std::lock_guard lock(g_reboot_mutex);
         restart(o, user_dir, argv[0], next_boot(*g_pending_reboot), machine.frame_offset() + machine.gpu().frames());
+      }
+      if (use_menu) {
+        for (const std::string& notice : os::take_player_notices()) menu.notify(notice);
+        // The settings are saved when the menu closes, whatever closed it
+        // (Esc, the Guide button, or its Resume button).
+        if (menu_was_open && !menu.is_open()) save();
+        menu_was_open = menu.is_open();
       }
       os::g_main_activity.set("handling the window's events");
       SDL_Event e;
@@ -733,11 +810,7 @@ int run(const Game& game, int argc, char** argv) {
         }
         // Choosing an input for a control in the menu takes the next one.
         if (use_input && host_input.capturing() && host_input.capture_event(e)) continue;
-        const bool was_open = menu.is_open();
-        if (use_menu && menu.handle_event(e)) {
-          if (was_open && !menu.is_open()) save();
-          continue;
-        }
+        if (use_menu && menu.handle_event(e)) continue;
         if (use_input) host_input.handle_event(e);
       }
       // Pausing: with the pause control, while the menu is open, or while the
@@ -861,6 +934,8 @@ int run(const Game& game, int argc, char** argv) {
         if (video::write_png(os::utf8(path), shot)) {
           std::fprintf(stderr, "[opengp] screenshot: %s\n", os::utf8(path).c_str());
           if (shot_requested && use_menu) menu.notify("Screenshot saved: " + os::utf8(path.filename()));
+        } else if (shot_requested) {
+          os::notify_player("The screenshot could not be saved to " + os::utf8(shot_dir));
         }
         shot_requested = false;
       }

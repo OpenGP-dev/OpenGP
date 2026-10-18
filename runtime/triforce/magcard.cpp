@@ -13,6 +13,7 @@
 #include <string_view>
 
 #include "os/atomic_file.h"
+#include "os/notice.h"
 
 namespace triforce {
 
@@ -79,7 +80,11 @@ void MagCardReader::write_card_file() {
     if (data.size() < (i + 1) * kTrackSize) data.resize((i + 1) * kTrackSize);
     std::copy(tracks_[i]->begin(), tracks_[i]->end(), data.begin() + static_cast<std::ptrdiff_t>(i * kTrackSize));
   }
-  if (!os::write_file_atomically(card_path_, data.data(), data.size())) card_message("writing the card file failed");
+  std::string error;
+  if (!os::write_file_atomically(card_path_, data.data(), data.size(), &error)) {
+    os::notify_player("Your Mario Card could not be saved (" + error +
+                      "). This game's progress is not on the card; check that the user folder can be written to.");
+  }
 }
 
 void MagCardReader::update() {

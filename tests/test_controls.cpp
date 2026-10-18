@@ -9,6 +9,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -105,4 +106,37 @@ TEST_CASE("changed bindings survive saving") {
   std::string first;
   std::getline(f, first);
   CHECK(first.rfind("# OpenGP controls", 0) == 0);
+}
+
+TEST_CASE("a bad entry costs only itself, and a broken file is kept aside") {
+  const fs::path path = temp_file("bad.toml");
+  // An input name it does not know, and nan, which TOML allows.
+  std::ofstream(path) << "[keyboard]\ngas = [\"Left Shift\", \"NoSuchKey\"]\n[gamepad]\ndeadzone = nan\n"
+                         "[force_feedback]\nstrength = nan\n";
+  HostInput in;
+  std::string error;
+  CHECK(in.load(path.string(), &error));
+  CHECK(error.find("NoSuchKey") != std::string::npos);
+  CHECK(in.bindings(Kind::Keyboard, control("gas")) == Names{"Left Shift"});
+  CHECK(in.deadzone(Kind::Gamepad) == doctest::Approx(0.12f));  // the default's, not nan
+  CHECK(in.force_feedback() == doctest::Approx(1.0f));
+  in.set_deadzone(Kind::Gamepad, std::numeric_limits<float>::quiet_NaN());
+  CHECK(in.deadzone(Kind::Gamepad) == in.deadzone(Kind::Gamepad));  // not NaN
+
+  // A key SDL has no name for is not bound: capture keeps waiting.
+  in.start_capture(Kind::Keyboard, control("item"));
+  SDL_Event e{};
+  e.type = SDL_EVENT_KEY_DOWN;
+  e.key.scancode = SDL_SCANCODE_UNKNOWN;
+  CHECK(in.capture_event(e));
+  CHECK(in.capturing());
+
+  // A file that cannot be parsed is kept as .bad, and the defaults are used.
+  const fs::path broken = temp_file("broken.toml");
+  fs::remove(fs::path(broken.string() + ".bad"));
+  std::ofstream(broken) << "[keyboard\ngas = ";
+  HostInput again;
+  CHECK_FALSE(again.load(broken.string(), &error));
+  CHECK(fs::exists(fs::path(broken.string() + ".bad")));
+  CHECK(again.bindings(Kind::Keyboard, control("gas")) == Names{"Up", "W"});
 }

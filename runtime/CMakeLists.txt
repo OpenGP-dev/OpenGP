@@ -50,6 +50,7 @@ add_library(opengp_machine STATIC
   os/atomic_file.cpp
   os/boot.cpp
   os/crash.cpp
+  os/notice.cpp
   os/printf.cpp
   os/profiler.cpp
   os/reboot.cpp

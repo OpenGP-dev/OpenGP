@@ -91,3 +91,11 @@ add_test(NAME link COMMAND test_link)
 add_executable(test_paths test_paths.cpp)
 target_link_libraries(test_paths PRIVATE opengp_settings gekkorecomp_lib doctest opengp_warnings)
 add_test(NAME paths COMMAND test_paths)
+
+# Crash reports: a probe crashes in several ways; each must leave a report.
+add_executable(crash_probe crash_probe.cpp)
+target_link_libraries(crash_probe PRIVATE opengp_machine opengp_warnings)
+add_test(NAME crash_reports
+         COMMAND ${CMAKE_COMMAND} -DPROBE=$<TARGET_FILE:crash_probe> -DDIR=${CMAKE_CURRENT_BINARY_DIR}/crash_reports
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/check_crash.cmake)
+set_tests_properties(crash_reports PROPERTIES ENVIRONMENT "OPENGP_NO_CRASH_DIALOG=1")

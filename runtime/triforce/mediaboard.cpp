@@ -5,6 +5,8 @@
 
 #include "triforce/mediaboard.h"
 
+#include "os/notice.h"
+
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
@@ -142,9 +144,12 @@ void MediaBoard::File::read(u32 offset, u8* dst, u32 length) {
 
 void MediaBoard::File::write(u32 offset, const u8* src, u32 length) {
   if (!f) return;
-  std::fseek(f, static_cast<long>(offset), SEEK_SET);
-  std::fwrite(src, 1, length, f);
-  std::fflush(f);
+  if ((std::fseek(f, static_cast<long>(offset), SEEK_SET) != 0 || std::fwrite(src, 1, length, f) != length ||
+       std::fflush(f) != 0) &&
+      !warned) {
+    warned = true;
+    os::notify_player("The game's records cannot be saved: check that the user folder can be written to.");
+  }
 }
 
 // ---- Board -------------------------------------------------------------------------------------

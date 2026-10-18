@@ -156,4 +156,22 @@ void use_utf8_console() {
 #endif
 }
 
+namespace {
+void (*g_console_close)() = nullptr;
+}
+
+void on_console_close(void (*callback)()) {
+  g_console_close = callback;
+#ifdef _WIN32
+  SetConsoleCtrlHandler(
+      [](DWORD type) -> BOOL {
+        if (type != CTRL_CLOSE_EVENT && type != CTRL_LOGOFF_EVENT && type != CTRL_SHUTDOWN_EVENT) return FALSE;
+        if (g_console_close) g_console_close();
+        Sleep(5000);  // the callback ends the process before this returns
+        return TRUE;
+      },
+      TRUE);
+#endif
+}
+
 }  // namespace os

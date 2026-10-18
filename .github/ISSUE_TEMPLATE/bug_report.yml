@@ -61,7 +61,7 @@ body:
     attributes:
       label: Reports
       description: |
-        If the game froze, attach `user/hang-report.txt`.
+        If the game froze, attach `user/hang-report.txt`; if it crashed, `user/crash-report.txt`.
         Paste the console output if there is any. Remove anything private (your user name in paths).
   - type: checkboxes
     id: no-game-data

@@ -17,6 +17,11 @@ class CardFolder {
   // Cards are `dir`/<name>.bin.
   explicit CardFolder(std::string dir);
 
+  // Whether `name` can be a card's file name on every system: no folder
+  // separators or other characters Windows refuses, no leading dot, no
+  // trailing dot or space, not a device name such as CON or COM1.
+  static bool valid_name(const std::string& name);
+
   const std::string& dir() const { return dir_; }
   std::string path(const std::string& name) const { return dir_ + "/" + name + ".bin"; }
   bool exists(const std::string& name) const;
@@ -26,7 +31,8 @@ class CardFolder {
   std::string unused_name() const;
 
   // The card the player holds ("" for none). It need not exist yet: a card
-  // the game dispenses is saved under the held name if that has no file.
+  // the game dispenses is saved under the held name if that has no file. A
+  // name that is not valid_name() holds no card.
   std::string held() const;
   void hold(std::string name);
 

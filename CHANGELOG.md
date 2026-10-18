@@ -45,6 +45,29 @@ From a profile of a whole playthrough of GP 2:
   other's output open.
 - The games find their function names (for hang and crash reports) after the package folder is
   moved.
+- Saves: Mario Cards and settings are written to the disk before they replace the old file, so a
+  crash or power cut can no longer leave a card empty, and a save that another program (OneDrive,
+  an antivirus, the search indexer) holds up for a moment is tried again. If a card, the game's
+  records, the settings, the controls or a screenshot still cannot be saved, the game says so on
+  screen instead of only on the console.
+- One value OpenGP does not understand in `settings.toml` or `controls.toml` no longer throws away
+  the whole file (and your link and card settings with it); a file it cannot read at all is kept as
+  `settings.toml.bad` or `controls.toml.bad` instead of being overwritten. A key with no name can
+  no longer be bound (it broke `controls.toml`), and `nan` no longer gets past the dead zone and
+  force feedback limits. A missing `internal_resolution` no longer resets it.
+- Crashes write `user/crash-report.txt` (and on Windows show where it is), also for aborts, fatal
+  errors, uncaught exceptions and stack overflows, which used to vanish without a word. Hang
+  reports say which version, game and time they are from, a second hang no longer overwrites the
+  first, a hang before the first frame is reported too, and sleeping or hibernating the computer
+  is no longer taken for a hang.
+- If a game cannot start (no disc image, no Vulkan or Metal driver), it says why in a message too,
+  not only on a console window that closes with it.
+- A second copy of OpenGP can no longer use the same user folder as one that is running: it says
+  so and stops, instead of the two overwriting each other's saves.
+- The menu's Resume button now saves the settings, as Esc does. Closing the console window saves
+  and tells linked cabinets, as closing the game's window does. A wheel's forces and a gamepad's
+  rumble stop when the game quits or restarts.
+- A card name from `settings.toml` that cannot be a file name (`..`, `/`, `CON`...) holds no card.
 - Linked cabinets on different computers: each cabinet's messages now go out as soon as the game
   sends them. They used to wait for the other computer to acknowledge the one before, which it can
   delay by up to 200 ms, so they arrived in bursts and the other players' karts lagged behind

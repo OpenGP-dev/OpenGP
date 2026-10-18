@@ -4,6 +4,7 @@
 // EXI_DeviceBaseboard.cpp (Copyright Dolphin Emulator Project, GPL-2.0-or-later).
 
 #include "hw/exi.h"
+#include "os/notice.h"
 #include "os/utf8.h"
 
 #include <algorithm>
@@ -195,10 +196,18 @@ void IplDevice::transfer_byte(u8& data) {
 
 // ---- Triforce baseboard ----------------------------------------------------------------------
 
-BaseboardDevice::BaseboardDevice(std::string backup_path) {
-  backup_ = os::fopen_utf8(backup_path, "rb+");
-  if (!backup_) backup_ = os::fopen_utf8(backup_path, "wb+");
-  if (!backup_) std::fprintf(stderr, "[exi] cannot open baseboard backup file %s\n", backup_path.c_str());
+BaseboardDevice::BaseboardDevice(std::string backup_path) : backup_path_(std::move(backup_path)) {
+  backup_ = os::fopen_utf8(backup_path_, "rb+");
+  if (!backup_) backup_ = os::fopen_utf8(backup_path_, "wb+");
+  if (!backup_) backup_failed();
+}
+
+// The game's settings and records are not being kept: say so once.
+void BaseboardDevice::backup_failed() {
+  if (backup_warned_) return;
+  backup_warned_ = true;
+  os::notify_player("The game's settings and records cannot be saved to " + backup_path_ +
+                    ": check that the user folder can be written to.");
 }
 
 BaseboardDevice::~BaseboardDevice() {
@@ -217,9 +226,9 @@ bool BaseboardDevice::interrupt() {
 
 void BaseboardDevice::dma_write(u8* src, u32 size) {
   if (!backup_) return;
-  std::fseek(backup_, static_cast<long>(backup_offset_), SEEK_SET);
-  std::fwrite(src, 1, size, backup_);
-  std::fflush(backup_);
+  if (std::fseek(backup_, static_cast<long>(backup_offset_), SEEK_SET) != 0 ||
+      std::fwrite(src, 1, size, backup_) != size || std::fflush(backup_) != 0)
+    backup_failed();
 }
 
 void BaseboardDevice::dma_read(u8* dst, u32 size) {
@@ -243,11 +252,9 @@ void BaseboardDevice::transfer_byte(u8& byte) {
         byte = 0x01;
         break;
       case BB_BACKUP_WRITE:
-        if (backup_) {
-          std::fseek(backup_, static_cast<long>(backup_offset_), SEEK_SET);
-          std::fwrite(&command_[1], 1, 1, backup_);
-          std::fflush(backup_);
-        }
+        if (backup_ && (std::fseek(backup_, static_cast<long>(backup_offset_), SEEK_SET) != 0 ||
+                        std::fwrite(&command_[1], 1, 1, backup_) != 1 || std::fflush(backup_) != 0))
+          backup_failed();
         byte = 0x01;
         break;
       case BB_BACKUP_READ:

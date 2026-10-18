@@ -94,6 +94,10 @@ class HostInput {
 
   // Writes the bindings back to the file load() read, if they changed.
   bool save(std::string* error);
+
+  // Stops every force and rumble at once: for a process about to end without
+  // destructors (a wheel would otherwise keep its last force).
+  void stop_outputs();
   const std::string& path() const;
 
  private:

@@ -2,8 +2,10 @@
 
 #include "app/paths.h"
 
+#include <chrono>
 #include <fstream>
 #include <sstream>
+#include <thread>
 #include <vector>
 
 #include "os/atomic_file.h"
@@ -15,7 +17,12 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
-#elif defined(__APPLE__)
+#else
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
+#endif
+#if defined(__APPLE__)
 #include <mach-o/dyld.h>
 #endif
 
@@ -59,6 +66,28 @@ fs::path executable_dir() {
   const fs::path p = fs::read_symlink("/proc/self/exe", ec);
   return ec ? fs::current_path() : p.parent_path();
 #endif
+}
+
+bool lock_user_dir(const fs::path& user_dir, bool wait) {
+  std::error_code ec;
+  fs::create_directories(user_dir, ec);
+  const fs::path path = user_dir / ".lock";
+  for (int attempt = 0;; ++attempt) {
+#ifdef _WIN32
+    // Not shared: a second process cannot open it while this one runs.
+    const HANDLE h = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
+                                 FILE_ATTRIBUTE_HIDDEN, nullptr);
+    if (h != INVALID_HANDLE_VALUE) return true;  // kept open until the process ends
+    if (GetLastError() != ERROR_SHARING_VIOLATION) return true;  // cannot tell: carry on
+#else
+    const int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+    if (fd < 0) return true;  // cannot tell: carry on
+    if (::flock(fd, LOCK_EX | LOCK_NB) == 0) return true;  // kept open until the process ends
+    ::close(fd);
+#endif
+    if (!wait || attempt >= 50) return false;
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
 }
 
 fs::path home_dir() {

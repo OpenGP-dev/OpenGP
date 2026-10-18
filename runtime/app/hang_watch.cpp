@@ -2,7 +2,9 @@
 
 #include "app/hang_watch.h"
 
+#include <algorithm>
 #include <chrono>
+#include <ctime>
 #include <cstdio>
 #include <fstream>
 #include <thread>
@@ -12,6 +14,7 @@
 #include "machine.h"
 #include "os/activity.h"
 #include "os/utf8.h"
+#include "triforce/network.h"
 
 namespace app {
 
@@ -117,33 +120,45 @@ std::string describe_threads(opengp::Machine& machine, const FunctionNames& name
 }
 
 void start_hang_watch(opengp::Machine& machine, const FunctionNames& names, std::filesystem::path path,
-                      int seconds) {
-  std::thread([&machine, &names, path = std::move(path), seconds] {
-    using clock = std::chrono::steady_clock;
+                      std::string header, int seconds) {
+  std::thread([&machine, &names, path = std::move(path), header = std::move(header), seconds] {
     u64 frames = 0;
-    auto since = clock::now();
+    int stalled = 0;  // one-second checks in a row without a new frame
     bool reported = false;
+    int reports = 0;
     for (;;) {
       std::this_thread::sleep_for(std::chrono::seconds(1));
       const u64 now_frames = machine.gpu().frames();
       if (now_frames != frames || machine.hardware().paused()) {
         frames = now_frames;
-        since = clock::now();
+        stalled = 0;
         reported = false;
         continue;
       }
-      // Not before the first frame (start-up), and once per hang.
-      if (frames == 0 || reported || clock::now() - since < std::chrono::seconds(seconds)) continue;
+      // Counted in checks, not clock time: while the computer sleeps or
+      // hibernates no check runs, though the clock goes on. Start-up gets
+      // longer, and each hang is reported once.
+      if (reported || ++stalled < (frames == 0 ? std::max(seconds, 30) : seconds)) continue;
       reported = true;
+      const std::time_t now = std::time(nullptr);
+      std::tm t{};
+#ifdef _WIN32
+      localtime_s(&t, &now);
+#else
+      localtime_r(&now, &t);
+#endif
+      char when[64];
+      std::strftime(when, sizeof(when), "%Y-%m-%d %H:%M:%S", &t);
       // Two looks a second apart: which counters still move.
-      std::string report = format("OpenGP: no frame for %d seconds (frame %llu)\n\n", seconds,
+      std::string report = format("%s, %s%s\nNo frame for %d seconds (frame %llu)\n\n", header.c_str(), when,
+                                  machine.network().linked() ? ", linked to other cabinets" : "", stalled,
                                   static_cast<unsigned long long>(frames));
       report += describe_threads(machine, names);
       std::this_thread::sleep_for(std::chrono::seconds(1));
       report += "\nA second later:\n" + describe_threads(machine, names);
       std::fprintf(stderr, "\n[opengp] %s\n", report.c_str());
-      std::ofstream file(path, std::ios::binary | std::ios::trunc);
-      file << report;
+      std::ofstream file(path, std::ios::binary | (reports++ == 0 ? std::ios::trunc : std::ios::app));
+      file << (reports > 1 ? "\n\n" : "") << report;
       if (file) std::fprintf(stderr, "[opengp] hang report written to %s\n", os::utf8(path).c_str());
       std::fflush(stderr);
     }

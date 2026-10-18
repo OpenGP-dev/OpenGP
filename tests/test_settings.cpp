@@ -76,12 +76,27 @@ TEST_CASE("settings: partial files, clamping and errors") {
   REQUIRE_MESSAGE(app::load_settings(path.string(), &s, &error), error);
   CHECK(s.cabinet == 4);
   CHECK(s.link_port == 1024);
+  // What the file leaves out keeps the values the first file gave.
+  CHECK(s.internal_resolution == 8);
+  CHECK(s.aspect == app::AspectRatio::Wide16x9);
+  CHECK(s.volume == 100);
 
-  write(path, "[video]\naspect_ratio = \"5:4\"\n");
-  CHECK_FALSE(app::load_settings(path.string(), &s, &error));
+  // A value it does not know: a warning, and the rest of the file counts.
+  write(path, "[video]\naspect_ratio = \"5:4\"\nvsync = false\n");
+  REQUIRE(app::load_settings(path.string(), &s, &error));
   CHECK(error.find("5:4") != std::string::npos);
+  CHECK(s.aspect == app::AspectRatio::Wide16x9);
+  CHECK_FALSE(s.vsync);
+  // A file that cannot be parsed at all.
   write(path, "[video\n");
   CHECK_FALSE(app::load_settings(path.string(), &s, &error));
+  CHECK_FALSE(error.empty());
+
+  // The window size's limits.
+  write(path, "[video]\nwindow_width = 10\nwindow_height = 99999\n");
+  REQUIRE(app::load_settings(path.string(), &s, &error));
+  CHECK(s.window_width == 320);
+  CHECK(s.window_height == 16384);
 }
 
 TEST_CASE("settings: widescreen sides") {
@@ -134,6 +149,17 @@ TEST_CASE("card folder") {
   cards.hold("Luigi");
   CHECK(cards.held() == "Luigi");
   CHECK_FALSE(cards.inserted());
+
+  // A name from settings.toml that is not a file name holds no card.
+  for (const char* bad : {"../Luigi", "a/b", "a\\b", "C:x", "CON", "com1", "nul.txt", ".hidden", "trailing.",
+                          "trailing ", "a?b", "a\"b", "a*b"}) {
+    CHECK_FALSE_MESSAGE(triforce::CardFolder::valid_name(bad), bad);
+    cards.hold(bad);
+    CHECK(cards.held().empty());
+    CHECK_FALSE(cards.exists(bad));
+  }
+  for (const char* good : {"Card 1", "Mario's card", "Luigi", "COM10", "Console"})
+    CHECK_MESSAGE(triforce::CardFolder::valid_name(good), good);
 }
 
 TEST_CASE("reboot files") {

@@ -29,4 +29,9 @@ std::string sjis_to_utf8(const std::string& text);
 // the system's code page); nothing elsewhere.
 void use_utf8_console();
 
+// Calls `callback` (on a thread of its own) when the console window is
+// closed, or the user logs off or Windows shuts down, which end the process
+// a few seconds later: time to save. Nothing elsewhere.
+void on_console_close(void (*callback)());
+
 }  // namespace os

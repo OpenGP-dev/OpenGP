@@ -57,7 +57,11 @@ the pause control does nothing, and the menu opens over the running game.
 
 The menu's settings are saved in `user/settings.toml` when the menu closes and when the game quits,
 along with the window's size. The file can be edited by hand; command-line options (see
-[building.md](building.md#running)) override it for one run without changing it.
+[building.md](building.md#running)) override it for one run without changing it. A value OpenGP
+does not understand keeps its setting, and the game says which on screen; a file it cannot read at
+all is kept as `settings.toml.bad`, for you to fix, and the defaults are used. If a setting, a
+Mario Card or a screenshot cannot be saved (a folder you cannot write to, a full disk), the game
+says so on screen: keep OpenGP in a folder you can write to, not in Program Files.
 
 ### Widescreen
 
@@ -131,8 +135,8 @@ keeps the number set in the game's test menu, which is 1 unless changed there. T
 when the game starts, so a change takes effect when it restarts.
 
 - **On one computer**, give each copy its own user folder as well as its own number, since two
-  copies sharing one would overwrite each other's settings and saves:
-  `opengp-mkgp2 --user-dir user2 --cabinet 2`. To drive them all at once from one keyboard or
+  copies sharing one would overwrite each other's settings and saves (a second copy started on a
+  folder already in use says so and stops): `opengp-mkgp2 --user-dir user2 --cabinet 2`. To drive them all at once from one keyboard or
   gamepad, turn on **Use the controls in the background too** (Controls tab) in each.
 - **On a local network**, turn on **Link over the local network** on each computer
   (`[link] lan = true`, or `--lan`). The cabinets find each other by broadcasting on the network.
@@ -196,7 +200,8 @@ to add it; click an input to remove it. Changes apply at once and are saved when
 
 They are kept in `user/controls.toml`, which is written with the defaults the first time the game
 runs (with a window). It can also be edited by hand (then restart); delete it to get the defaults
-back. Each control lists the inputs that drive it:
+back. An input name OpenGP does not know is left out (the game says which); a file it cannot read
+at all is kept as `controls.toml.bad` and the default controls are used. Each control lists the inputs that drive it:
 
 ```toml
 [keyboard]
@@ -269,10 +274,15 @@ service button) moves to the next item and **F2** chooses it; **EXIT** restarts 
 Holding **F1** and pressing **F2** during the game opens the I/O test instead (wheel and pedal
 calibration and a switch test); hold F1 and press F2 again to leave it.
 
-## If the game freezes
+## If the game freezes or crashes
 
 If the game's picture stops for 10 seconds while it is not paused, OpenGP writes where the game's
-threads are to `user/hang-report.txt` (and the console). Please attach that file to a
+threads are to `user/hang-report.txt` (and the console), with the version, the game and the time.
+If it crashes, it writes what went wrong to `user/crash-report.txt` and says so; on Windows a
+message names the file. Please attach that file to a
 [bug report](https://github.com/OpenGP-dev/OpenGP/issues/new/choose): it shows what the game was
-waiting for. Never attach files from the games.
+doing. Never attach files from the games.
+
+If the game cannot start (no disc image, no graphics driver with Vulkan or Metal), it says why on
+the console and, when started for a window, in a message.
 
