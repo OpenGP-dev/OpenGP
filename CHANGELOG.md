@@ -57,6 +57,16 @@ From a profile of a whole playthrough of GP 2:
   what went wrong. It remembers an image given to it by its full path, so the game finds it
   however it is started, and checks `--jobs`. Compiles running side by side no longer hold each
   other's output open.
+- The installer says why it skips a file in the `ISO` folder: a compressed image to convert with
+  Dolphin, a file that isn't a disc image, or another game or region (naming the IDs it needs).
+  Dropping a moved image on it records the new place even when the game is already built.
+- The installer says what to do when it is run from inside the zip or from a folder it cannot write
+  to, such as Program Files.
+- On Linux the installer skips compilers older than GCC 12 or Clang 16 and also looks for
+  versioned ones (`g++-12`, `clang++-16` and newer), so Ubuntu 22.04 works with `g++-12`
+  installed.
+- A second cabinet started with `--user-dir` finds the image the installer recorded. When a
+  recorded image is gone, the game says where it looked.
 - The games find their function names (for hang and crash reports) after the package folder is
   moved.
 - Saves: Mario Cards and settings are written to the disk before they replace the old file, so a
@@ -121,6 +131,15 @@ From a profile of a whole playthrough of GP 2:
   game starts, and on the test menu's camera page. It used to stay on, light and all, for as long
   as the game ran, taking about 5% of a CPU core for pictures nothing used.
 
+### Documents
+
+- [docs/packaging.md](docs/packaging.md) lists what each system needs (Windows 10 version 1803 or
+  later, a Vulkan driver, the Linux compilers) and explains how to update without losing saves,
+  how to get past Windows SmartScreen, and the macOS 15 "Open Anyway" step.
+- The installer package now carries all the documents, so their links work, and
+  [docs/game-files.md](docs/game-files.md) starts with preparing an image, for players and source
+  builds alike.
+
 ### Licences
 
 - The installer packages now carry the licences of the third-party code in them:
@@ -141,6 +160,8 @@ From a profile of a whole playthrough of GP 2:
   packages (with a `SHA256SUMS` file) to a draft release.
 - `.gitattributes` keeps line endings LF on every platform, and `.gitignore` covers more build,
   editor and dump files.
+- The games' hand-written sources are listed once (`cmake/game_sources.cmake`), for the source
+  build and the installer alike, and the package check fails if one is missing.
 - `tools/devshell.ps1` finds the Visual Studio installation that has Clang when a newer one
   without it is also installed, checks for Clang 16 or later, and leaves the PowerShell session's
   settings as they were.

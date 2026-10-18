@@ -4,10 +4,24 @@ OpenGP releases are installer packages. A package has everything except the game
 builds each game on the player's computer from the player's own disc image, so no code or data
 from the games is ever distributed. [game-files.md](game-files.md) explains why that matters.
 
+## Requirements
+
+- **Windows**: Windows 10 version 1803 or later, 64-bit, with a graphics driver that supports
+  Vulkan. Most GPUs have one; install your GPU maker's current driver if the game says it found
+  none.
+- **Linux**: x86-64, a Vulkan driver (Mesa's, or the GPU maker's), and GCC 12 or later or Clang 16
+  or later to build the games.
+- **macOS**: macOS 13 or later on Apple Silicon, with the Xcode Command Line Tools.
+
+The package's folder must be one you can write to: the games, their compiler and your saves all go
+in it. Your Documents folder or your desktop is fine; Program Files is not.
+
 ## Using it
 
 1. Unpack `OpenGP-<version>-windows-x64.zip`, `OpenGP-<version>-linux-x64.tar.gz` or
-   `OpenGP-<version>-macos-arm64.tar.gz` anywhere.
+   `OpenGP-<version>-macos-arm64.tar.gz` into a folder you can write to. Unpack the whole archive:
+   on Windows, right-click the zip and choose **Extract All**. OpenGP cannot run from inside the
+   zip.
 2. Put your images in its `ISO` folder. Images elsewhere work too if you give their paths to the
    installer.
 3. Run `OpenGP`. On Windows you can double-click `OpenGP.exe` or drop an image on it.
@@ -24,7 +38,19 @@ Building a game takes one to three minutes, once. You can install either game on
 installer finds no image for a game, it skips that game and builds the other.
 
 When you run the installer again, it rebuilds only the games that an earlier version of the
-package built. After updating the package, run it again. `--force` rebuilds every game.
+package built. `--force` rebuilds every game. If you move an image, drop it on the installer (or
+give it its new path) and the game uses it from then on.
+
+### Updating
+
+Your saves, Mario Cards and settings are in the package's `user/` folder. To update OpenGP:
+
+1. Unpack the new package over the old one, replacing its files. Or unpack it into a new folder and
+   move `user/` into it from the old one; on Windows, move `toolchain/` too, so the compiler
+   isn't downloaded again if the new version uses the same one.
+2. Run `OpenGP` once. It rebuilds the games for the new version, from the images it recorded.
+
+Every linked cabinet must run the same version of OpenGP.
 
 ```
 OpenGP [IMAGE...] [--force] [--jobs N] [--cxx COMPILER] [--keep-build]
@@ -45,21 +71,36 @@ a build of Clang for Windows that anyone may redistribute. The download is about
 installer checks its SHA-256 and unpacks the x86-64 part, about 480 MB, into `toolchain/`. It uses
 the `curl` and `tar` that come with Windows 10 and later.
 
-**Linux.** The installer uses the system's C++ compiler, `c++`, `g++` or `clang++`. It needs GCC 12
-or later, or Clang 16 or later. On Debian or Ubuntu, `sudo apt install g++` installs one.
+**Linux.** The installer uses the system's C++ compiler: the first of `c++`, `g++`, `clang++` and
+the versioned names (`g++-12` to `g++-15`, `clang++-16` to `clang++-20`) that is GCC 12 or later or
+Clang 16 or later. It skips older ones. On Ubuntu 22.04, whose `g++` is GCC 11,
+`sudo apt install g++-12` installs one; on newer Debian and Ubuntu, `sudo apt install g++` does.
 
 **macOS.** The installer uses Apple's Clang from the Xcode Command Line Tools, which
 `xcode-select --install` installs. The package needs Apple Silicon and macOS 13 or later.
 
-CI builds the runtime in each package with the same compiler and flags that the installer uses, so
-the game and the runtime link together.
+CI builds the runtime in each package with the flags the installer uses. On Windows and macOS it
+uses the same compiler too. On Linux it uses GCC 12, the oldest compiler the installer accepts, so
+the runtime links with any compiler the installer finds.
+
+### Opening the package on Windows the first time
+
+The package isn't signed, because signing costs money every year. Windows may warn that it
+"protected your PC" the first time you run `OpenGP.exe`. Choose **More info**, then **Run anyway**.
+To avoid the warning, right-click the zip before unpacking it, choose **Properties**, tick
+**Unblock** and press OK.
 
 ### Opening the package on macOS the first time
 
 Apple has not signed the package, because signing needs a paid Apple developer account. macOS
-refuses to open the downloaded `OpenGP` until you allow it once. Right-click it in Finder and
-choose **Open**, or run `xattr -dr com.apple.quarantine <package folder>` in Terminal. The games
-the installer builds on your Mac open normally.
+refuses to open the downloaded `OpenGP` until you allow it once:
+
+- **macOS 15 and later**: open `OpenGP` once and close the warning. Then, in **System Settings >
+  Privacy & Security**, choose **Open Anyway** next to the message about `OpenGP`, and confirm.
+- **macOS 13 and 14**: right-click `OpenGP` in Finder and choose **Open**.
+- **Either**: run `xattr -dr com.apple.quarantine <package folder>` in Terminal before opening it.
+
+The games the installer builds on your Mac open normally.
 
 ## What is in it
 
@@ -68,7 +109,7 @@ OpenGP[.exe]            the installer
 sdk/package.toml        the version, the pinned compiler, compile and link settings
 sdk/include/            the runtime's headers
 sdk/lib/                the runtime as static libraries, with SDL3 and Dear ImGui
-sdk/games/<game>/       game.toml, recomp.toml, config/symbols.txt, patches.cpp
+sdk/games/<game>/       game.toml, recomp.toml, config/symbols.txt, patches.cpp, status.cpp
 sdk/games/common/       the launcher's main() and the code the games share
 ISO/                    for your images
 licenses/               the licences of the third-party code in the package
@@ -120,5 +161,7 @@ Some settings must change together:
   Windows installer downloads that same release. Change its version and SHA-256 together.
 - `cxx_flags` in `cmake/package.cmake` must match the flags the generated code needs, which
   `opengp_guest_flags` in `CMakeLists.txt` sets.
+- The games' hand-written sources are listed once, in `cmake/game_sources.cmake`. The source build
+  compiles that list, and the package writes it into `package.toml` for the installer.
 - The link libraries in `cmake/package.cmake` must cover what the runtime and SDL3 need. The
   probe fails if one is missing.

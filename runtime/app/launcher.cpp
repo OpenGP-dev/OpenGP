@@ -300,9 +300,17 @@ int start_failed(const std::string& message) {
 // the first in ISO/ or private/ with its ID, else one holding its main.dol
 // under another ID (a placeholder header).
 std::string find_image(const Game& game, const fs::path& user_dir) {
-  if (std::string image = remembered_image(user_dir, game.id); !image.empty()) {
-    std::error_code ec;
-    if (fs::is_regular_file(os::utf8_path(image), ec)) return image;
+  // The installer records it in the package's user/images.toml; another user
+  // folder (--user-dir, for a second cabinet) may have its own.
+  const fs::path dirs[] = {user_dir, home_dir() / "user"};
+  for (std::size_t i = 0; i < 2; ++i) {
+    if (i == 1 && dirs[1].lexically_normal() == dirs[0].lexically_normal()) break;  // the same folder
+    if (std::string image = remembered_image(dirs[i], game.id); !image.empty()) {
+      std::error_code ec;
+      if (fs::is_regular_file(os::utf8_path(image), ec)) return image;
+      std::fprintf(stderr, "[opengp] %s's image is no longer at %s: looking in ISO/ and private/\n", game.title,
+                   image.c_str());
+    }
   }
   std::vector<std::string> others;
   for (const char* folder : {"ISO", "private"}) {

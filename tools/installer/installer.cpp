@@ -60,6 +60,20 @@ bool parse_file(const fs::path& path, toml::table* table, std::string* error) {
 
 bool works(const std::string& cxx) { return run_process({cxx, "--version"}).exit_code == 0; }
 
+// Whether `cxx` is GCC 12 or Clang 16 or later (Apple's Clang counts by its
+// own numbers and is not checked): compiles a probe.
+bool new_enough(const Package& package, const std::string& cxx) {
+  const fs::path probe = package.home / "build" / "compiler-probe.cpp";
+  const std::string text =
+      "#if !defined(__apple_build_version__) && defined(__clang__) && __clang_major__ < 16\n#error Clang 16\n"
+      "#elif !defined(__clang__) && defined(__GNUC__) && __GNUC__ < 12\n#error GCC 12\n#endif\n";
+  if (!os::write_file_atomically(utf8(probe), text.data(), text.size())) return true;  // cannot tell
+  const bool ok = run_process({cxx, "-std=c++20", "-fsyntax-only", utf8(probe)}).exit_code == 0;
+  std::error_code ec;
+  fs::remove(probe, ec);
+  return ok;
+}
+
 #ifdef _WIN32
 // The copies of curl and tar that come with Windows 10 and later (tar is
 // bsdtar, which reads zip files).
@@ -94,6 +108,12 @@ bool load_package(const fs::path& home, Package* package, std::string* error) {
   p.system_libs = strings(build["system_libs"].node());
   p.executable_suffix = build["executable_suffix"].value_or(std::string());
   p.link_group = build["link_group"].value_or(true);
+  p.common_sources = strings(build["common_sources"].node());
+  p.game_sources = strings(build["game_sources"].node());
+  if (p.common_sources.empty() || p.game_sources.empty()) {
+    if (error) *error = utf8(p.sdk / "package.toml") + ": no game sources listed";
+    return false;
+  }
   for (const std::string& dir : strings(t["games"].node())) {
     GameInfo g;
     g.dir = p.sdk / "games" / dir;
@@ -186,11 +206,15 @@ bool find_compiler(const Package& package, const std::string& requested, const R
     *cxx = utf8(compiler);
     return true;
   }
+  std::string too_old;
   for (const std::string& c : package.cxx_candidates) {
-    if (works(c)) {
-      *cxx = c;
-      return true;
+    if (!works(c)) continue;
+    if (!new_enough(package, c)) {
+      if (too_old.empty()) too_old = c;
+      continue;
     }
+    *cxx = c;
+    return true;
   }
   if (error) {
     *error = "no C++ compiler found (tried";
@@ -198,7 +222,9 @@ bool find_compiler(const Package& package, const std::string& requested, const R
 #ifdef __APPLE__
     *error += "). Install Apple's command line tools: xcode-select --install";
 #else
-    *error += "). Install GCC 12 or later, or Clang 16 or later (e.g. sudo apt install g++).";
+    *error += "). Install GCC 12 or later, or Clang 16 or later: on Ubuntu 22.04, sudo apt install g++-12; on "
+              "newer systems, sudo apt install g++.";
+    if (!too_old.empty()) *error += " (" + too_old + " is too old.)";
 #endif
   }
   return false;
@@ -216,6 +242,16 @@ const GameInfo* identify_image(const Package& package, const std::string& image)
   return nullptr;
 }
 
+// Why an image is not one of the package's games, for the player.
+std::string why_not_supported(const Package& package, const std::string& image) {
+  disc::Image img;
+  if (!img.open(image, nullptr)) return "not a GameCube or Triforce disc image; skipped";
+  std::string supported;
+  for (const GameInfo& g : package.games) supported += (supported.empty() ? "" : " or ") + g.id;
+  return "its game is " + img.game_id() + ", not a supported release (OpenGP needs " + supported +
+         ", the USA releases); skipped";
+}
+
 std::vector<std::pair<const GameInfo*, std::string>> find_images(const Package& package,
                                                                    const std::vector<std::string>& given,
                                                                    const Reporter& report) {
@@ -230,7 +266,7 @@ std::vector<std::pair<const GameInfo*, std::string>> find_images(const Package& 
       const fs::path absolute = fs::absolute(os::utf8_path(name), ec);
       const std::string image = ec ? name : utf8(absolute.lexically_normal());
       const GameInfo* g = identify_image(package, image);
-      if (!g) report.line(image + ": not a disc image of a game OpenGP supports; skipped");
+      if (!g) report.line(image + ": " + why_not_supported(package, image));
       else if (!have(g)) found.emplace_back(g, image);
     }
     return found;
@@ -251,9 +287,18 @@ std::vector<std::pair<const GameInfo*, std::string>> find_images(const Package& 
          !ec && it != end; it.increment(ec)) {
       std::string ext = utf8(it->path().extension());
       std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
-      if (ext != ".iso" && ext != ".gcm") continue;
       const std::string image = utf8(it->path());
-      if (const GameInfo* g = identify_image(package, image); g && !have(g)) found.emplace_back(g, image);
+      const std::string name = utf8(it->path().filename());
+      if (ext == ".rvz" || ext == ".gcz" || ext == ".wia" || ext == ".ciso" || ext == ".wbfs") {
+        report.line(name + ": a compressed image; convert it to .iso with Dolphin (see ISO/README.txt)");
+        continue;
+      }
+      if (ext != ".iso" && ext != ".gcm") continue;
+      if (const GameInfo* g = identify_image(package, image)) {
+        if (!have(g)) found.emplace_back(g, image);
+      } else {
+        report.line(name + ": " + why_not_supported(package, image));
+      }
     }
   }
   // The package's order: the main game first.
@@ -317,9 +362,9 @@ bool install_game(const Package& package, const GameInfo& game, const std::strin
   // 3. Compile: the hand-written sources first (quick, so problems show at once),
   // then the generated ones.
   const fs::path common = package.sdk / "games" / "common";
-  std::vector<fs::path> sources = {common / "main.cpp",     common / "arcade.cpp",     common / "cabinet.cpp",
-                                   common / "camera_use.cpp", common / "game_log.cpp", common / "sdk_hle.cpp",
-                                   game.dir / "patches.cpp",  game.dir / "status.cpp"};
+  std::vector<fs::path> sources;
+  for (const std::string& s : package.common_sources) sources.push_back(common / s);
+  for (const std::string& s : package.game_sources) sources.push_back(game.dir / s);
   std::vector<fs::path> generated;
   for (const auto& entry : fs::directory_iterator(work / "generated"))
     if (entry.path().extension() == ".cpp") generated.push_back(entry.path());

@@ -43,6 +43,8 @@ struct Package {
   std::vector<std::string> cxx_candidates;
   std::vector<std::string> cxx_flags, link_flags, libs, system_libs;
   std::string executable_suffix;  // ".exe" on Windows
+  // The games' hand-written sources: in sdk/games/common/, and in each game's folder.
+  std::vector<std::string> common_sources, game_sources;
   bool link_group = true;         // wrap the libraries in --start-group/--end-group (not Apple's linker)
   std::vector<GameInfo> games;    // the main game (GP 2) first
 };

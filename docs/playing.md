@@ -1,5 +1,9 @@
 # Playing
 
+OpenGP needs Windows 10 (version 1803 or later, 64-bit), Linux or macOS 13 on Apple Silicon, and a
+graphics driver with Vulkan (on macOS, Metal). [packaging.md](packaging.md#requirements) has the
+details.
+
 ## Installing
 
 - **From the installer package**: unpack it, put your disc images in its `ISO` folder and run
@@ -17,8 +21,8 @@ choose and step on the gas pedal to decide. Turn on free play in the menu (Esc),
 launcher with `--free-play`, to play without coins ("Step on gas pedal to start").
 
 ```sh
-build/<preset>/games/mkgp1/opengp-mkgp1 --free-play
-build/<preset>/games/mkgp2/opengp-mkgp2 --free-play
+opengp-mkgp2 --free-play                                # in the installer package's folder
+build/<preset>/games/mkgp2/opengp-mkgp2 --free-play     # in a source build
 ```
 
 The first time, the game asks "Do you have Mario Card?". Choose **No**, then **Yes** to make one:

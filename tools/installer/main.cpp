@@ -13,11 +13,13 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <string>
 #include <vector>
 
 #include "app/paths.h"
 #include "installer.h"
+#include "os/atomic_file.h"
 #include "os/utf8.h"
 
 #ifdef _WIN32
@@ -80,10 +82,27 @@ int run(const std::vector<std::string>& args) {
   std::string error;
   installer::Package package;
   if (!installer::load_package(app::executable_dir(), &package, &error)) {
-    std::fprintf(stderr, "%s\n(OpenGP must be run from its package folder.)\n", error.c_str());
+    std::fprintf(stderr,
+                 "%s\n\nOpenGP must be run from its unpacked package folder: unpack the whole OpenGP archive first "
+                 "(on Windows, right-click the zip and choose Extract All), then run OpenGP from the folder it makes.\n",
+                 error.c_str());
     return 1;
   }
   std::printf("OpenGP %s installer\n\n", package.version.c_str());
+  // Everything it makes goes in the package folder: say so at once if it
+  // cannot write there.
+  {
+    const std::string test = os::utf8(package.home / "build" / "write-test");
+    if (!os::write_file_atomically(test, "ok", 2, &error)) {
+      std::fprintf(stderr,
+                   "OpenGP cannot write to its folder, %s (%s).\nMove the OpenGP folder somewhere you can write to, "
+                   "such as your Documents folder (not Program Files), and run it again.\n",
+                   os::utf8(package.home).c_str(), error.c_str());
+      return 1;
+    }
+    std::error_code ec;
+    std::filesystem::remove(os::utf8_path(test), ec);
+  }
 
   installer::Reporter report;
   report.line = [](const std::string& s) {
@@ -102,7 +121,7 @@ int run(const std::vector<std::string>& args) {
     if (!have) std::printf("%s: no disc image found; skipped.\n", g.title.c_str());
   }
   if (found.empty()) {
-    std::printf("\nPut your disc images in the ISO folder next to OpenGP, or drop one on it (see docs/playing.md).\n");
+    std::printf("\nPut your disc images in the ISO folder next to OpenGP, or drop one on it (see ISO/README.txt).\n");
     return 1;
   }
 
@@ -112,6 +131,13 @@ int run(const std::vector<std::string>& args) {
     std::printf("\n%s (%s)\n", game->title.c_str(), game->id.c_str());
     if (!force && installer::is_installed(package, *game)) {
       std::printf("Already built by this version (--force rebuilds it).\n");
+      // The image may have moved: the game uses this one from now on.
+      if (app::remembered_image(package.home / "user", game->id) != image) {
+        if (app::remember_image(package.home / "user", game->id, image, &error))
+          std::printf("%s will now use %s\n", game->title.c_str(), image.c_str());
+        else
+          std::fprintf(stderr, "%s\n", error.c_str());
+      }
       continue;
     }
     if (compiler.empty() && !installer::find_compiler(package, cxx, report, &compiler, &error)) {
