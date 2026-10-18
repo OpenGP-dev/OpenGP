@@ -188,6 +188,10 @@ class Hardware {
   // Timer thread
   std::thread timer_thread_;
   std::condition_variable_any timer_cv_;
+  void wake_timer();  // after the earliest event, the pause or running_ changed
+#ifdef _WIN32
+  void* timer_wake_ = nullptr;  // an event: the timer thread waits on it and a high-resolution timer
+#endif
   std::condition_variable_any idle_cv_;
   bool running_ = false;
   EventId next_event_id_ = 1;

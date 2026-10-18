@@ -394,7 +394,9 @@ void Frontend::xf_write(u16 address, std::span<const u8> words) {
     const u32 addr = address + static_cast<u32>(i / 4);
     if (addr >= XF_END) break;  // not round into the matrices
     xf_.write(static_cast<u16>(addr), be32(words.data() + i));
-    if (addr >= XF_REGISTERS) state_dirty_ = true;  // viewport (fog range) etc.
+    // The draw state reads only the viewport among the XF registers (the fog
+    // range): the matrix index each mesh sets needs no new state.
+    if (addr >= XF_VIEWPORT && addr < XF_VIEWPORT + 6) state_dirty_ = true;
   }
 }
 
@@ -603,8 +605,13 @@ PipelineKey Frontend::pipeline_key() const {
   if (!alpha_update) src_a = 0, dst_a = 1;
 
   const u32 z = bp_[BP_ZMODE];
-  const bool early = bits(z, 0, 1) && bits(bp_[BP_ZCOMPARE], 6, 1) &&
-                     alpha_test_result(bp_[BP_ALPHA_COMPARE]) == AlphaTestResult::Undetermined;
+  // Depth before the pixel shader: as the game asks (zcomploc) for an alpha
+  // test that depends on the pixel, and whenever the test always passes,
+  // since nothing can then discard the pixel (the result is the same, and the
+  // GPU can skip hidden pixels: most of a race's opaque geometry).
+  const AlphaTestResult alpha_test = alpha_test_result(bp_[BP_ALPHA_COMPARE]);
+  const bool early = bits(z, 0, 1) && ((bits(bp_[BP_ZCOMPARE], 6, 1) && alpha_test == AlphaTestResult::Undetermined) ||
+                                       alpha_test == AlphaTestResult::Pass);
   PipelineKey k;
   k.bits = enable | (src << 1) | (dst << 4) | (src_a << 7) | (dst_a << 10) | (sub << 13) | (sub_a << 14) |
            (u32{color_update} << 15) | (u32{alpha_update} << 16) | (bits(z, 0, 1) << 17) | (bits(z, 1, 3) << 18) |
@@ -717,7 +724,8 @@ void Frontend::build_uniforms(PixelUniforms& u) const {
   }
 
   u.misc[0] = genmode;
-  u.misc[1] = alpha;
+  // A test that always passes is left out of the shader (see pipeline_key).
+  u.misc[1] = alpha_test_result(alpha) == AlphaTestResult::Pass ? 0 : alpha;
   u.misc[2] = p3;
   u.misc[3] = range;
 
@@ -975,7 +983,10 @@ void Frontend::draw(u8 primitive, u8 vat, u16 count, std::span<const u8> vertice
                  (hi + 1.0f) * half - side, v.pos[0] / w, v.pos[1] / w, v.pos[2] / w, v.pos[3], v.color[0], v.color[1],
                  v.tex[0][0], v.tex[0][1], v.tex[0][2]);
   }
-  if (added == 0) return;
+  if (added == 0) {
+    f.vertices.resize(base);  // nothing refers to them: not uploaded
+    return;
+  }
   efb_changed();
 
   // Extend the previous draw if nothing else happened in between.

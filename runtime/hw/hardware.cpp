@@ -201,7 +201,14 @@ void Hardware::set_paused(bool paused) {
     pause_cv_.notify_all();
   }
   update_pending();  // while paused, guest code goes to its next safe point
+  wake_timer();
+}
+
+void Hardware::wake_timer() {
   timer_cv_.notify_all();
+#ifdef _WIN32
+  if (timer_wake_) SetEvent(timer_wake_);
+#endif
 }
 
 void Hardware::wait_while_paused() {
@@ -266,8 +273,10 @@ void Hardware::wait_for_interrupt(u32 timeout_ms) {
 Hardware::EventId Hardware::schedule_at(u64 when, std::function<void()> fn) {
   std::lock_guard lock(mutex_);
   const EventId id = next_event_id_++;
-  events_.emplace(when, std::make_pair(id, std::move(fn)));
-  timer_cv_.notify_all();
+  const auto it = events_.emplace(when, std::make_pair(id, std::move(fn)));
+  // The timer thread sleeps until the earliest event: only a new earliest one
+  // needs to wake it.
+  if (it == events_.begin()) wake_timer();
   return id;
 }
 
@@ -283,6 +292,15 @@ void Hardware::cancel(EventId id) {
 
 void Hardware::timer_loop() {
   os::set_interactive_thread();
+#ifdef _WIN32
+  // A condition variable's timeout is whole milliseconds on Windows (MSVC's
+  // library rounds it up, so events came 1-2 ms late; libc++'s rounds it down,
+  // so the last millisecond before each event spun, taking the lock each
+  // time). A high-resolution waitable timer sleeps to the event (Windows 10
+  // 1803 and later; a plain one before).
+  HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+  if (!timer) timer = CreateWaitableTimerExW(nullptr, nullptr, 0, TIMER_ALL_ACCESS);
+#endif
   std::unique_lock lock(mutex_);
   while (running_) {
     if (events_.empty() || paused()) {
@@ -292,13 +310,29 @@ void Hardware::timer_loop() {
     const u64 now = timebase();
     auto it = events_.begin();
     if (it->first > now) {
-      timer_cv_.wait_for(lock, std::chrono::nanoseconds(ticks_to_ns(it->first - now)));
+      const u64 ns = ticks_to_ns(it->first - now);
+#ifdef _WIN32
+      if (timer && timer_wake_) {
+        LARGE_INTEGER due;
+        due.QuadPart = -std::max<LONGLONG>(1, static_cast<LONGLONG>(ns / 100));  // relative, 100 ns units
+        SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE);
+        lock.unlock();
+        HANDLE handles[2] = {timer, static_cast<HANDLE>(timer_wake_)};
+        WaitForMultipleObjects(2, handles, FALSE, INFINITE);
+        lock.lock();
+        continue;
+      }
+#endif
+      timer_cv_.wait_for(lock, std::chrono::nanoseconds(ns));
       continue;
     }
     auto fn = std::move(it->second.second);
     events_.erase(it);
     fn();  // runs with the mutex held; may schedule more events
   }
+#ifdef _WIN32
+  if (timer) CloseHandle(timer);
+#endif
 }
 
 void Hardware::start() {
@@ -314,6 +348,9 @@ void Hardware::start() {
   timeBeginPeriod(1);  // 1 ms timer resolution for the event thread
 #endif
   running_ = true;
+#ifdef _WIN32
+  if (!timer_wake_) timer_wake_ = CreateEventW(nullptr, FALSE, FALSE, nullptr);  // auto-reset
+#endif
   timer_thread_ = std::thread([this] { timer_loop(); });
 }
 
@@ -322,7 +359,7 @@ void Hardware::stop() {
     std::lock_guard lock(mutex_);
     if (!running_) return;
     running_ = false;
-    timer_cv_.notify_all();
+    wake_timer();
   }
   if (timer_thread_.joinable()) timer_thread_.join();
 #ifdef _WIN32

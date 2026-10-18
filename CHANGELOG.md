@@ -31,6 +31,15 @@ From a profile of a whole playthrough of GP 2:
 - Fixed a memory leak: every race kept a 64 MB texture at 8x (one of the game's shadow maps).
 - The per-draw timers cost about half a millisecond a frame in busy races, even when nothing
   was measuring; they are now nearly free.
+- Fewer dropped frames: the hardware's timed events (the display's retraces, the sound's DMA, the
+  game's timers) now come on time on Windows. They used to come up to 2 ms late with the source
+  build's compiler, and with the installer package's they kept a CPU core busy in the last
+  millisecond before each one. In GP 2's attract mode at 8x, the game finished about 96% of its
+  frames instead of about 87% on the same computer.
+- Less GPU work at high internal resolutions, for the same picture: opaque surfaces let the GPU
+  skip hidden pixels, the shader works only on the texture coordinates a surface has, and
+  surfaces the game culls entirely are no longer sent to the GPU. A mesh's matrix change no longer
+  rebuilds the draw state.
 
 ### Fixes
 
