@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
+#include <chrono>
 #include <thread>
 
 #include "analysis.h"
@@ -131,11 +132,14 @@ bool find_compiler(const Package& package, const std::string& requested, const R
       // Windows' tar reads its arguments in the system's code page, so a
       // package folder named with other characters would not reach it.
       fs::create_directories(dir, ec);
-      const fs::path archive = dir / "download.zip";
+      // Named after the toolchain, so a download interrupted for one version
+      // is never resumed with another's bytes.
+      const std::string archive_name = package.toolchain_dir + ".zip";
+      const fs::path archive = dir / archive_name;
       report.line("Downloading the compiler (once, about 190 MB): " + package.toolchain_url);
       // -C - resumes a download that was interrupted.
       const ProcessResult download = run_process(
-          {system_tool("curl"), "-fL", "--retry", "3", "-C", "-", "-o", "download.zip", package.toolchain_url},
+          {system_tool("curl"), "-fL", "--retry", "3", "-C", "-", "-o", archive_name, package.toolchain_url},
           utf8(dir));
       if (download.exit_code != 0) {
         if (error)
@@ -156,17 +160,28 @@ bool find_compiler(const Package& package, const std::string& requested, const R
       const fs::path unpacking = dir / "unpacking";
       fs::remove_all(unpacking, ec);
       fs::create_directories(unpacking, ec);
-      std::vector<std::string> tar = {system_tool("tar"), "-xf", "download.zip", "-C", "unpacking"};
+      std::vector<std::string> tar = {system_tool("tar"), "-xf", archive_name, "-C", "unpacking"};
       for (const std::string& e : package.toolchain_exclude) tar.insert(tar.end(), {"--exclude", e});
       const ProcessResult r = run_process(tar, utf8(dir));
-      fs::remove_all(dir / package.toolchain_dir, ec);
-      if (r.exit_code == 0) fs::rename(unpacking / package.toolchain_dir, dir / package.toolchain_dir, ec);
+      std::string why = r.exit_code != 0 ? tail(r.output) : std::string();
+      if (r.exit_code == 0) {
+        fs::remove_all(dir / package.toolchain_dir, ec);
+        // A virus scanner looking at the new files can hold the folder for a
+        // moment, which makes Windows refuse to move it: try for a while.
+        for (int attempt = 0; attempt < 40; ++attempt) {
+          fs::rename(unpacking / package.toolchain_dir, dir / package.toolchain_dir, ec);
+          if (!ec) break;
+          std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        }
+        if (ec) why = "cannot move it into place: " + ec.message();
+      }
       fs::remove_all(unpacking, ec);
-      fs::remove(archive, ec);
-      if (r.exit_code != 0 || !fs::exists(compiler, ec)) {
-        if (error) *error = "cannot unpack the compiler into " + utf8(dir) + ":\n" + tail(r.output);
+      if (!fs::exists(compiler, ec)) {
+        // The download is kept (checked): the next run only unpacks again.
+        if (error) *error = "cannot unpack the compiler into " + utf8(dir) + ":\n" + why;
         return false;
       }
+      fs::remove(archive, ec);
     }
     *cxx = utf8(compiler);
     return true;

@@ -10,6 +10,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <cwchar>
+#include <exception>
 
 #include "os/utf8.h"
 
@@ -45,6 +47,10 @@ std::atomic<bool> g_crashing{false};
 #ifdef _WIN32
 wchar_t g_report_path[1024];
 HANDLE g_report = INVALID_HANDLE_VALUE;
+// The time limit on a crash report: a thread made at start-up (one made in
+// the crash could wait for ever on the loader lock), set going by the event.
+HANDLE g_watchdog_start = nullptr;
+std::atomic<bool> g_watchdog_off{false};
 #else
 int g_report = -1;
 #endif
@@ -95,6 +101,14 @@ void begin_report() {
 #endif
     std::_Exit(3);
   }
+  // From here on, at most 10 seconds (a report can block on a lock the crash
+  // left held): then the process ends anyway.
+#ifdef _WIN32
+  if (g_watchdog_start) SetEvent(g_watchdog_start);
+#else
+  std::signal(SIGALRM, SIG_DFL);
+  alarm(10);
+#endif
 #ifdef _WIN32
   if (g_report_path[0])
     g_report = CreateFileW(g_report_path, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
@@ -115,9 +129,10 @@ void begin_report() {
 
 #ifdef _WIN32
 
-DWORD WINAPI watchdog(void* ms) {
-  Sleep(static_cast<DWORD>(reinterpret_cast<std::uintptr_t>(ms)));
-  TerminateProcess(GetCurrentProcess(), 3);
+DWORD WINAPI watchdog(void*) {
+  WaitForSingleObject(g_watchdog_start, INFINITE);
+  Sleep(10000);
+  if (!g_watchdog_off) TerminateProcess(GetCurrentProcess(), 3);
   return 0;
 }
 
@@ -171,14 +186,11 @@ void print_backtrace() {
     CloseHandle(g_report);
     g_report = INVALID_HANDLE_VALUE;
   }
-  CreateThread(nullptr, 0, watchdog, reinterpret_cast<void*>(std::uintptr_t{10000}), 0, nullptr);
 #else
   if (g_report >= 0) {
     ::close(g_report);
     g_report = -1;
   }
-  std::signal(SIGALRM, SIG_DFL);
-  alarm(10);
 #endif
   if (g_callback) {
     g_callback(stderr);
@@ -197,10 +209,11 @@ void print_backtrace() {
   // so in a window too.
   DWORD pids[2];
   if (GetConsoleProcessList(pids, 2) <= 1 && !std::getenv("OPENGP_NO_CRASH_DIALOG")) {
-    char text[1400];
-    std::snprintf(text, sizeof(text), "OpenGP has crashed.%s%s", g_report_utf8[0] ? "\n\nThe crash report is in\n" : "",
-                  g_report_utf8);
-    MessageBoxA(nullptr, text, "OpenGP", MB_OK | MB_ICONERROR | MB_TOPMOST);
+    g_watchdog_off = true;  // the message stays until it is read
+    wchar_t text[1200];
+    std::swprintf(text, std::size(text), L"OpenGP has crashed.%ls%ls", g_report_path[0] ? L"\n\nThe crash report is in\n" : L"",
+                  g_report_path);
+    MessageBoxW(nullptr, text, L"OpenGP", MB_OK | MB_ICONERROR | MB_TOPMOST);
   }
 #endif
   std::_Exit(3);
@@ -227,6 +240,21 @@ LONG WINAPI on_exception(EXCEPTION_POINTERS* info) {
 }
 
 void on_abort(int) { crash_now("abort"); }
+#endif
+
+// An exception nothing caught: its message, then the report.
+[[noreturn]] void on_terminate() {
+  char reason[512] = "uncaught exception";
+  try {
+    if (const std::exception_ptr e = std::current_exception()) std::rethrow_exception(e);
+  } catch (const std::exception& e) {
+    std::snprintf(reason, sizeof(reason), "uncaught exception: %s", e.what());
+  } catch (...) {
+  }
+  crash_now(reason);
+}
+
+#ifdef _WIN32
 
 #else
 
@@ -253,6 +281,10 @@ void install_crash_handler(const gekko::u8* guest_base, CrashCallback callback, 
   g_report_path[0] = 0;
   if (g_report_utf8[0])
     MultiByteToWideChar(CP_UTF8, 0, g_report_utf8, -1, g_report_path, static_cast<int>(std::size(g_report_path)));
+  if (!g_watchdog_start) {
+    g_watchdog_start = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (HANDLE t = CreateThread(nullptr, 0, watchdog, nullptr, 0, nullptr)) CloseHandle(t);
+  }
   SetUnhandledExceptionFilter(on_exception);
   // abort() (an uncaught exception, a failed assert) raises SIGABRT, which no
   // exception filter sees; and no "abort() has been called" dialog.
@@ -276,6 +308,7 @@ void prepare_thread_for_crashes() {
   static thread_local bool done = false;
   if (done) return;
   done = true;
+  std::set_terminate(on_terminate);  // per thread in Windows' C runtime
   constexpr std::size_t kSize = 64 * 1024;
 #ifdef _WIN32
   // Stack kept back for the exception filter after a stack overflow.

@@ -241,11 +241,15 @@ std::mutex g_reboot_mutex;
 std::optional<os::Reboot> g_pending_reboot;
 std::atomic<bool> g_reboot_requested{false};
 
+// The reboot file (os/reboot.h): one per game, so that both games can run
+// from one folder at once.
+std::string g_reboot_file = "reboot.bin";
+
 // Restarts the process to continue with `reboot` (see os/reboot.h).
 // `frames` is how many frames have been shown since power-on.
 [[noreturn]] void restart(const Options& o, const fs::path& user_dir, const char* argv0, const os::Reboot& reboot,
                           u64 frames) {
-  const std::string path = os::utf8(user_dir / "reboot.bin");
+  const std::string path = os::utf8(user_dir / g_reboot_file);
   if (!os::save_reboot(path, reboot)) {
     std::fprintf(stderr, "[opengp] cannot write %s\n", path.c_str());
     std::_Exit(1);
@@ -279,6 +283,9 @@ os::Reboot next_boot(const os::Reboot& requested) {
 // Whether start-up failures also show a message box: for a game started for a
 // window, whose console (if any) may close with it.
 bool g_error_box = false;
+
+// settings.toml could not be read nor set aside: it is never overwritten.
+bool g_keep_settings_file = false;
 
 // Reports a problem that stops the game from starting; returns the exit code.
 int start_failed(const std::string& message) {
@@ -441,8 +448,9 @@ int run(const Game& game, int argc, char** argv) {
   if (o.timeout_s < 0) o.timeout_s = windowed ? 0 : 20;
   g_error_box = windowed;
   const fs::path user_dir = o.user_dir.empty() ? home_dir() / "user" : os::utf8_path(o.user_dir);
-  if (!lock_user_dir(user_dir, !o.reboot.empty())) {
-    return start_failed("Another copy of OpenGP is using the folder " + os::utf8(user_dir) +
+  g_reboot_file = std::string("reboot-") + game.id + ".bin";
+  if (!lock_user_dir(user_dir, game.id)) {
+    return start_failed(std::string("Another copy of ") + game.title + " is using the folder " + os::utf8(user_dir) +
                         ". Give each copy its own folder with --user-dir (see Linked cabinets in docs/playing.md).");
   }
   if (o.image.empty()) o.image = find_image(game, user_dir);
@@ -462,7 +470,12 @@ int run(const Game& game, int argc, char** argv) {
     // Kept aside, not overwritten by the next save: the player can fix it.
     std::error_code ec;
     fs::rename(os::utf8_path(settings_path), os::utf8_path(settings_path + ".bad"), ec);
-    settings_problem = error + ". It was kept as settings.toml.bad; the default settings are used.";
+    if (ec) {
+      g_keep_settings_file = true;  // never overwrite it
+      settings_problem = error + ". The default settings are used, and changes are not saved until it is fixed.";
+    } else {
+      settings_problem = error + ". It was kept as settings.toml.bad; the default settings are used.";
+    }
     file_settings = Settings{};
   } else {
     settings_problem = error;
@@ -600,16 +613,6 @@ int run(const Game& game, int argc, char** argv) {
     std::snprintf(reason, sizeof(reason), "fatal: %s", message);
     os::crash_now(reason);
   };
-  std::set_terminate([] {
-    std::string reason = "uncaught exception";
-    try {
-      if (const std::exception_ptr e = std::current_exception()) std::rethrow_exception(e);
-    } catch (const std::exception& e) {
-      reason += std::string(": ") + e.what();
-    } catch (...) {
-    }
-    os::crash_now(reason.c_str());
-  });
   app::start_hang_watch(machine, names, user_dir / "hang-report.txt", header);
   os::start_profiler_from_env();
 
@@ -704,7 +707,7 @@ int run(const Game& game, int argc, char** argv) {
         std::string why;
         if (!host_input.save(&why)) os::notify_player("The controls could not be saved: " + why);
       }
-      if (settings == start_settings) return;
+      if (settings == start_settings || g_keep_settings_file) return;
       const Settings s = settings_to_save(file_settings, start_settings, settings);
       if (s == file_settings) return;
       std::string why;

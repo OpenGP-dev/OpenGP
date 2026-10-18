@@ -18,6 +18,7 @@
 #define NOMINMAX
 #include <windows.h>
 #else
+#include <cerrno>
 #include <fcntl.h>
 #include <sys/file.h>
 #include <unistd.h>
@@ -68,26 +69,37 @@ fs::path executable_dir() {
 #endif
 }
 
-bool lock_user_dir(const fs::path& user_dir, bool wait) {
+bool lock_user_dir(const fs::path& user_dir, const std::string& game_id) {
   std::error_code ec;
   fs::create_directories(user_dir, ec);
-  const fs::path path = user_dir / ".lock";
-  for (int attempt = 0;; ++attempt) {
+  const fs::path path = user_dir / (".lock-" + game_id);
 #ifdef _WIN32
-    // Not shared: a second process cannot open it while this one runs.
-    const HANDLE h = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
-                                 FILE_ATTRIBUTE_HIDDEN, nullptr);
-    if (h != INVALID_HANDLE_VALUE) return true;  // kept open until the process ends
-    if (GetLastError() != ERROR_SHARING_VIOLATION) return true;  // cannot tell: carry on
+  // Shared, so that a virus scanner or backup tool opening it does not look
+  // like another copy; the lock is a byte-range lock on it.
+  const HANDLE h = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE |
+                               FILE_SHARE_DELETE, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_HIDDEN, nullptr);
+  if (h == INVALID_HANDLE_VALUE) return true;  // cannot tell: carry on
 #else
-    const int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
-    if (fd < 0) return true;  // cannot tell: carry on
-    if (::flock(fd, LOCK_EX | LOCK_NB) == 0) return true;  // kept open until the process ends
-    ::close(fd);
+  const int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+  if (fd < 0) return true;  // cannot tell: carry on
 #endif
-    if (!wait || attempt >= 50) return false;
+  for (int attempt = 0; attempt < 30; ++attempt) {
+#ifdef _WIN32
+    OVERLAPPED at{};
+    if (LockFileEx(h, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, &at)) return true;  // held until exit
+    if (GetLastError() != ERROR_LOCK_VIOLATION) return true;  // cannot tell: carry on
+#else
+    if (::flock(fd, LOCK_EX | LOCK_NB) == 0) return true;  // held until exit
+    if (errno != EWOULDBLOCK) return true;  // a file system without locks: carry on
+#endif
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
+#ifdef _WIN32
+  CloseHandle(h);
+#else
+  ::close(fd);
+#endif
+  return false;
 }
 
 fs::path home_dir() {

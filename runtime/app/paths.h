@@ -18,11 +18,12 @@ std::filesystem::path executable_dir();
 // searched for disc images.
 std::filesystem::path home_dir();
 
-// Keeps two copies of OpenGP from using one user folder at once (their cards,
-// the game's backups and reboot files would collide): locks `user_dir`/.lock
-// for the life of the process. False if another process holds it; with
-// `wait`, it waits a few seconds first (for the process a reboot replaces).
-bool lock_user_dir(const std::filesystem::path& user_dir, bool wait);
+// Keeps two copies of one game from using one user folder at once (their
+// cards, the game's backups and reboot files would collide): locks
+// `user_dir`/.lock-<game ID> for the life of the process. False only if
+// another process holds it, after waiting a moment (for one that is quitting,
+// or the process a reboot replaces); any other problem lets the game start.
+bool lock_user_dir(const std::filesystem::path& user_dir, const std::string& game_id);
 
 // user/images.toml: the disc image the installer built each game from, by game
 // ID, so the game finds it wherever it is. "" if none is recorded.

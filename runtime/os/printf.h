@@ -30,8 +30,9 @@ std::string sjis_to_utf8(const std::string& text);
 void use_utf8_console();
 
 // Calls `callback` (on a thread of its own) when the console window is
-// closed, or the user logs off or Windows shuts down, which end the process
-// a few seconds later: time to save. Nothing elsewhere.
+// closed, which ends the process a few seconds later: time to save. (Windows
+// only; a program with windows hears of logging off and shutting down
+// through its windows instead.)
 void on_console_close(void (*callback)());
 
 }  // namespace os

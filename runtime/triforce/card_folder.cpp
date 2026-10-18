@@ -17,7 +17,7 @@ namespace fs = std::filesystem;
 CardFolder::CardFolder(std::string dir) : dir_(std::move(dir)) {}
 
 bool CardFolder::valid_name(const std::string& name) {
-  if (name.empty() || name.size() > 100 || name.front() == '.' || name.back() == '.' || name.back() == ' ')
+  if (name.empty() || name.size() > 240 || name.front() == '.' || name.back() == '.' || name.back() == ' ')
     return false;
   for (const char c : name) {
     if (static_cast<unsigned char>(c) < 0x20 || std::string_view("/\\:*?\"<>|").find(c) != std::string_view::npos)
