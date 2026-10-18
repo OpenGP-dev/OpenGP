@@ -340,6 +340,8 @@ void Menu::link_section(MenuModel& m) {
     ImGui::TextWrapped("This is cabinet %d, looking for other cabinets %s.", link.cabinet,
                        s.lan ? "on this computer and the local network" : "on this computer");
   }
+  for (const std::string& other : link.incompatible)
+    ImGui::TextWrapped("OpenGP at %s can't link with this one: every cabinet needs the same version.", other.c_str());
   hint("Give each OpenGP its own number. Changes take effect when the game restarts.");
 }
 

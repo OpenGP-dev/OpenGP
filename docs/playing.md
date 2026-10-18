@@ -49,8 +49,8 @@ too, and **Pause when the window is unfocused** (Game tab) pauses it while you a
 window. The pause control can be changed like the others (Controls tab, or `pause` in
 `controls.toml`). The game's clock falls behind by the time spent paused, until it next starts.
 
-Pausing is only for playing solo. Once the game has linked to another cabinet (on this computer or
-a LAN), the other cabinets need it to keep running, so it doesn't pause again until it restarts:
+Pausing is only for playing solo. Once the game has linked to another cabinet (on this computer
+or the local network), the other cabinets need it to keep running, so it doesn't pause again until it restarts:
 the pause control does nothing, and the menu opens over the running game.
 
 ## Settings
@@ -127,7 +127,9 @@ is grey and the console says why.
 
 Up to four cabinets link, so that up to four players race each other in Versus mode, as in an
 arcade. Each cabinet is a copy of OpenGP: on the same computer, or on computers on the same local
-network. Both games link, each with its own kind (GP 2 with GP 2, GP with GP).
+network. Both games link, each with its own kind (GP 2 with GP 2, GP with GP). Every cabinet needs
+the same version of OpenGP: a cabinet running another version is not linked with, and the Game tab
+names it.
 
 Each cabinet needs its own number, 1 to 4: **Cabinet number** in the menu's Game tab
 (`[link] cabinet` in `user/settings.toml`, or `--cabinet N` for one run). **The game's setting**
@@ -136,15 +138,26 @@ when the game starts, so a change takes effect when it restarts.
 
 - **On one computer**, give each copy its own user folder as well as its own number, since two
   copies sharing one would overwrite each other's settings and saves (a second copy started on a
-  folder already in use says so and stops): `opengp-mkgp2 --user-dir user2 --cabinet 2`. To drive them all at once from one keyboard or
-  gamepad, turn on **Use the controls in the background too** (Controls tab) in each.
+  folder already in use says so and stops): `opengp-mkgp2 --user-dir user2 --cabinet 2`. To drive
+  them all at once from one keyboard or gamepad, turn on **Use the controls in the background
+  too** (Controls tab) in each.
 - **On a local network**, turn on **Link over the local network** on each computer
   (`[link] lan = true`, or `--lan`). The cabinets find each other by broadcasting on the network.
-  The first time, Windows asks whether OpenGP may use the network: allow it (on the kind of
-  network you are on, which Windows may call public). macOS asks whether OpenGP, or the Terminal
-  you start it from, may find devices on your local network: allow that too.
-  The link uses ports 28500 to 28539 (TCP and UDP) on each computer; `[link] port` moves them
+  The first time, Windows asks whether OpenGP may use the network: allow it. macOS asks whether
+  OpenGP, or the Terminal you start it from, may find devices on your local network: allow that
+  too. The link uses ports 28500 to 28539 (TCP and UDP) on each computer; `[link] port` moves them
   (give every cabinet the same).
+
+  Like the arcade machines, linked cabinets trust each other: there is no password, and another
+  computer on the same network could disrupt a race. Link over networks you trust (your home, a
+  LAN party), not public Wi-Fi. OpenGP only links with computers on a local network (private
+  addresses), never over the internet.
+
+  If the cabinets don't find each other ("looking for other cabinets" stays on), check that the
+  firewall lets OpenGP use the network: if you said no to Windows' question, allow
+  `opengp-mkgp2` (and `opengp-mkgp1`) in Windows Security > Firewall & network protection > Allow
+  an app through firewall, for private networks. Wi-Fi with "client isolation" (common on guest
+  networks) keeps computers from seeing each other; use a wired connection or another network.
 
 Start the cabinets, and wait for the later ones to get through their start-up (the attract mode
 begins): a cabinet links to the others as it starts. Then start a game on one cabinet. The others show "Waiting for entry!", and players who insert a

@@ -124,6 +124,7 @@ struct LinkOptions {
   std::string game;      // the game's ID (GGPE02): only cabinets playing the same game link
   u16 port = kLinkPort;  // the first host port (above)
   bool lan = false;      // also link over the local network: listen on every interface, broadcast the beacons
+  std::string version;   // OpenGP's version, which the beacons carry (cabinets of other versions do not link)
 };
 
 // What the link sees, for the menu.
@@ -135,6 +136,9 @@ struct LinkStatus {
   std::array<bool, 5> linked{};     // by number: ... both ways (the games make one each way)
   bool clash = false;               // another cabinet has this one's number
   std::string error;                // why the link cannot run (a port in use), or ""
+  // OpenGP at another address that cannot link with this one (another
+  // version), heard from in the last few seconds: "192.168.1.20 (0.4.0)".
+  std::vector<std::string> incompatible;
 };
 
 // "a.b.c.d" in host byte order; false if `text` is not one.
@@ -180,6 +184,10 @@ class Network {
   // (TCP_NODELAY, which every link connection gets). For tests.
   bool sends_without_delay(u32 fd) const;
 
+  // Closes every socket the game has open (as a cabinet's board does when it
+  // reboots): the other cabinets see the connections close.
+  void close_all();
+
   static constexpr std::size_t kSockets = 64;  // numbers 1-63; 0 is never used
 
  private:
@@ -200,7 +208,8 @@ class Network {
   u32 inet_addr(u32 text);
   void modify_my_ip_addr(u32 text);
 
-  u32 host_connect(Socket& s, u32 fd, Endpoint to, Endpoint host);
+  u32 host_connect(Socket& s, u32 fd, Endpoint to, Endpoint host, u32 max_wait_ms = 0xFFFFFFFF);
+  u32 flush(Socket& s);
   int own_cabinet() const;
   void update_link();
   void take_incoming(Socket& listener);

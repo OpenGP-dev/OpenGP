@@ -251,6 +251,7 @@ std::atomic<bool> g_reboot_requested{false};
     std::_Exit(1);
   }
   stop_link();
+  if (g_network) g_network->close_all();  // the other cabinets see the connections close
   stop_outputs();
   std::vector<std::string> args = o.args;
   args.push_back("--reboot");
@@ -511,7 +512,7 @@ int run(const Game& game, int argc, char** argv) {
   static std::shared_ptr<camera::Source> camera_source = start_camera(settings, &camera_info);
   if (camera_source) camera::attach(machine.network(), camera_source);
   if (game.set_camera) game.set_camera(camera_source != nullptr);
-  machine.network().enable_link({game.id, static_cast<u16>(settings.link_port), settings.lan});
+  machine.network().enable_link({game.id, static_cast<u16>(settings.link_port), settings.lan, OPENGP_VERSION});
   if (game.set_cabinet) {
     game.set_cabinet(settings.cabinet, [] {
       const triforce::LinkStatus link = machine.network().link_status();

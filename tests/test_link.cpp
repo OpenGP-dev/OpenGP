@@ -47,7 +47,7 @@ struct Cabinet {
   }};
 
   Cabinet(int number, const char* game = "GGPE02") {
-    net.enable_link({game, kPort, false});
+    net.enable_link({game, kPort, false, "test"});
     const std::string address = "192.168.29." + std::to_string(149 + number);
     std::memcpy(at(0x1F00), address.c_str(), address.size() + 1);
     run(triforce::NET_MODIFY_MY_IP_ADDR, {0x1F00});
@@ -177,6 +177,94 @@ TEST_CASE("a connection without a hello is not accepted") {
   CHECK_FALSE(run_until({&two}, [&] { return two.readable(listener); }, 1000));
   CHECK(two.run(triforce::NET_ACCEPT, {listener, 0x1400, 0x1410}) == kError);
   CHECK_FALSE(two.net.linked());
+#ifdef _WIN32
+  ::closesocket(s);
+#else
+  ::close(s);
+#endif
+}
+
+namespace {
+
+// A beacon as OpenGP sends it (see network.cpp), from a socket of the test's
+// own, to cabinet `to`'s beacon port on this computer.
+void send_beacon(int to, u8 version, int cabinet, u32 nonce, bool leaving, const char* game = "GGPE02") {
+  u8 b[40] = {};
+  std::memcpy(b, "OGPB", 4);
+  b[4] = version;
+  b[5] = static_cast<u8>(cabinet);
+  b[8] = static_cast<u8>(nonce >> 24), b[9] = static_cast<u8>(nonce >> 16);
+  b[10] = static_cast<u8>(nonce >> 8), b[11] = static_cast<u8>(nonce);
+  std::memcpy(b + 12, game, std::strlen(game));
+  b[20] = leaving ? 1 : 0;
+  std::memcpy(b + 24, "9.9.9", 5);
+  const auto s = ::socket(AF_INET, SOCK_DGRAM, 0);
+  sockaddr_in a{};
+  a.sin_family = AF_INET;
+  a.sin_port = htons(static_cast<u16>(kPort + (to - 1) * 10 + 9));
+  a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  ::sendto(s, reinterpret_cast<const char*>(b), version >= 2 ? 40 : 24, 0, reinterpret_cast<const sockaddr*>(&a),
+           sizeof(a));
+#ifdef _WIN32
+  ::closesocket(s);
+#else
+  ::close(s);
+#endif
+}
+
+}  // namespace
+
+TEST_CASE("another version of OpenGP is named, not linked") {
+  Cabinet one(1);
+  REQUIRE(run_until({&one}, [&] { return one.net.link_status().cabinet == 1; }));
+  bool named = false;
+  run_until({&one}, [&] {
+    send_beacon(1, 1, 2, 0x1234, false);
+    for (const std::string& s : one.net.link_status().incompatible) named |= s.find("older OpenGP") != std::string::npos;
+    return named;
+  });
+  CHECK(named);
+  CHECK_FALSE(one.net.link_status().found[2]);
+  named = false;
+  run_until({&one}, [&] {
+    send_beacon(1, 9, 3, 0x5678, false);
+    for (const std::string& s : one.net.link_status().incompatible) named |= s.find("OpenGP 9.9.9") != std::string::npos;
+    return named;
+  });
+  CHECK(named);
+}
+
+TEST_CASE("a cabinet's number stays with the cabinet that has it") {
+  Cabinet one(1);
+  REQUIRE(run_until({&one}, [&] { return one.net.link_status().cabinet == 1; }));
+  // A cabinet 3 is found...
+  REQUIRE(run_until({&one}, [&] {
+    send_beacon(1, 2, 3, 0xAAAA, false);
+    return one.net.link_status().found[3];
+  }));
+  // ... and another sender saying it is 3 cannot send it away.
+  send_beacon(1, 2, 3, 0xBBBB, true);
+  run_until({&one}, [] { return false; }, 300);
+  CHECK(one.net.link_status().found[3]);
+  // Its own goodbye does.
+  send_beacon(1, 2, 3, 0xAAAA, true);
+  CHECK(run_until({&one}, [&] { return !one.net.link_status().found[3]; }, 1000));
+}
+
+TEST_CASE("a hello for another game is not taken") {
+  Cabinet two(2);
+  const u32 listener = two.listen(5000);
+  const auto s = ::socket(AF_INET, SOCK_STREAM, 0);
+  sockaddr_in a{};
+  a.sin_family = AF_INET;
+  a.sin_port = htons(kPort + 10);
+  a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  REQUIRE(::connect(s, reinterpret_cast<const sockaddr*>(&a), sizeof(a)) == 0);
+  u8 hello[16] = {'O', 'G', 'P', 'L', 2, 1};
+  std::memcpy(hello + 8, "GGPE01", 6);
+  ::send(s, reinterpret_cast<const char*>(hello), 16, 0);
+  CHECK_FALSE(run_until({&two}, [&] { return two.readable(listener); }, 1000));
+  CHECK(two.run(triforce::NET_ACCEPT, {listener, 0x1400, 0x1410}) == kError);
 #ifdef _WIN32
   ::closesocket(s);
 #else

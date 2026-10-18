@@ -72,6 +72,18 @@ From a profile of a whole playthrough of GP 2:
   sends them. They used to wait for the other computer to acknowledge the one before, which it can
   delay by up to 200 ms, so they arrived in bursts and the other players' karts lagged behind
   their controls. Every computer in a linked race needs this version.
+- Linked cabinets are harder to disrupt from the network. A cabinet only links with computers on
+  the local network (or this one), never the internet; a cabinet's number stays with the cabinet
+  that has it, so another computer can no longer take it over or send it away; a connection that
+  says it is a cabinet must come from where that cabinet is; and connections that never introduce
+  themselves, or that the game never takes, are closed instead of piling up.
+- A cabinet running another version of OpenGP is no longer silently ignored: the Game tab names it
+  ("OpenGP at 192.168.1.20 can't link with this one"). 1.0's link is not compatible with 0.4.0's.
+- A linked game no longer freezes for up to 2 seconds when another cabinet refuses a connection,
+  and a message the network could not take at once is sent whole later instead of cut short.
+- When a game restarts (the test menu, a reboot, a lost link), the other cabinets now see its
+  connections close at once, and the new process no longer inherits the old one's sockets, its
+  webcam (Linux) or its memory.
 - The rainbows of GP 2's Rainbow Coaster and Rainbow Downhill no longer nearly vanish at high
   internal resolutions: they fade in with distance as they should.
 - Widescreen: GP 2 no longer leaves out objects in the side strips (scenery, item boxes, a blimp)
