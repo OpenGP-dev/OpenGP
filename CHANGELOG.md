@@ -1,36 +1,13 @@
 # Changelog
 
-## 1.0.0 (not released yet)
+## 1.0.1 (not released yet)
 
-1.0 follows a full audit of OpenGP: its code, build, installer packages, documents and licences.
-This section lists everything that has changed since 0.4.0, including each fix from the audit as
-it lands. 1.0 has the essential fixes (licences, saves, crashes, security, paths, the installer,
-the documents); the larger improvements the audit found follow in 1.1.
-
-### Even frame pacing
-
-- **Even frame pacing** (Video tab, off by default; `[video] even_pacing`) shows each frame on the
-  game's own 60 Hz tick, as a cabinet's display does, instead of as soon as it is drawn. The game
-  takes more time over some frames than others, so they used to come 12 to 21 ms apart; a FreeSync
-  or G-Sync monitor showed that unevenness as it came. Now they are presented at evenly spaced
-  times, for about half a frame (8 ms) more delay. See [docs/playing.md](docs/playing.md#even-frame-pacing).
+1.0.1 follows a full audit of OpenGP: its code, build, installer packages, documents and licences.
+It has the essential fixes (licences, saves, crashes, security, paths, the installer, the
+documents); the larger improvements the audit found follow in 1.1.
 
 ### Smoother
 
-From a profile of a whole playthrough of GP 2:
-
-- The busiest courses (Arena and Waluigi Stadium, the Mario courses, the flyovers before a race)
-  drop far fewer frames. OpenGP transforms the game's vertices on the CPU, over 80,000 a frame
-  there; each now takes about 40% less time, with exactly the same results.
-- Shorter pauses when loading between scenes and at the start of a course: the game's file name
-  lookup, memory copies and fills are done natively.
-- The game image is held in memory, as on a cabinet: no more stutters, or the odd freeze of a
-  second, while the game streams its music from the disc during a race.
-- No more 4-40 ms renderer stalls in races where the game reads the picture back (Arena and
-  Waluigi Stadium, the Mario courses), and shorter stalls when many textures load at once.
-- Fixed a memory leak: every race kept a 64 MB texture at 8x (one of the game's shadow maps).
-- The per-draw timers cost about half a millisecond a frame in busy races, even when nothing
-  was measuring; they are now nearly free.
 - Fewer dropped frames: the hardware's timed events (the display's retraces, the sound's DMA, the
   game's timers) now come on time on Windows. They used to come up to 2 ms late with the source
   build's compiler, and with the installer package's they kept a CPU core busy in the last
@@ -93,8 +70,7 @@ From a profile of a whole playthrough of GP 2:
   and tells linked cabinets, as closing the game's window does. A wheel's forces and a gamepad's
   rumble stop when the game quits or restarts.
 - A card name from `settings.toml` that cannot be a file name (`..`, `/`, `CON`...) holds no card.
-- Widescreen: GP no longer leaves out objects in the side strips either (GP 2 was fixed earlier in
-  this release).
+- Widescreen: GP no longer leaves out objects in the side strips either (GP 2 was fixed in 1.0.0).
 - Wheels: with a steering wheel connected, steering comes from the wheel only, so separate pedals,
   a handbrake or a throttle can no longer turn it by their own first axis (an idle pedal used to
   hold the steering at full lock). An input a device does not have (an axis number past its last)
@@ -117,19 +93,12 @@ From a profile of a whole playthrough of GP 2:
   says it is a cabinet must come from where that cabinet is; and connections that never introduce
   themselves, or that the game never takes, are closed instead of piling up.
 - A cabinet running another version of OpenGP is no longer silently ignored: the Game tab names it
-  ("OpenGP at 192.168.1.20 can't link with this one"). 1.0's link is not compatible with 0.4.0's.
+  ("OpenGP at 192.168.1.20 can't link with this one"). 1.0.1's link is not compatible with 1.0.0's or 0.4.0's.
 - A linked game no longer freezes for up to 2 seconds when another cabinet refuses a connection,
   and a message the network could not take at once is sent whole later instead of cut short.
 - When a game restarts (the test menu, a reboot, a lost link), the other cabinets now see its
   connections close at once, and the new process no longer inherits the old one's sockets, its
   webcam (Linux) or its memory.
-- The rainbows of GP 2's Rainbow Coaster and Rainbow Downhill no longer nearly vanish at high
-  internal resolutions: they fade in with distance as they should.
-- Widescreen: GP 2 no longer leaves out objects in the side strips (scenery, item boxes, a blimp)
-  that then popped in at the edges of the 4:3 picture.
-- The webcam is on only while the game uses it: while your photo is taken, for a moment as the
-  game starts, and on the test menu's camera page. It used to stay on, light and all, for as long
-  as the game ran, taking about 5% of a CPU core for pictures nothing used.
 
 ### Documents
 
@@ -185,6 +154,43 @@ From a profile of a whole playthrough of GP 2:
 - The time base's conversions are in one header (`runtime/ppc/timebase.h`). The CPU runtime's
   fallback clock, used only when no machine is running, no longer overflows after about eight
   minutes of the computer's uptime.
+
+## 1.0.0 (not released yet)
+
+### Even frame pacing
+
+- **Even frame pacing** (Video tab, off by default; `[video] even_pacing`) shows each frame on the
+  game's own 60 Hz tick, as a cabinet's display does, instead of as soon as it is drawn. The game
+  takes more time over some frames than others, so they used to come 12 to 21 ms apart; a FreeSync
+  or G-Sync monitor showed that unevenness as it came. Now they are presented at evenly spaced
+  times, for about half a frame (8 ms) more delay. See [docs/playing.md](docs/playing.md#even-frame-pacing).
+
+### Smoother
+
+From a profile of a whole playthrough of GP 2:
+
+- The busiest courses (Arena and Waluigi Stadium, the Mario courses, the flyovers before a race)
+  drop far fewer frames. OpenGP transforms the game's vertices on the CPU, over 80,000 a frame
+  there; each now takes about 40% less time, with exactly the same results.
+- Shorter pauses when loading between scenes and at the start of a course: the game's file name
+  lookup, memory copies and fills are done natively.
+- The game image is held in memory, as on a cabinet: no more stutters, or the odd freeze of a
+  second, while the game streams its music from the disc during a race.
+- No more 4-40 ms renderer stalls in races where the game reads the picture back (Arena and
+  Waluigi Stadium, the Mario courses), and shorter stalls when many textures load at once.
+- Fixed a memory leak: every race kept a 64 MB texture at 8x (one of the game's shadow maps).
+- The per-draw timers cost about half a millisecond a frame in busy races, even when nothing
+  was measuring; they are now nearly free.
+
+### Fixes
+
+- The rainbows of GP 2's Rainbow Coaster and Rainbow Downhill no longer nearly vanish at high
+  internal resolutions: they fade in with distance as they should.
+- Widescreen: GP 2 no longer leaves out objects in the side strips (scenery, item boxes, a blimp)
+  that then popped in at the edges of the 4:3 picture.
+- The webcam is on only while the game uses it: while your photo is taken, for a moment as the
+  game starts, and on the test menu's camera page. It used to stay on, light and all, for as long
+  as the game ran, taking about 5% of a CPU core for pictures nothing used.
 
 ## 0.4.0 (2026-10-16)
 
