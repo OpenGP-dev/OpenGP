@@ -1,8 +1,29 @@
 name: CI
 
+# Builds and tests every push that changes more than documents. Tags are left
+# out: a tag's commit has already been built on its branch. The game-data check
+# runs for every push, in game-data.yml.
 on:
   push:
+    branches: ['**']
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/dependabot.yml'
+      - '.github/workflows/game-data.yml'
+      - '.github/workflows/package.yml'
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/dependabot.yml'
+      - '.github/workflows/game-data.yml'
+      - '.github/workflows/package.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,24 +34,25 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
-# Every job runs for pushes, and for pull requests only from forks: a branch of
-# this repository has already run on its push.
-jobs:
-  game-data:
-    name: No game data
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - name: Check the tracked files
-        run: python3 tools/check_game_data.py
+# ccache (installed by ccache-action) keeps the compiled objects from the last
+# run of each job, so a push recompiles only what it changed. CMake takes the
+# launcher from these variables. Precompiled headers (SDL3's and glslang's) are
+# turned off because ccache can't cache what uses them.
+env:
+  CMAKE_C_COMPILER_LAUNCHER: ccache
+  CMAKE_CXX_COMPILER_LAUNCHER: ccache
 
+# Every job runs for pushes and manual runs, and for pull requests only from
+# forks: a branch of this repository has already run on its push. Windows and
+# macOS runner minutes cost 2x and 10x Linux's, so those jobs start only once
+# the Linux builds pass: a newer push cancels the run before they start, and a
+# change that breaks the build doesn't spend them.
+jobs:
   linux:
     name: Linux (${{ matrix.compiler }})
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -60,8 +82,15 @@ jobs:
           sudo apt-get update && sudo apt-get install -y ninja-build ${{ matrix.compiler == 'gcc-12' && 'g++-12' || '' }}
           libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev
           libxkbcommon-dev libasound2-dev libpulse-dev
+      # One cache per job. No key may start with another, as the cache is
+      # restored from the newest key that starts with this one.
+      - uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d  # v1.2.24
+        with:
+          key: ${{ matrix.os }}-${{ matrix.compiler }}
+          install: binary
+          evict-old-files: job
       - name: Configure
-        run: cmake --preset default
+        run: cmake --preset default -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON
       - name: Build
         run: cmake --build --preset default
       - name: Test
@@ -69,15 +98,20 @@ jobs:
 
   macos:
     name: macOS (Apple Clang)
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    needs: linux
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Install Ninja
         run: brew install ninja
+      - uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d  # v1.2.24
+        with:
+          key: macos-15
+          install: binary
+          evict-old-files: job
       - name: Configure
-        run: cmake --preset default
+        run: cmake --preset default -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON
       - name: Build
         run: cmake --build --preset default
       - name: Test
@@ -85,19 +119,26 @@ jobs:
 
   windows:
     name: Windows (clang-cl)
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    needs: linux
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d  # v1.2.24
+        with:
+          key: windows-clang-cl
+          install: binary
+          evict-old-files: job
       # tools/devshell.ps1 is the same environment setup used for local builds:
       # the Visual Studio x64 environment plus LLVM's clang-cl (preinstalled on
       # the runner). Each step is a new shell, so everything runs in one step.
+      # ccache can't cache objects whose debug information goes to a separate
+      # PDB (/Zi), so it goes into the objects (/Z7).
       - name: Configure, build and test
         shell: pwsh
         run: |
           $PSNativeCommandUseErrorActionPreference = $true  # stop on the first failing command
           . ./tools/devshell.ps1
-          cmake --preset clang-cl
+          cmake --preset clang-cl -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
           cmake --build --preset clang-cl
           ctest --preset clang-cl

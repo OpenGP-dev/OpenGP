@@ -3,11 +3,31 @@ name: Package
 # Builds the installer packages (see docs/packaging.md): the runtime, the
 # recompiler and the installer, which builds each game on the player's
 # machine from their own disc image. No game code or data is in them.
+#
+# It runs for every version tag and by hand (Actions > Package > Run workflow,
+# or `gh workflow run package.yml --ref <branch>`), and on main and pull
+# requests only when the build itself changes; CI builds and tests every other
+# change. Run it by hand on the release commit before tagging.
 on:
   push:
     branches: [main]
     tags: ['v*']
+    # Not checked for tags: every tag runs.
+    paths:
+      - '**/CMakeLists.txt'
+      - '**/*.cmake'
+      - 'CMakePresets.json'
+      - 'tools/installer/**'
+      - 'tools/package_probe.py'
+      - '.github/workflows/package.yml'
   pull_request:
+    paths:
+      - '**/CMakeLists.txt'
+      - '**/*.cmake'
+      - 'CMakePresets.json'
+      - 'tools/installer/**'
+      - 'tools/package_probe.py'
+      - '.github/workflows/package.yml'
   workflow_dispatch:
 
 permissions:

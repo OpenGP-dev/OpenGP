@@ -125,7 +125,10 @@ A package is a CMake install of a build configured with `OPENGP_PACKAGE=ON`. `cm
 lays it out. The package workflow in `.github/workflows/package.yml` builds all three packages,
 runs the tests, and checks each package with `tools/package_probe.py`. The probe builds the test
 suite's recompiled fixture the way the installer builds a game. For a version tag, the workflow
-attaches the packages to the release.
+attaches the packages to the release. It runs for every version tag, on main and pull requests
+when a CMake file, the installer or the probe changes, and by hand (Actions > Package > Run
+workflow, or `gh workflow run package.yml --ref <branch>`): run it on the release commit before
+tagging, since other changes can break a package too.
 
 **Windows.** Unpack the llvm-mingw release that `cmake/package.cmake` pins, then run:
 

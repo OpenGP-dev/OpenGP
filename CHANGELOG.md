@@ -133,6 +133,10 @@ documents); the larger improvements the audit found follow in 1.1.
 - CI and package workflows: actions pinned by commit and kept current by Dependabot, read-only
   tokens, time limits on jobs and tests, no duplicate runs, and a release job that only ever adds
   packages (with a `SHA256SUMS` file) to a draft release.
+- CI costs a fraction of the runner minutes: ccache keeps each job's compiled objects between
+  runs, pushes that change only documents build nothing, tags don't rebuild their commit, Windows
+  and macOS (whose minutes cost 2x and 10x) wait for the Linux builds to pass, and the package
+  workflow runs for tags, build-file changes and by hand.
 - `.gitattributes` keeps line endings LF on every platform, and `.gitignore` covers more build,
   editor and dump files.
 - Steadier tests: the link tests pick free ports instead of always 47600, the pause tests have no

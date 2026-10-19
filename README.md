@@ -62,7 +62,8 @@ of the code and documentation is written by Claude (Anthropic's model) through
 
 The code is held to the same checks as any other:
 - The test suite (among others, differential tests that run the same guest code through the
-  interpreter and the recompiled code) runs in CI on every push, on Linux, Windows and macOS.
+  interpreter and the recompiled code) runs in CI on every push that changes the code, on Linux,
+  Windows and macOS.
 - The hardware follows Dolphin's behaviour, and code ported from Dolphin is marked as such.
 - What OpenGP learned from other projects is credited below and in the docs. Nothing is copied
   from projects that have no license, only facts such as addresses.
