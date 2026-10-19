@@ -36,9 +36,8 @@ constexpr u32 kFlipperRevC = 0x246500B1;
 
 Hardware* g_hw = nullptr;
 
-// ticks <-> nanoseconds at 40.5 MHz (1e9 / 40.5e6 = 2000 / 81)
-u64 ns_to_ticks(u64 ns) { return (ns / 2000) * 81 + (ns % 2000) * 81 / 2000; }
-u64 ticks_to_ns(u64 ticks) { return (ticks / 81) * 2000 + (ticks % 81) * 2000 / 81; }
+using ppc::ns_to_ticks;
+using ppc::ticks_to_ns;
 
 }  // namespace
 
@@ -181,8 +180,7 @@ u64 Hardware::timebase_at(u64 steady_ns) const { return ns_to_ticks(steady_ns) -
 
 // Rounded up, so that timebase_at(steady_ns_at(tb)) == tb.
 u64 Hardware::steady_ns_at(u64 timebase) const {
-  const u64 ticks = timebase + tb_origin_;
-  return (ticks / 81) * 2000 + ((ticks % 81) * 2000 + 80) / 81;
+  return ppc::ticks_to_ns_up(timebase + tb_origin_);
 }
 
 void Hardware::set_timebase(u64 value) {

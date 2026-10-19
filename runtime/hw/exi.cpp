@@ -6,6 +6,7 @@
 #include "hw/exi.h"
 #include "os/notice.h"
 #include "os/utf8.h"
+#include "ppc/timebase.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -60,21 +61,7 @@ enum : u8 {
   BB_WRITE_LANCNT = 0xFF,
 };
 
-u32 rtc_seconds_since_2000() {
-  const std::time_t now = std::time(nullptr);
-  std::tm local{}, utc{};
-#ifdef _WIN32
-  localtime_s(&local, &now);
-  gmtime_s(&utc, &now);
-#else
-  localtime_r(&now, &local);
-  gmtime_r(&now, &utc);
-#endif
-  local.tm_isdst = 0;
-  utc.tm_isdst = 0;
-  const auto offset = static_cast<long long>(std::difftime(std::mktime(&local), std::mktime(&utc)));
-  return static_cast<u32>(static_cast<long long>(now) + offset - 946684800LL);
-}
+u32 rtc_seconds_since_2000() { return static_cast<u32>(ppc::local_seconds_since_2000()); }
 
 }  // namespace
 

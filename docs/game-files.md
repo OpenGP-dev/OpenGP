@@ -34,9 +34,10 @@ With the installer package, put the images in its `ISO` folder and run `OpenGP`
    python tools/setup.py
    ```
    This extracts each game's executable to `orig/<ID>/sys/main.dol` (gitignored) and checks it
-   against the table above. It also downloads the pinned
-   [decomp-toolkit](https://github.com/encounter/decomp-toolkit) into `build/tools/`, for
-   regenerating the symbol lists.
+   against the table above; an executable of another revision is reported and not written. Then it
+   downloads the pinned [decomp-toolkit](https://github.com/encounter/decomp-toolkit) into
+   `build/tools/` and checks its SHA-256, for regenerating the symbol lists. `--no-dtk` skips the
+   download, and the games build without it.
 3. Configure and build as usual (see [building.md](building.md)). CMake builds each game whose
    `main.dol` is present and has the expected hash, and skips the others.
 4. Run the game's launcher. It finds the image in `ISO/` or `private/` (or takes `--iso`), and

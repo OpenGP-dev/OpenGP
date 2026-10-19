@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "ppc/context.h"
+#include "ppc/timebase.h"
 
 namespace hw {
 
@@ -51,7 +52,7 @@ enum InterruptCause : u32 {
 // PowerPC exceptions the hardware can raise at the CPU.
 enum class Exception : u32 { None = 0, External = 4, Decrementer = 8 };
 
-inline constexpr u64 kTimebaseHz = 40500000;  // bus clock (162 MHz) / 4
+inline constexpr u64 kTimebaseHz = ppc::kTimebaseHz;  // bus clock (162 MHz) / 4
 inline constexpr u32 kBusClockHz = 162000000;
 
 class Hardware;

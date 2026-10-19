@@ -173,6 +173,18 @@ From a profile of a whole playthrough of GP 2:
 - `tools/devshell.ps1` finds the Visual Studio installation that has Clang when a newer one
   without it is also installed, checks for Clang 16 or later, and leaves the PowerShell session's
   settings as they were.
+- `tools/setup.py` checks the images before downloading anything, so an offline computer can
+  still set up the games. It writes a `main.dol` only when it is a supported one (an image of
+  another revision no longer replaces a good one), says which image is damaged instead of failing
+  with a traceback, fails when it extracted nothing, and checks decomp-toolkit's SHA-256 (fetching
+  the right build on ARM64 Linux, and a new one when the pinned version changes). `--no-dtk` skips
+  the download.
+- The naming tools (`sigmatch.py`, `decompnames.py`, `crossmatch.py`) never rename a function
+  that hand-written code overrides by name, which broke the game's build when they were run
+  again. `sigmatch.py` downloads Dolphin's signature database from a pinned commit and checks it.
+- The time base's conversions are in one header (`runtime/ppc/timebase.h`). The CPU runtime's
+  fallback clock, used only when no machine is running, no longer overflows after about eight
+  minutes of the computer's uptime.
 
 ## 0.4.0 (2026-10-16)
 
