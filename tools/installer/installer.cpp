@@ -258,6 +258,7 @@ bool check_writable(const fs::path& home, std::string* error) {
   shown.make_preferred();
   if (const auto colon = why.rfind(": "); why.rfind("cannot write ", 0) == 0 && colon != std::string::npos)
     why = why.substr(colon + 2);
+  while (!why.empty() && (why.back() == '.' || why.back() == ' ')) why.pop_back();  // the system's full stop
   if (error)
     *error = "OpenGP cannot write to its folder, " + utf8(shown) + " (" + why +
              "). Move the OpenGP folder somewhere you can write to, such as your Documents folder (not Program "
