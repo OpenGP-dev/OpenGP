@@ -46,6 +46,12 @@ documents); the larger improvements the audit found follow in 1.1.
   installed.
 - A second cabinet started with `--user-dir` finds the image the installer recorded. When a
   recorded image is gone, the game says where it looked.
+- Started from the OpenGP launcher, the games word their messages for it: add the disc image in
+  OpenGP, or close the copy that is already running, instead of command-line options. A save that
+  fails as a game closes or restarts is passed on for the launcher to show, instead of being lost
+  with the window.
+- Installing from a folder OpenGP cannot write to (Program Files) says so and where to move it,
+  instead of blaming the internet connection for the compiler's download.
 - The games find their function names (for hang and crash reports) after the package folder is
   moved.
 - Saves: Mario Cards and settings are written to the disk before they replace the old file, so a

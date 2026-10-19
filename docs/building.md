@@ -138,6 +138,7 @@ Environment variables for debugging:
 | `OPENGP_PROFILE=START,SECONDS` | (Windows) samples every thread for SECONDS seconds, starting START seconds in, then prints each busy thread's hottest functions, self and inclusive |
 | `OPENGP_CHECK_HLE=1` | (not a log) runs the game's own version of each SDK function OpenGP replaces too, and prints any difference |
 | `OPENGP_NO_CRASH_DIALOG=1` | (not a log) no message box after a crash on Windows: the report is still written (for tests and scripts) |
+| `OPENGP_LAUNCHER=1` | (not a log) set by the OpenGP launcher for the games it starts: start-up messages point at the launcher instead of command-line options, and messages the window could no longer show (a save that failed as the game closed or restarted) go to the log as `[unseen]` lines, which the launcher shows |
 
 The status line also shows where time goes: the guest thread's time in draws (pipeline state,
 textures, vertex transform) and EFB readbacks, and the render thread's time rendering and idle.

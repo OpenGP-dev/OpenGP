@@ -151,6 +151,9 @@ bool find_compiler(const Package& package, const std::string& requested, const R
       // curl and tar run inside the toolchain folder with relative names:
       // Windows' tar reads its arguments in the system's code page, so a
       // package folder named with other characters would not reach it.
+      // A folder it cannot write to (Program Files) would otherwise show up
+      // as a failed download, blamed on the internet connection.
+      if (!check_writable(package.home, error)) return false;
       fs::create_directories(dir, ec);
       // Named after the toolchain, so a download interrupted for one version
       // is never resumed with another's bytes.
@@ -242,7 +245,32 @@ const GameInfo* identify_image(const Package& package, const std::string& image)
   return nullptr;
 }
 
-// Why an image is not one of the package's games, for the player.
+bool check_writable(const fs::path& home, std::string* error) {
+  const fs::path test = home / "build" / "write-test";
+  std::string why;
+  if (os::write_file_atomically(utf8(test), "ok", 2, &why)) {
+    std::error_code ec;
+    fs::remove(test, ec);
+    return true;
+  }
+  // The folder once, in the system's style; the reason without the file's path.
+  fs::path shown = home.lexically_normal();
+  shown.make_preferred();
+  if (const auto colon = why.rfind(": "); why.rfind("cannot write ", 0) == 0 && colon != std::string::npos)
+    why = why.substr(colon + 2);
+  if (error)
+    *error = "OpenGP cannot write to its folder, " + utf8(shown) + " (" + why +
+             "). Move the OpenGP folder somewhere you can write to, such as your Documents folder (not Program "
+             "Files), and open it again.";
+  return false;
+}
+
+std::string not_a_package_message(const std::string& error) {
+  return error +
+         "\n\nOpenGP must be run from its unpacked package folder: unpack the whole OpenGP archive first (on "
+         "Windows, right-click the zip and choose Extract All), then run OpenGP from the folder it makes.";
+}
+
 std::string why_not_supported(const Package& package, const std::string& image) {
   std::error_code ec;
   const fs::path path = os::utf8_path(image);

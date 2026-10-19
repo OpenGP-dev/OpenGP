@@ -75,6 +75,20 @@ std::vector<std::pair<const GameInfo*, std::string>> find_images(const Package& 
                                                                    const std::vector<std::string>& given,
                                                                    const Reporter& report);
 
+// Why `image` is not one of the package's games, for the player: no such
+// file, a compressed image (with how to convert it), not a disc image, or
+// another game or region (naming the IDs needed).
+std::string why_not_supported(const Package& package, const std::string& image);
+
+// Whether the package folder `home` can be written to (the games, their
+// compiler, the build and the saves all go there): false with the message to
+// show the player, which says where to move it.
+bool check_writable(const fs::path& home, std::string* error);
+
+// What to tell a player whose package could not be loaded (`error`, from
+// load_package): most often OpenGP was opened from inside its zip.
+std::string not_a_package_message(const std::string& error);
+
 // Whether the game is already built by this version of the package.
 bool is_installed(const Package& package, const GameInfo& game);
 

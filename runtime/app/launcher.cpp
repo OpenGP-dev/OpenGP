@@ -249,6 +249,9 @@ std::string g_reboot_file = "reboot.bin";
 // `frames` is how many frames have been shown since power-on.
 [[noreturn]] void restart(const Options& o, const fs::path& user_dir, const char* argv0, const os::Reboot& reboot,
                           u64 frames) {
+  // Messages the window can no longer show (a save just before the restart
+  // failed): see quit().
+  for (const std::string& notice : os::take_player_notices()) std::fprintf(stderr, "[unseen] %s\n", notice.c_str());
   const std::string path = os::utf8(user_dir / g_reboot_file);
   if (!os::save_reboot(path, reboot)) {
     std::fprintf(stderr, "[opengp] cannot write %s\n", path.c_str());
@@ -457,12 +460,22 @@ int run(const Game& game, int argc, char** argv) {
   g_error_box = windowed;
   const fs::path user_dir = o.user_dir.empty() ? home_dir() / "user" : os::utf8_path(o.user_dir);
   g_reboot_file = std::string("reboot-") + game.id + ".bin";
+  // Started by the OpenGP launcher (it sets OPENGP_LAUNCHER): the player has
+  // no command line, so the messages point at the launcher instead.
+  const bool from_launcher = std::getenv("OPENGP_LAUNCHER") != nullptr;
   if (!lock_user_dir(user_dir, game.id)) {
+    if (from_launcher)
+      return start_failed(std::string(game.title) + " is already running from this OpenGP folder (" +
+                          os::utf8(user_dir) + "). Close it before starting it again.");
     return start_failed(std::string("Another copy of ") + game.title + " is using the folder " + os::utf8(user_dir) +
                         ". Give each copy its own folder with --user-dir (see Linked cabinets in docs/playing.md).");
   }
   if (o.image.empty()) o.image = find_image(game, user_dir);
   if (o.image.empty()) {
+    if (from_launcher)
+      return start_failed(std::string("No disc image of ") + game.title + " (" + game.id +
+                          ") found. In OpenGP, choose the game and add its disc image (Add disc image), or put the "
+                          "image in the ISO folder next to OpenGP.");
     return start_failed(std::string("No disc image of ") + game.title + " (" + game.id +
                         ") found. Put it in the ISO folder next to OpenGP, or start the game with --iso PATH. If "
                         "you moved it, drop it on the OpenGP installer so the game knows where it is.");
@@ -724,6 +737,10 @@ int run(const Game& game, int argc, char** argv) {
     };
     auto quit = [&save, &print_status](const char* why) {
       save();
+      // What the player can no longer see in the window (a save that failed
+      // just now): for the console, and for the launcher, which shows lines
+      // that start "[unseen]" once the game has ended.
+      for (const std::string& notice : os::take_player_notices()) std::fprintf(stderr, "[unseen] %s\n", notice.c_str());
       print_status(why);
       stop_link();
       stop_outputs();

@@ -82,26 +82,15 @@ int run(const std::vector<std::string>& args) {
   std::string error;
   installer::Package package;
   if (!installer::load_package(app::executable_dir(), &package, &error)) {
-    std::fprintf(stderr,
-                 "%s\n\nOpenGP must be run from its unpacked package folder: unpack the whole OpenGP archive first "
-                 "(on Windows, right-click the zip and choose Extract All), then run OpenGP from the folder it makes.\n",
-                 error.c_str());
+    std::fprintf(stderr, "%s\n", installer::not_a_package_message(error).c_str());
     return 1;
   }
   std::printf("OpenGP %s installer\n\n", package.version.c_str());
   // Everything it makes goes in the package folder: say so at once if it
   // cannot write there.
-  {
-    const std::string test = os::utf8(package.home / "build" / "write-test");
-    if (!os::write_file_atomically(test, "ok", 2, &error)) {
-      std::fprintf(stderr,
-                   "OpenGP cannot write to its folder, %s (%s).\nMove the OpenGP folder somewhere you can write to, "
-                   "such as your Documents folder (not Program Files), and run it again.\n",
-                   os::utf8(package.home).c_str(), error.c_str());
-      return 1;
-    }
-    std::error_code ec;
-    std::filesystem::remove(os::utf8_path(test), ec);
+  if (!installer::check_writable(package.home, &error)) {
+    std::fprintf(stderr, "%s\n", error.c_str());
+    return 1;
   }
 
   installer::Reporter report;
@@ -149,7 +138,8 @@ int run(const std::vector<std::string>& args) {
       ++failures;
     }
   }
-  if (failures == 0) std::printf("\nDone. Start a game with its launcher (opengp-mkgp2 or opengp-mkgp1).\n");
+  if (failures == 0)
+    std::printf("\nDone. Start a game with opengp-mkgp2 or opengp-mkgp1, or from the OpenGP launcher if you have it.\n");
   return failures ? 1 : 0;
 }
 
