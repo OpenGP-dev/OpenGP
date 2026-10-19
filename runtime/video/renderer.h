@@ -157,6 +157,10 @@ class Renderer {
   void poll_reads(bool wait_all);
   bool grow_buffer(SDL_GPUBuffer*& buffer, u32& capacity, u32 needed, u32 usage);
   void abandon(const gx::Frame& f, const char* why);
+  // New textures of frames that could not be drawn, made with the next one
+  // that can (offsets into carried_texels_).
+  std::vector<gx::TextureUpload> carried_uploads_;
+  std::vector<u8> carried_texels_;
 
   SDL_Window* window_ = nullptr;
   SDL_GPUDevice* device_ = nullptr;

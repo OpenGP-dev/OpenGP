@@ -19,9 +19,11 @@ documents); the larger improvements the audit found follow in 1.1.
   rebuilds the draw state.
 - Steering wheels get fewer force-feedback reports: only the force that changed is sent (the road's
   feel changes almost every frame; the centring spring and friction seldom).
-- Smaller costs gone: the game's graphics data no longer waits on a lock for every 32 bytes it
-  sends, new textures and disc reads are no longer cleared before being filled, and on Apple
-  Silicon the per-draw timers are as cheap as on PCs.
+- Smaller costs gone: the game's graphics data takes one lock fewer for every 32 bytes it sends,
+  new textures and disc reads are no longer cleared before being filled, and on Apple Silicon the
+  per-draw timers are as cheap as on PCs.
+- If the GPU runs short of memory for a moment, the picture comes back with the next frame, with
+  the textures it missed, instead of staying blank or white until a restart.
 
 ### Fixes
 

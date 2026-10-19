@@ -22,6 +22,7 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#include <process.h>
 #include <winsock2.h>
 #else
 #include <arpa/inet.h>
@@ -46,15 +47,22 @@ void close_socket(decltype(::socket(0, 0, 0)) s) {
 #endif
 }
 
-// The tests' first host port: the first base from 47600 on whose 40 ports
+// The tests' first host port: a base from 47600 to 49079 whose 40 ports
 // (four cabinets, ten each) are free on this computer, so another program
-// holding 47600, or another test run, doesn't fail the tests.
+// holding 47600 doesn't fail the tests. The search starts at a place picked
+// by the process ID, so two test runs started together (two builds' ctest)
+// choose different bases.
 u16 pick_port() {
 #ifdef _WIN32
   WSADATA data;
   WSAStartup(MAKEWORD(2, 2), &data);
+  const u32 pid = static_cast<u32>(_getpid());
+#else
+  const u32 pid = static_cast<u32>(::getpid());
 #endif
-  for (u32 base = 47600; base + 40 <= 65535; base += 40) {
+  constexpr u32 kBases = 37;  // 47600 + 37 * 40 = 49080, below the ephemeral ports
+  for (u32 i = 0; i < kBases; ++i) {
+    const u32 base = 47600 + (pid + i) % kBases * 40;
     bool free = true;
     for (u32 port = base; port < base + 40 && free; ++port) {
       for (const int type : {SOCK_STREAM, SOCK_DGRAM}) {

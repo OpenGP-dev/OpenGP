@@ -151,7 +151,12 @@ Hardware::Hardware(u8* base, u32 mem1_size) : base_(base), mem1_size_(mem1_size)
   map(0x3000, 0x100, std::make_unique<PiDevice>(*this));
 }
 
-Hardware::~Hardware() { stop(); }
+Hardware::~Hardware() {
+  stop();
+#ifdef _WIN32
+  if (timer_wake_) CloseHandle(timer_wake_);
+#endif
+}
 
 void Hardware::map(u32 block_base, u32 size, std::unique_ptr<Device> device) {
   mappings_.push_back({block_base, size, device.get()});
@@ -308,11 +313,11 @@ void Hardware::timer_loop() {
     const u64 now = timebase();
     auto it = events_.begin();
     if (it->first > now) {
-      const u64 ns = ticks_to_ns(it->first - now);
+      const u64 ns = ppc::ticks_to_ns_up(it->first - now);  // never before the event
 #ifdef _WIN32
       if (timer && timer_wake_) {
         LARGE_INTEGER due;
-        due.QuadPart = -std::max<LONGLONG>(1, static_cast<LONGLONG>(ns / 100));  // relative, 100 ns units
+        due.QuadPart = -std::max<LONGLONG>(1, static_cast<LONGLONG>((ns + 99) / 100));  // relative, 100 ns units
         SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE);
         lock.unlock();
         HANDLE handles[2] = {timer, static_cast<HANDLE>(timer_wake_)};

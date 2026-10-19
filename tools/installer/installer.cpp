@@ -244,6 +244,13 @@ const GameInfo* identify_image(const Package& package, const std::string& image)
 
 // Why an image is not one of the package's games, for the player.
 std::string why_not_supported(const Package& package, const std::string& image) {
+  std::error_code ec;
+  const fs::path path = os::utf8_path(image);
+  if (!fs::is_regular_file(path, ec)) return "no such file; skipped";
+  std::string ext = utf8(path.extension());
+  std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
+  if (ext == ".rvz" || ext == ".gcz" || ext == ".wia" || ext == ".ciso" || ext == ".wbfs")
+    return "a compressed image; convert it to .iso with Dolphin (see ISO/README.txt)";
   disc::Image img;
   if (!img.open(image, nullptr)) return "not a GameCube or Triforce disc image; skipped";
   std::string supported;
@@ -289,11 +296,8 @@ std::vector<std::pair<const GameInfo*, std::string>> find_images(const Package& 
       std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
       const std::string image = utf8(it->path());
       const std::string name = utf8(it->path().filename());
-      if (ext == ".rvz" || ext == ".gcz" || ext == ".wia" || ext == ".ciso" || ext == ".wbfs") {
-        report.line(name + ": a compressed image; convert it to .iso with Dolphin (see ISO/README.txt)");
-        continue;
-      }
-      if (ext != ".iso" && ext != ".gcm") continue;
+      const bool compressed = ext == ".rvz" || ext == ".gcz" || ext == ".wia" || ext == ".ciso" || ext == ".wbfs";
+      if (ext != ".iso" && ext != ".gcm" && !compressed) continue;
       if (const GameInfo* g = identify_image(package, image)) {
         if (!have(g)) found.emplace_back(g, image);
       } else {
