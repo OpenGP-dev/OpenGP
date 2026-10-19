@@ -48,7 +48,7 @@ your GGPE02.iso ─extract─> main.dol ─decomp-toolkit─> symbols.txt
 | Games | `games/` | Per-game symbol maps, recompiler config, patches and launcher (`mkgp1`, `mkgp2`); what both share in `common/` (SDK replacements, the arcade library's free play and test-menu restart) |
 | Installer | `tools/installer/` | Builds the games on the player's machine from the installer package (see [docs/packaging.md](docs/packaging.md)) |
 | Scripts | `tools/*.py`, `tools/devshell.ps1` | Game setup (extract and verify `main.dol`), naming functions (SDK signatures, the GP 2 decomp, matching functions between the games), Windows build shell |
-| Tests | `tests/` | Decoder tests, known-answer semantics tests, and differential tests (interpreter vs recompiled code) |
+| Tests | `tests/` | Decoder, known-answer semantics and differential tests (interpreter vs recompiled code), and tests of the hardware, renderer front end, settings, input, link, paths and crash reports |
 
 Details are in [docs/architecture.md](docs/architecture.md). Notes on the arcade hardware are in
 [docs/triforce.md](docs/triforce.md).
@@ -61,9 +61,8 @@ of the code and documentation is written by Claude (Anthropic's model) through
 `Co-Authored-By: Claude` line, so the history shows which ones.
 
 The code is held to the same checks as any other:
-- The test suite (decoder tests, known-answer semantics tests, and differential tests that run the
-  same guest code through the interpreter and the recompiled code) runs in CI on every push, on
-  Linux, Windows and macOS.
+- The test suite (among others, differential tests that run the same guest code through the
+  interpreter and the recompiled code) runs in CI on every push, on Linux, Windows and macOS.
 - The hardware follows Dolphin's behaviour, and code ported from Dolphin is marked as such.
 - What OpenGP learned from other projects is credited below and in the docs. Nothing is copied
   from projects that have no license, only facts such as addresses.
@@ -77,12 +76,12 @@ images in its `ISO` folder and run `OpenGP`: it builds the games on your machine
 
 ## Building
 
-You need CMake 3.25+, Ninja, Python 3, and GCC 12+ or Clang 16+. On Windows, use clang-cl: the
+You need CMake 3.25+, Ninja, Python 3.9+, and GCC 12+ or Clang 16+. On Windows, use clang-cl: the
 recompiled code relies on weak symbols, which MSVC does not support. Full instructions, including
 Windows setup, are in [docs/building.md](docs/building.md).
 
 ```sh
-python tools/setup.py            # extracts main.dol from your images in ISO/ (see below)
+python3 tools/setup.py           # extracts main.dol from your images in ISO/ (Windows: python)
 cmake --preset default           # Windows: . .\tools\devshell.ps1, then --preset clang-cl
 cmake --build --preset default
 ctest --preset default
@@ -98,7 +97,7 @@ includes the recompiler's output, because it is derived from the game.
 
 To play, you will need your own copy of the game:
 - Put your images in `ISO/` (or `private/`). Both folders are gitignored.
-- `python tools/setup.py` extracts each game's `main.dol` into `orig/` (also gitignored), and the
+- `python3 tools/setup.py` extracts each game's `main.dol` into `orig/` (also gitignored), and the
   build reads it from there.
 - [docs/game-files.md](docs/game-files.md) explains how to prepare them.
 

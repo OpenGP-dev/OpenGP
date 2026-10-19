@@ -101,8 +101,9 @@ python tools/crossmatch.py orig/GGPE02/sys/main.dol games/mkgp2/config/symbols.t
 ```
 
 Both only rename generated names (`fn_XXXXXXXX`, `dtor_XXXXXXXX`, `lbl_XXXXXXXX`), and keep
-names that are already taken; run them again as the decomp names more. Object names do not change
-the generated code (the recompiler uses objects only for their sizes, which stay the same). The decomp's names are its authors'
+names that are already taken; run them again as the decomp names more. Renaming objects does not
+change the generated code. Splitting one does: the recompiler bounds jump tables by their
+objects' sizes, so rebuild and play after a split. The decomp's names are its authors'
 reading of the code, so they are a guide rather than a fact. Where it names an SDK function
 differently, the name from `sigmatch.py` is kept.
 

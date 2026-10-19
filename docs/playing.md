@@ -36,13 +36,15 @@ Game tab to keep it running).
 
 | Tab | Settings |
 |-----|----------|
-| Game | The Mario Card you hold; the camera; pausing; free play |
+| Game | The Mario Card you hold; the camera; pausing; Discord; free play and the test menu; linked cabinets |
 | Video | Fullscreen, aspect ratio, internal resolution, VSync, even frame pacing |
 | Sound | Volume |
 | Controls | The keys, buttons and axes for each control; force feedback, steering speed, dead zones |
 
 **F11** (or Alt+Enter) switches between a window and fullscreen, and **F12** saves a screenshot to
-`user/screenshots/`.
+`user/screenshots/`. On a Mac keyboard, hold **Fn** for the F keys (or turn on "Use F1, F2, etc.
+keys as standard function keys" in the keyboard settings), use Option+Return for Alt+Enter, and
+**P** to pause.
 
 ### Pausing
 
@@ -80,9 +82,9 @@ the edge of the wide one.
 
 ### Internal resolution
 
-The game renders at its native 640x528 times the internal resolution. **Match the window** (the
-default) picks the smallest multiple at least as tall as the window: 2x for 720p, 3x for 1080p,
-5x for 4K.
+The game draws at its native 640x528 times the internal resolution, and shows 640x480 of it
+times the same (the menu lists the size shown). **Match the window** (the default) picks the
+smallest multiple at least as tall as the window: 2x for 720p, 3x for 1080p, 5x for 4K.
 
 ### Even frame pacing
 
@@ -113,7 +115,8 @@ race. OpenGP can use a webcam for it. In the menu's Game tab, **Photos from** is
 
 - **Off** (the default): the game takes no photos, as a cabinet without its camera.
 - **Webcam**: the webcam chosen below it (**Default** is the first one). Its picture is cropped to 4:3 around
-  the middle. On macOS, the system asks once whether OpenGP may use the camera.
+  the middle. On macOS, the system asks once whether OpenGP may use the camera (started from
+  Terminal, it asks for Terminal).
 - **Test pattern**: colour bars, for trying it without a webcam.
 
 The camera is set up when the game starts, so a change takes effect when the game restarts. If
@@ -289,7 +292,9 @@ into it (the window closes and opens again, as the cabinet reboots). In the test
 service button) moves to the next item and **F2** chooses it; **EXIT** restarts the game.
 
 Holding **F1** and pressing **F2** during the game opens the I/O test instead (wheel and pedal
-calibration and a switch test); hold F1 and press F2 again to leave it.
+calibration and a switch test); hold F1 and press F2 again to leave it. Leave the calibration page
+with the wheel or stick centred and the pedals released: the game takes the centre from there. If
+the steering pulls to one side afterwards, open the page again and leave it centred.
 
 ## If the game freezes or crashes
 

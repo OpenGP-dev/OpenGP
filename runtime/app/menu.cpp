@@ -350,7 +350,7 @@ void Menu::video_tab(MenuModel& m) {
   ImGui::Checkbox("Fullscreen (F11)", &s.fullscreen);
 
   static constexpr std::pair<AspectRatio, const char*> kAspects[] = {
-      {AspectRatio::Auto, "Scale to fit"}, {AspectRatio::Original, "4:3 (original)"}, {AspectRatio::Wide16x9, "16:9"},
+      {AspectRatio::Auto, "Fit the window"}, {AspectRatio::Original, "4:3 (original)"}, {AspectRatio::Wide16x9, "16:9"},
       {AspectRatio::Wide16x10, "16:10"},     {AspectRatio::Wide21x9, "21:9"},
   };
   const char* current = "";
@@ -364,7 +364,7 @@ void Menu::video_tab(MenuModel& m) {
   }
 
   auto resolution = [](u32 scale) {
-    if (scale == 0) return std::string("Scale to fit");
+    if (scale == 0) return std::string("Match the window");
     return std::to_string(scale) + "x (" + std::to_string(640 * scale) + "x" + std::to_string(480 * scale) + ")";
   };
   ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);

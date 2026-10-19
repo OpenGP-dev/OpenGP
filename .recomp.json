@@ -4,7 +4,7 @@
   "wikidata": "Q9029138",
   "system": "Arcade",
   "type": "recomp",
-  "original": { "region": "World", "serial": "GGPE02" },
+  "original": { "region": "USA", "serial": "GGPE02" },
   "project": "OpenGP",
   "status": "released",
   "targets": ["Windows", "Linux", "macOS"],

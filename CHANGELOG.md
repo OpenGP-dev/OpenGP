@@ -136,6 +136,10 @@ From a profile of a whole playthrough of GP 2:
 - [docs/packaging.md](docs/packaging.md) lists what each system needs (Windows 10 version 1803 or
   later, a Vulkan driver, the Linux compilers) and explains how to update without losing saves,
   how to get past Windows SmartScreen, and the macOS 15 "Open Anyway" step.
+- The documents were checked against the code and corrected throughout: the menu's option names
+  (the menu now says **Fit the window** and **Match the window**, as the documents do), the tests,
+  the recompiler's address classes, the media board and link notes, the build options and
+  environment variables, Mac keys, and wheel calibration.
 - The installer package now carries all the documents, so their links work, and
   [docs/game-files.md](docs/game-files.md) starts with preparing an image, for players and source
   builds alike.
@@ -244,7 +248,7 @@ built and tested on Windows; the Linux and macOS builds have not been tested sin
 ### The GP 2 decomp's findings (milestone 10)
 
 - Both games' symbol maps have the names of functions and globals from
-  [mkgp2-decomp](https://github.com/naari3/mkgp2-decomp): 3,427 functions and 488 objects in
+  [mkgp2-decomp](https://github.com/naari3/mkgp2-decomp): 2,512 functions and 372 objects in
   GP 2, about 1,000 functions in GP. Backtraces and profiles show them.
 - `--game-log` prints the games' own debug messages, converted from Shift JIS.
 
@@ -299,9 +303,9 @@ from it yet.
   interpreter. Neither game has any now, because the recompiler handles calls into the middle of
   functions.
 
-Still missing are the NamCam2 camera, linked cabinets, which are next in milestone 10, and signed
-macOS packages. Until the packages are signed, open a macOS package once with right-click and
-Open, as [docs/packaging.md](docs/packaging.md) describes.
+Still missing are the NamCam2 camera, linked cabinets, which are next in milestone 10 (now
+milestones 11 and 12), and signed macOS packages. Until the packages are signed, open a macOS
+package once with right-click and Open, as [docs/packaging.md](docs/packaging.md) describes.
 
 ## 0.1.0 (2026-10-04)
 

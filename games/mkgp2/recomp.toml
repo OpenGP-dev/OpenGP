@@ -28,18 +28,20 @@ exception_return = ["OSLoadContext"]
 address = 0x8025BA28
 function = "OSIdleWait"
 
-# The NamCam2 camera is an IP camera on the media board's network, which is
-# not emulated, so the start-up device check ends in "CAMERA ERROR". The
-# game can run without it: default its "camera use" setting (byte 0x25 of
-# the settings block at 805986C0) to off, and the check reports "CAMERA
-# DISABLED" instead. (From the community skip-checks patch.)
+# The "camera use" setting (byte 0x25 of the settings block at 805986C0)
+# defaults to off, so a new backup's start-up device check reports "CAMERA
+# DISABLED" rather than waiting for a camera. games/common/camera_use.cpp
+# then sets the byte at start-up from the player's camera setting. (From the
+# community skip-checks patch.)
 [[patch]]
 address = 0x80073BD8
 value = 0x98650025  # stb r3, 0x25(r5); was stb r6 (r6 = 1, r3 = 0)
 
 # At start-up the LINK screen looks for linked cabinets for 60 seconds (a
-# 3600-frame timer set when the link starts). Linking is not emulated, so
-# don't wait. (From the community skip-checks patch.)
+# 3600-frame timer set when the link starts). It waits 1 frame instead, and
+# games/common/cabinet.cpp makes the wait up to 15 seconds while another
+# cabinet is found but not yet linked. (From the community skip-checks
+# patch.)
 [[patch]]
 address = 0x80084850
 value = 0x38000001  # li r0, 1; was li r0, 3600
