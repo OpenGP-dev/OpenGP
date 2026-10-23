@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.1 (not released yet)
+## Unreleased
 
 1.0.1 follows a full audit of OpenGP: its code, build, installer packages, documents and licences.
 It has the fixes the audit found, for saves, crashes, security, paths, the installer and the

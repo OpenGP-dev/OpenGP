@@ -239,8 +239,8 @@ Some settings must change together:
 
 1. Set the new version in `project(OpenGP VERSION ...)` in `CMakeLists.txt`. Every release needs a
    new one: the installer rebuilds the games only when the version changes.
-2. In `CHANGELOG.md`, replace "not released yet" in the new version's heading with the date, with
-   a short summary under it.
+2. In `CHANGELOG.md`, give the `## Unreleased` heading the version and the date, with a short
+   summary under it.
 3. In `README.md`, name the new version as the latest release.
 4. Set `LAUNCHER_REF` in `.github/workflows/package.yml` to the tag the launcher release for it
    will have, such as `v1.0.0`.
