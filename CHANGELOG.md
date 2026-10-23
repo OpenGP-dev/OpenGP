@@ -185,10 +185,9 @@ tweaks.
 
 ## 1.0.0 (2026-10-23)
 
-The first release of OpenGP (0.1.0 to 0.4.0 were internal), with installer packages for Windows,
-Linux and macOS. It brings smoother busy courses and loads, and even frame pacing for FreeSync and
-G-Sync monitors. OpenGP is now feature-locked: from here on, releases bring only bug fixes and
-design tweaks.
+An internal release, as 0.1.0 to 0.4.0 were, with installer packages for Windows, Linux and macOS.
+It brings smoother busy courses and loads, and even frame pacing for FreeSync and G-Sync monitors.
+OpenGP is now feature-locked: from here on, releases bring only bug fixes and design tweaks.
 
 Known issue: on Windows, OpenGP 1.0.0 doesn't work when the path of its folder, or of a disc image
 you give it, has any character other than A to Z, digits and simple punctuation (such as é, ü or
