@@ -49,8 +49,8 @@ too, and **Pause when the window is unfocused** (Game tab) pauses it while you a
 window. The pause control can be changed like the others (Controls tab, or `pause` in
 `controls.toml`). The game's clock falls behind by the time spent paused, until it next starts.
 
-Pausing is only for playing solo. Once the game has linked to another cabinet (on this computer or
-a LAN), the other cabinets need it to keep running, so it doesn't pause again until it restarts:
+Pausing is only for playing solo. Once the game has linked to another cabinet (on this computer
+or the local network), the other cabinets need it to keep running, so it doesn't pause again until it restarts:
 the pause control does nothing, and the menu opens over the running game.
 
 ## Settings
