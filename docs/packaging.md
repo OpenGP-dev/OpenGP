@@ -65,8 +65,8 @@ does.
 `xcode-select --install` installs. The package needs Apple Silicon and macOS 13 or later.
 
 CI builds the runtime in each package with the flags the installer uses. On Windows and macOS it
-uses the same compiler too. On Linux it uses GCC 12, the oldest compiler the installer accepts, so
-the runtime links with any compiler the installer finds.
+uses the same compiler too. On Linux it uses GCC 12, the oldest compiler OpenGP supports, so the
+runtime links with any supported compiler.
 
 ### Opening the package on Windows the first time
 
