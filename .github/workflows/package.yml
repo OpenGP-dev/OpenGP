@@ -16,6 +16,15 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+      # A version tag must name the version the packages are built as.
+      - name: Check the tag against the project version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $project = [regex]::Match((Get-Content CMakeLists.txt -Raw), 'project\(OpenGP VERSION ([0-9.]+)').Groups[1].Value
+          if (($env:GITHUB_REF_NAME -replace '^v', '') -ne $project) {
+            throw "The tag $env:GITHUB_REF_NAME does not match the project version $project in CMakeLists.txt"
+          }
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -76,6 +85,15 @@ jobs:
       CXX: g++-12
     steps:
       - uses: actions/checkout@v5
+      # A version tag must name the version the packages are built as.
+      - name: Check the tag against the project version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(sed -n 's/^project(OpenGP VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "The tag $GITHUB_REF_NAME does not match the project version $version in CMakeLists.txt" >&2
+            exit 1
+          fi
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -104,6 +122,15 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
+      # A version tag must name the version the packages are built as.
+      - name: Check the tag against the project version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(sed -n 's/^project(OpenGP VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "The tag $GITHUB_REF_NAME does not match the project version $version in CMakeLists.txt" >&2
+            exit 1
+          fi
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'

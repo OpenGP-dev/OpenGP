@@ -7,7 +7,8 @@ from the games is ever distributed. [game-files.md](game-files.md) explains why 
 ## Using it
 
 1. Unpack `OpenGP-<version>-windows-x64.zip`, `OpenGP-<version>-linux-x64.tar.gz` or
-   `OpenGP-<version>-macos-arm64.tar.gz` anywhere.
+   `OpenGP-<version>-macos-arm64.tar.gz` anywhere. On Windows, choose a folder whose path has only
+   plain letters (see [the known issue](#known-issue-on-windows)).
 2. Put your images in its `ISO` folder. Images elsewhere work too if you give their paths to the
    installer.
 3. Run `OpenGP`. On Windows you can double-click `OpenGP.exe` or drop an image on it.
@@ -38,6 +39,14 @@ OpenGP [IMAGE...] [--force] [--jobs N] [--cxx COMPILER] [--keep-build]
 The games then run like a source build's games, which [playing.md](playing.md) describes. Their
 settings, saves and screenshots go in the package's `user/` folder.
 
+### Known issue on Windows
+
+OpenGP 1.0.0 doesn't work in a folder whose path has characters outside the system's code page,
+such as a user folder named José or 日本. There the installer fails to build the games, and the
+games can crash as they start or fail to save. Put the package in a folder whose path has only
+plain letters (A to Z), digits and simple punctuation, such as `C:\Games\OpenGP`. A patch release
+fixes this.
+
 ## The compiler
 
 **Windows.** On first use the installer downloads [llvm-mingw](https://github.com/mstorsjo/llvm-mingw),
@@ -46,20 +55,35 @@ installer checks its SHA-256 and unpacks the x86-64 part, about 480 MB, into `to
 the `curl` and `tar` that come with Windows 10 and later.
 
 **Linux.** The installer uses the system's C++ compiler, `c++`, `g++` or `clang++`. It needs GCC 12
-or later, or Clang 16 or later. On Debian or Ubuntu, `sudo apt install g++` installs one.
+or later, or Clang 16 or later. On Ubuntu 22.04, whose `g++` is GCC 11, `sudo apt install g++-12`
+installs one; then run `OpenGP --cxx g++-12`. On newer Debian and Ubuntu, `sudo apt install g++`
+does.
 
 **macOS.** The installer uses Apple's Clang from the Xcode Command Line Tools, which
 `xcode-select --install` installs. The package needs Apple Silicon and macOS 13 or later.
 
-CI builds the runtime in each package with the same compiler and flags that the installer uses, so
-the game and the runtime link together.
+CI builds the runtime in each package with the flags the installer uses. On Windows and macOS it
+uses the same compiler too. On Linux it uses GCC 12, the oldest compiler the installer accepts, so
+the runtime links with any compiler the installer finds.
+
+### Opening the package on Windows the first time
+
+The package isn't signed, because signing costs money every year. Windows may warn that it
+"protected your PC" the first time you run `OpenGP.exe`. Choose **More info**, then **Run anyway**.
+To avoid the warning, right-click the zip before unpacking it, choose **Properties**, tick
+**Unblock** and press OK.
 
 ### Opening the package on macOS the first time
 
 Apple has not signed the package, because signing needs a paid Apple developer account. macOS
-refuses to open the downloaded `OpenGP` until you allow it once. Right-click it in Finder and
-choose **Open**, or run `xattr -dr com.apple.quarantine <package folder>` in Terminal. The games
-the installer builds on your Mac open normally.
+refuses to open the downloaded `OpenGP` until you allow it once:
+
+- **macOS 15 and later**: open `OpenGP` once and close the warning. Then, in **System Settings >
+  Privacy & Security**, choose **Open Anyway** next to the message about `OpenGP`, and confirm.
+- **macOS 13 and 14**: right-click `OpenGP` in Finder and choose **Open**.
+- **Either**: run `xattr -dr com.apple.quarantine <package folder>` in Terminal before opening it.
+
+The games the installer builds on your Mac open normally.
 
 ## What is in it
 
@@ -68,7 +92,7 @@ OpenGP[.exe]            the installer
 sdk/package.toml        the version, the pinned compiler, compile and link settings
 sdk/include/            the runtime's headers
 sdk/lib/                the runtime as static libraries, with SDL3 and Dear ImGui
-sdk/games/<game>/       game.toml, recomp.toml, config/symbols.txt, patches.cpp
+sdk/games/<game>/       game.toml, recomp.toml, config/symbols.txt, patches.cpp, status.cpp
 sdk/games/common/       the launcher's main() and the code the games share
 ISO/                    for your images
 licenses/               the licences of the third-party code in the package
@@ -122,3 +146,17 @@ Some settings must change together:
   `opengp_guest_flags` in `CMakeLists.txt` sets.
 - The link libraries in `cmake/package.cmake` must cover what the runtime and SDL3 need. The
   probe fails if one is missing.
+
+## Releasing
+
+1. Set the new version in `project(OpenGP VERSION ...)` in `CMakeLists.txt`. Every release needs a
+   new one: the installer rebuilds the games only when the version changes.
+2. In `CHANGELOG.md`, give the `## Unreleased` heading the version and the date, with a short
+   summary under it.
+3. In `README.md`, name the new version as the latest release.
+4. Run the package workflow by hand on the release commit (Actions > Package > Run workflow, or
+   `gh workflow run package.yml --ref <branch>`), and check that all three packages build.
+5. Merge the release branch into `main` with `git merge --no-ff`.
+6. Tag the merge `v<version>`, the same version as in `CMakeLists.txt`, and push the tag. The
+   workflow builds the packages again and attaches them to a draft release; it fails if the tag
+   and the version differ. Check the draft, then publish it.

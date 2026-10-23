@@ -131,6 +131,6 @@ install(FILES ${sdl3_SOURCE_DIR}/src/video/yuv2rgb/LICENSE DESTINATION licenses 
 install(FILES ${PROJECT_SOURCE_DIR}/thirdparty/tomlplusplus/LICENSE DESTINATION licenses RENAME tomlplusplus-LICENSE.txt)
 install(FILES ${PROJECT_SOURCE_DIR}/thirdparty/gc-fonts/LICENSE DESTINATION licenses RENAME gc-fonts-LICENSE.txt)
 install(FILES ${PROJECT_SOURCE_DIR}/thirdparty/gc-fonts/README.md DESTINATION licenses RENAME gc-fonts-README.md)
-install(FILES ${PROJECT_SOURCE_DIR}/docs/playing.md ${PROJECT_SOURCE_DIR}/docs/game-files.md
-        DESTINATION docs)
+# All of them: the player's pages link to the others.
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/docs/ DESTINATION docs FILES_MATCHING PATTERN "*.md")
 install(FILES ${PROJECT_SOURCE_DIR}/tools/installer/ISO-README.txt DESTINATION ISO RENAME README.txt)
