@@ -132,8 +132,10 @@ install(FILES ${PROJECT_SOURCE_DIR}/thirdparty/tomlplusplus/LICENSE DESTINATION 
 install(FILES ${PROJECT_SOURCE_DIR}/thirdparty/gc-fonts/LICENSE DESTINATION licenses RENAME gc-fonts-LICENSE.txt)
 install(FILES ${PROJECT_SOURCE_DIR}/thirdparty/gc-fonts/README.md DESTINATION licenses RENAME gc-fonts-README.md)
 # The launcher the package workflow adds (OpenGP-dev/opengp-launcher) links Qt,
-# under the LGPL. Its install puts the same text in the same place.
+# under the LGPL. Its install puts the same text in the same place. With it,
+# the notices of the code Qt contains (tools/qt_notices.py makes them).
 install(FILES ${PROJECT_SOURCE_DIR}/thirdparty/qt/LGPL-3.0.txt DESTINATION licenses RENAME Qt-LGPL-3.0.txt)
+install(FILES ${PROJECT_SOURCE_DIR}/thirdparty/qt/third-party.txt DESTINATION licenses RENAME Qt-third-party.txt)
 # All of them: the player's pages link to the others.
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/docs/ DESTINATION docs FILES_MATCHING PATTERN "*.md")
 install(FILES ${PROJECT_SOURCE_DIR}/tools/installer/ISO-README.txt DESTINATION ISO RENAME README.txt)

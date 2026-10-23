@@ -210,6 +210,9 @@ Some settings must change together:
   probe fails if one is missing.
 - `LAUNCHER_REF` in the workflow names the launcher release for this OpenGP release. It is built
   against this OpenGP, whatever its own `external/OpenGP` submodule points to.
+- `QT_VERSION` in the workflow is the Qt the packages carry. When it changes, make
+  `thirdparty/qt/third-party.txt` again with `tools/qt_notices.py` from that Qt's source, and
+  change the version in `THIRD-PARTY-NOTICES.md`.
 
 ## Releasing
 

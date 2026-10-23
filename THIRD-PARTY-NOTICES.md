@@ -24,7 +24,7 @@ package.
 | Dolphin's software clipper, with portions by Markus Trenkwalder | BSD-3-Clause | `runtime/gx/frontend.cpp` (the backface test) |
 | [xxHash](https://github.com/Cyan4973/xxHash)'s XXH64 algorithm | BSD-2-Clause | `runtime/gx/frontend.cpp` (texture hashing) |
 | [doctest](https://github.com/doctest/doctest) | MIT | `thirdparty/doctest`, the test suite only (not in packages) |
-| [Qt 6](https://www.qt.io/), 6.10.3 | LGPL-3.0 | installer packages: the launcher's interface, as shared libraries |
+| [Qt 6](https://www.qt.io/), 6.10.3, and the third-party code in it | LGPL-3.0; their own, in `licenses/Qt-third-party.txt` | installer packages: the launcher's interface, as shared libraries |
 | M PLUS Rounded 1c | OFL-1.1 | installer packages: the launcher's typeface, built into it |
 | SDL's scancode tables | zlib | installer packages: built into the launcher, for the keys pressed in its window |
 | [xcb-util](https://xcb.freedesktop.org/) and [ICU](https://icu.unicode.org/), which Qt needs | MIT/X11 and HPND; Unicode licence | Linux packages only: `qt/lib/` |
@@ -485,12 +485,18 @@ Linux, and the frameworks in `OpenGP.app/Contents/Frameworks/` on macOS (then si
 <https://download.qt.io/archive/qt/6.10/6.10.3/>, and in Qt's Git repositories at
 <https://code.qt.io/> (tag `v6.10.3`).
 
-Qt contains third-party code of its own, such as PCRE2, HarfBuzz, FreeType, libpng and zlib,
-depending on the system. "Licenses Used in Qt" lists their licences and notices
-(<https://doc.qt.io/qt-6/licenses-used-in-qt.html>), and so do the `qt_attribution.json` files and
-`LICENSES/` folders of the modules above in Qt 6.10.3's source. On Linux, a package also carries
-the xcb-util libraries and ICU in `qt/lib/`, as Qt needs them. Their notices are in the launcher's
-notices, and their licences in `licenses/xcb-util-COPYING.txt` and `licenses/ICU-LICENSE.txt`.
+Qt builds third-party code into these libraries and plugins, such as PCRE2, HarfBuzz, FreeType,
+libjpeg-turbo, libpng and zlib, some of it only on some systems. Each keeps its own licence.
+`licenses/Qt-third-party.txt` in an installer package gives the copyright notices and the full
+licence of each (`thirdparty/qt/third-party.txt` in the source, made from the `qt_attribution.json`
+files of Qt 6.10.3's source). "Licenses Used in Qt" lists them too
+(<https://doc.qt.io/qt-6/licenses-used-in-qt.html>). As two of those licences ask: this software is
+based in part on the work of the Independent JPEG Group. Portions of this software are copyright ©
+2026 The FreeType Project (www.freetype.org). All rights reserved.
+
+On Linux, a package also carries the xcb-util libraries and ICU in `qt/lib/`, as Qt needs them.
+Their notices are in the launcher's notices, and their licences in `licenses/xcb-util-COPYING.txt`
+and `licenses/ICU-LICENSE.txt`.
 
 ## M PLUS Rounded 1c
 
