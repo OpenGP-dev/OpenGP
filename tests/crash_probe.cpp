@@ -32,8 +32,12 @@ int recurse(int depth) {
 
 int main(int argc, char** argv) {
   if (argc != 3) return 2;
-  os::install_crash_handler(nullptr, [](std::FILE* out) { std::fprintf(out, "probe callback ran\n"); }, argv[1],
-                            "crash_probe");
+  // os::crashing() says when a report is under way, and only then.
+  os::install_crash_handler(
+      nullptr,
+      [](std::FILE* out) { std::fprintf(out, "probe callback ran%s\n", os::crashing() ? ", crashing" : ""); },
+      argv[1], "crash_probe");
+  if (os::crashing()) return 2;
   const std::string how = argv[2];
   if (how == "fatal") os::crash_now("fatal: the probe gave up");
   if (how == "null") return *g_null;

@@ -283,7 +283,8 @@ os::Reboot next_boot(const os::Reboot& requested) {
 }
 
 // Whether start-up failures also show a message box: for a game started for a
-// window, whose console (if any) may close with it.
+// window, whose console (if any) may close with it. Not when the OpenGP
+// launcher started it: the launcher shows the message from the log.
 bool g_error_box = false;
 
 // settings.toml could not be read nor set aside: it is never overwritten.
@@ -291,7 +292,14 @@ bool g_keep_settings_file = false;
 
 // Reports a problem that stops the game from starting; returns the exit code.
 int start_failed(const std::string& message) {
-  std::fprintf(stderr, "%s\n", message.c_str());
+  // On one line in the log, whose last line the OpenGP launcher shows; the
+  // box keeps the paragraphs.
+  std::string line;
+  for (const char c : message) {
+    if (c != '\n') line += c;
+    else if (!line.empty() && line.back() != ' ') line += ' ';
+  }
+  std::fprintf(stderr, "%s\n", line.c_str());
 #ifdef OPENGP_VIDEO
   if (g_error_box) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "OpenGP", message.c_str(), nullptr);
 #endif
@@ -456,12 +464,12 @@ int run(const Game& game, int argc, char** argv) {
   // With a window the game runs until it is closed; otherwise for 20 seconds.
   const bool windowed = o.use_video && !o.headless;
   if (o.timeout_s < 0) o.timeout_s = windowed ? 0 : 20;
-  g_error_box = windowed;
-  const fs::path user_dir = o.user_dir.empty() ? home_dir() / "user" : os::utf8_path(o.user_dir);
-  g_reboot_file = std::string("reboot-") + game.id + ".bin";
   // Started by the OpenGP launcher (it sets OPENGP_LAUNCHER): the player has
   // no command line, so the messages point at the launcher instead.
   const bool from_launcher = std::getenv("OPENGP_LAUNCHER") != nullptr;
+  g_error_box = windowed && !from_launcher;
+  const fs::path user_dir = o.user_dir.empty() ? home_dir() / "user" : os::utf8_path(o.user_dir);
+  g_reboot_file = std::string("reboot-") + game.id + ".bin";
   if (!lock_user_dir(user_dir, game.id)) {
     if (from_launcher)
       return start_failed(std::string(game.title) + " is already running from this OpenGP folder (" +
@@ -633,7 +641,11 @@ int run(const Game& game, int argc, char** argv) {
     std::snprintf(reason, sizeof(reason), "fatal: %s", message);
     os::crash_now(reason);
   };
-  app::start_hang_watch(machine, names, user_dir / "hang-report.txt", header);
+  // Hang reports, from when the game starts running: a message about a
+  // start-up failure can stay open for as long as the player likes.
+  auto watch_for_hangs = [&user_dir, &header] {
+    app::start_hang_watch(machine, names, user_dir / "hang-report.txt", header);
+  };
   os::start_profiler_from_env();
 
   std::thread([timeout_s = o.timeout_s, status_s = o.status_s, print_status] {
@@ -716,8 +728,10 @@ int run(const Game& game, int argc, char** argv) {
 
     static video::FrameQueue queue;
     machine.gpu().set_output(&queue);
+    watch_for_hangs();  // once: the loop below never ends, it quits or restarts
     std::thread([] {
       os::set_interactive_thread();
+      os::prepare_thread_for_crashes();  // as for the game's other threads
       machine.run();
       std::fprintf(stderr, "[opengp] entry point returned\n");
     }).detach();
@@ -744,7 +758,8 @@ int run(const Game& game, int argc, char** argv) {
       stop_link();
       stop_outputs();
       std::fflush(stdout);
-      std::_Exit(0);
+      // Closed while the crash message was up (Windows): still a crash.
+      std::_Exit(os::crashing() ? 3 : 0);
     };
 
     // Applies settings that changed (in the menu, by resizing the window...).
@@ -971,6 +986,7 @@ int run(const Game& game, int argc, char** argv) {
   }
 #endif
 
+  watch_for_hangs();
   machine.run();
   print_status("entry point returned");
   return 0;

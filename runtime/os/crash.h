@@ -37,4 +37,8 @@ void prepare_thread_for_crashes();
 // and ends the process.
 [[noreturn]] void crash_now(const char* reason);
 
+// Whether a crash report has begun: the process is ending with exit code 3
+// (on Windows, maybe after a message the player has yet to close).
+bool crashing();
+
 }  // namespace os
