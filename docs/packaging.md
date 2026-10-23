@@ -237,3 +237,6 @@ Some settings must change together:
 8. Tag the merge `v<version>`, the same version as in `CMakeLists.txt`, and push the tag. The
    workflow builds the packages again and attaches them to a draft release; it fails if the tag
    and the version differ. Check the draft, then publish it.
+
+An internal release is tagged like any other, but its draft release is left unpublished, or
+deleted.
