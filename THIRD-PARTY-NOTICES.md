@@ -11,7 +11,7 @@ folder of an installer package.
 | Work | Licence | Where |
 |------|---------|-------|
 | [Dolphin](https://github.com/dolphin-emu/dolphin) (ported parts) | GPL-2.0-or-later | `runtime/`, `tools/sigmatch.py`; each file says what it is based on |
-| [SDL 3](https://github.com/libsdl-org/SDL), with its HIDAPI, yuv2rgb and libm code | zlib; BSD-3-Clause; BSD-3-Clause; Sun's free licence | linked into every game and the installer package |
+| [SDL 3](https://github.com/libsdl-org/SDL), with its HIDAPI, yuv2rgb and libm code, and on Linux its X11 and Wayland code | zlib; BSD-3-Clause; BSD-3-Clause; Sun's free licence; MIT/X11 and HPND (Linux only) | linked into every game and the installer package |
 | [Dear ImGui](https://github.com/ocornut/imgui), with stb and the Proggy fonts | MIT; MIT or public domain; MIT | the in-game menu |
 | [toml++](https://github.com/marzer/tomlplusplus) | MIT | `thirdparty/tomlplusplus`, linked into the games and the installer |
 | Replacement GameCube IPL fonts, based on Droid Sans | Apache-2.0 | `thirdparty/gc-fonts`, embedded in every game |
@@ -160,6 +160,209 @@ Developed at SunPro, a Sun Microsystems, Inc. business.
 Permission to use, copy, modify, and distribute this
 software is freely granted, provided that this notice
 is preserved.
+```
+
+On Linux, SDL also includes the code below, for its X11 and Wayland video drivers.
+
+The X11 keysym table (`src/events/imKStoUCS.c`):
+
+```
+Copyright (C) 2003-2006,2008 Jamey Sharp, Josh Triplett
+Copyright © 2009 Red Hat, Inc.
+Copyright 1990-1992,1999,2000,2004,2009,2010 Oracle and/or its affiliates.
+All rights reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+The EDID parser (`src/video/x11/edid-parse.c`):
+
+```
+Copyright 2007 Red Hat, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+on the rights to use, copy, modify, merge, publish, distribute, sub
+license, and/or sell copies of the Software, and to permit persons to whom
+the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+The XSETTINGS client (`src/video/x11/xsettings-client.c`):
+
+```
+Copyright © 2001, 2007 Red Hat, Inc.
+Copyright 2024 Igalia S.L.
+
+Permission to use, copy, modify, distribute, and sell this software and its
+documentation for any purpose is hereby granted without fee, provided that
+the above copyright notice appear in all copies and that both that
+copyright notice and this permission notice appear in supporting
+documentation, and that the name of Red Hat not be used in advertising or
+publicity pertaining to distribution of the software without specific,
+written prior permission.  Red Hat makes no representations about the
+suitability of this software for any purpose.  It is provided "as is"
+without express or implied warranty.
+
+RED HAT DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING ALL
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL RED HAT
+BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
+OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+```
+
+SDL's Wayland code is generated from the protocol files in its `wayland-protocols` folder.
+These are their copyright notices (`pointer-gestures-unstable-v1.xml` names no holder):
+
+```
+alpha-modifier-v1.xml:
+  Copyright © 2024 Xaver Hugl
+color-management-v1.xml:
+  Copyright 2019 Sebastian Wick
+  Copyright 2019 Erwin Burema
+  Copyright 2020 AMD
+  Copyright 2020-2024 Collabora, Ltd.
+  Copyright 2024 Xaver Hugl
+  Copyright 2022-2025 Red Hat, Inc.
+cursor-shape-v1.xml:
+  Copyright 2018 The Chromium Authors
+  Copyright 2023 Simon Ser
+fractional-scale-v1.xml:
+  Copyright © 2022 Kenny Levinsen
+frog-color-management-v1.xml:
+  Copyright © 2023 Joshua Ashton for Valve Software
+  Copyright © 2023 Xaver Hugl
+idle-inhibit-unstable-v1.xml:
+  Copyright © 2015 Samsung Electronics Co., Ltd
+input-timestamps-unstable-v1.xml:
+  Copyright © 2017 Collabora, Ltd.
+keyboard-shortcuts-inhibit-unstable-v1.xml:
+  Copyright © 2017 Red Hat Inc.
+pointer-constraints-unstable-v1.xml:
+  Copyright © 2014      Jonas Ådahl
+  Copyright © 2015      Red Hat Inc.
+pointer-warp-v1.xml:
+  Copyright © 2024 Neal Gompa
+  Copyright © 2024 Xaver Hugl
+  Copyright © 2024 Matthias Klumpp
+  Copyright © 2024 Vlad Zahorodnii
+primary-selection-unstable-v1.xml:
+  Copyright © 2015, 2016 Red Hat
+relative-pointer-unstable-v1.xml:
+  Copyright © 2014      Jonas Ådahl
+  Copyright © 2015      Red Hat Inc.
+tablet-v2.xml:
+  Copyright 2014 © Stephen "Lyude" Chandler Paul
+  Copyright 2015-2016 © Red Hat, Inc.
+viewporter.xml:
+  Copyright © 2013-2016 Collabora, Ltd.
+wayland.xml:
+  Copyright © 2008-2011 Kristian Høgsberg
+  Copyright © 2010-2011 Intel Corporation
+  Copyright © 2012-2013 Collabora, Ltd.
+xdg-activation-v1.xml:
+  Copyright © 2020 Aleix Pol Gonzalez <aleixpol@kde.org>
+  Copyright © 2020 Carlos Garnacho <carlosg@gnome.org>
+xdg-decoration-unstable-v1.xml:
+  Copyright © 2018 Simon Ser
+xdg-dialog-v1.xml:
+  Copyright © 2023 Carlos Garnacho
+xdg-foreign-unstable-v2.xml:
+  Copyright © 2015-2016 Red Hat Inc.
+xdg-output-unstable-v1.xml:
+  Copyright © 2017 Red Hat Inc.
+xdg-shell.xml:
+  Copyright © 2008-2013 Kristian Høgsberg
+  Copyright © 2013      Rafael Antognolli
+  Copyright © 2013      Jasper St. Pierre
+  Copyright © 2010-2013 Intel Corporation
+  Copyright © 2015-2017 Samsung Electronics Co., Ltd
+  Copyright © 2015-2017 Red Hat Inc.
+xdg-toplevel-icon-v1.xml:
+  Copyright © 2023-2024 Matthias Klumpp
+  Copyright ©      2024 David Edmundson
+```
+
+They are under this licence:
+
+```
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+except `text-input-unstable-v3.xml`, which is under this one:
+
+```
+Copyright © 2012, 2013 Intel Corporation
+Copyright © 2015, 2016 Jan Arne Petersen
+Copyright © 2017, 2018 Red Hat, Inc.
+Copyright © 2018       Purism SPC
+
+Permission to use, copy, modify, distribute, and sell this
+software and its documentation for any purpose is hereby granted
+without fee, provided that the above copyright notice appear in
+all copies and that both that copyright notice and this permission
+notice appear in supporting documentation, and that the name of
+the copyright holders not be used in advertising or publicity
+pertaining to distribution of the software without specific,
+written prior permission.  The copyright holders make no
+representations about the suitability of this software for any
+purpose.  It is provided "as is" without express or implied
+warranty.
+
+THE COPYRIGHT HOLDERS DISCLAIM ALL WARRANTIES WITH REGARD TO THIS
+SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS, IN NO EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE FOR ANY
+SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
+AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
 ```
 
 ## Dear ImGui
