@@ -3,8 +3,9 @@
 ## 1.0.1 (not released yet)
 
 1.0.1 follows a full audit of OpenGP: its code, build, installer packages, documents and licences.
-It has the essential fixes (licences, saves, crashes, security, paths, the installer, the
-documents); the larger improvements the audit found follow in 1.1.
+It has the fixes the audit found, for saves, crashes, security, paths, the installer and the
+documents. OpenGP is feature-locked at 1.0, so later releases bring only bug fixes and design
+tweaks.
 
 ### Smoother
 
@@ -13,45 +14,47 @@ documents); the larger improvements the audit found follow in 1.1.
   build's compiler, and with the installer package's they kept a CPU core busy in the last
   millisecond before each one. In GP 2's attract mode at 8x, the game finished about 96% of its
   frames instead of about 87% on the same computer.
-- Less GPU work at high internal resolutions, for the same picture: opaque surfaces let the GPU
-  skip hidden pixels, the shader works only on the texture coordinates a surface has, and
-  surfaces the game culls entirely are no longer sent to the GPU. A mesh's matrix change no longer
-  rebuilds the draw state.
+- Less GPU work at high internal resolutions, for the same picture: draws whose alpha test always
+  passes let the GPU skip hidden pixels, the shader works only on the texture coordinates a
+  surface has, and surfaces the game culls entirely are no longer sent to the GPU. A mesh's matrix
+  change no longer rebuilds the draw state.
 - Steering wheels get fewer force-feedback reports: only the force that changed is sent (the road's
   feel changes almost every frame; the centring spring and friction seldom).
 - Smaller costs gone: the game's graphics data takes one lock fewer for every 32 bytes it sends,
-  new textures and disc reads are no longer cleared before being filled, and on Apple Silicon the
-  per-draw timers are as cheap as on PCs.
+  new textures and disc reads are no longer cleared before being filled, and on ARM64 the per-draw
+  timers are as cheap as on x86-64.
 - If the GPU runs short of memory for a moment, the picture comes back with the next frame, with
-  the textures it missed, instead of staying blank or white until a restart.
+  up to 256 MB of the textures it missed, instead of staying blank or white until a restart.
 
 ### Fixes
 
-- Windows: OpenGP now works in folders whose names have characters outside the system's code page
-  (an accent, Cyrillic, Chinese, Japanese...), such as a user folder named José or 日本. The
-  installer used to fail to build the games there, the games could crash at start-up, and saves,
-  settings, screenshots and images dropped on the installer could go unread or unwritten.
-- The installer: an interrupted compiler download carries on where it stopped, an interrupted
-  unpack is redone instead of leaving a broken compiler, and a failed download or unpack shows
-  what went wrong. It remembers an image given to it by its full path, so the game finds it
-  however it is started, and checks `--jobs`. Compiles running side by side no longer hold each
-  other's output open.
+- Windows: OpenGP now works in folders, and with disc images, whose paths have characters other
+  than A to Z, digits and simple punctuation (an accent, Cyrillic, Chinese, Japanese...), such as
+  a user folder named José or 日本: 1.0.0's known issue. The installer used to fail to build the
+  games there, the games could crash at start-up, and saves, settings, screenshots and images
+  dropped on the installer could go unread or unwritten.
+- The installer: an interrupted compiler download carries on where it stopped (if a proxy or virus
+  scanner stops it from resuming, the installer downloads it again from the beginning), an
+  interrupted unpack is redone instead of leaving a broken compiler, and a failed download or
+  unpack shows what went wrong. It remembers an image given to it by its full path, so the game
+  finds it however it is started, and checks `--jobs`. Compiles running side by side no longer
+  hold each other's output open.
 - The installer says why it skips a file in the `ISO` folder: a compressed image to convert with
   Dolphin, a file that isn't a disc image, or another game or region (naming the IDs it needs).
   Dropping a moved image on it records the new place even when the game is already built.
 - The installer says what to do when it is run from inside the zip or from a folder it cannot write
-  to, such as Program Files.
+  to, such as Program Files, instead of blaming the internet connection for the compiler's
+  download. Installing from the OpenGP launcher says so too.
 - On Linux the installer skips compilers older than GCC 12 or Clang 16 and also looks for
-  versioned ones (`g++-12`, `clang++-16` and newer), so Ubuntu 22.04 works with `g++-12`
-  installed.
+  versioned ones, up to `g++-20` and `clang++-25`, so Ubuntu 22.04 works with `g++-12` installed,
+  or with `clang++-21` installed with llvm.sh.
 - A second cabinet started with `--user-dir` finds the image the installer recorded. When a
   recorded image is gone, the game says where it looked.
 - Started from the OpenGP launcher, the games word their messages for it: add the disc image in
   OpenGP, or close the copy that is already running, instead of command-line options. A save that
   fails as a game closes or restarts is passed on for the launcher to show, instead of being lost
   with the window.
-- Installing from a folder OpenGP cannot write to (Program Files) says so and where to move it,
-  instead of blaming the internet connection for the compiler's download.
+- A launcher built on OpenGP 1.0.1 also opens a 1.0.0 package folder, which lists no game sources.
 - The games find their function names (for hang and crash reports) after the package folder is
   moved.
 - Saves: Mario Cards and settings are written to the disk before they replace the old file, so a
@@ -59,6 +62,8 @@ documents); the larger improvements the audit found follow in 1.1.
   an antivirus, the search indexer) holds up for a moment is tried again. If a card, the game's
   records, the settings, the controls or a screenshot still cannot be saved, the game says so on
   screen instead of only on the console.
+- When a card, the settings or the controls cannot be saved, the message wraps to fit the window
+  and stays up long enough to read (up to 15 seconds). The same message is not repeated.
 - One value OpenGP does not understand in `settings.toml` or `controls.toml` no longer throws away
   the whole file (and your link and card settings with it); a file it cannot read at all is kept as
   `settings.toml.bad` or `controls.toml.bad` instead of being overwritten. A key with no name can
@@ -66,43 +71,60 @@ documents); the larger improvements the audit found follow in 1.1.
   force feedback limits. A missing `internal_resolution` no longer resets it.
 - Crashes write `user/crash-report.txt` (and on Windows show where it is), also for aborts, fatal
   errors, uncaught exceptions and stack overflows, which used to vanish without a word. Hang
-  reports say which version, game and time they are from, a second hang no longer overwrites the
-  first, a hang before the first frame is reported too, and sleeping or hibernating the computer
-  is no longer taken for a hang.
+  reports say which version, game and time they are from, a second hang in the same run no longer
+  overwrites the first, a hang before the first frame is reported too, and sleeping or
+  hibernating the computer is no longer taken for a hang.
+- Windows: closing the game while the "OpenGP has crashed" message is up still ends it as a crash.
+  No hang report is added while the crash report is being written.
 - If a game cannot start (no disc image, no Vulkan or Metal driver), it says why in a message too,
-  not only on a console window that closes with it.
+  not only on a console window that closes with it. Hang reports start only once the game is
+  running, so the message can stay open as long as needed, with no crash or hang report behind it.
+  Started from the OpenGP launcher, the game leaves this message, and the crash message, to the
+  launcher instead of showing its own as well. The launcher now shows the whole reason, including
+  the driver's error.
 - A second copy of a game can no longer use the same user folder as one that is running: it says
   so and stops, instead of the two overwriting each other's saves. (GP and GP 2 can still run side
   by side from one package.)
-- The menu's Resume button now saves the settings, as Esc does. Closing the console window saves
-  and tells linked cabinets, as closing the game's window does. A wheel's forces and a gamepad's
-  rumble stop when the game quits or restarts.
-- A card name from `settings.toml` that cannot be a file name on that system (`..`, `/`, and on
-  Windows `CON`, `?`...) holds no card.
+- The menu's Resume button now saves the settings, as Esc does. On Windows, closing the console
+  window saves and tells linked cabinets, as closing the game's window does. A wheel's forces and
+  a gamepad's rumble stop when the game quits or restarts.
+- A card name from `settings.toml` that cannot be a file name (`..`, `/`, and on Windows `CON`,
+  `?`, `:` and the like) holds no card. On Linux and macOS, cards with names Windows refuses, such
+  as `Who?` or `Mario: 1st`, keep working as in 1.0.0. The card list leaves out files whose names
+  cannot be a card.
 - Widescreen: GP no longer leaves out objects in the side strips either (GP 2 was fixed in 1.0.0).
-- Wheels: with a steering wheel connected, steering comes from the wheel only, so separate pedals,
-  a handbrake or a throttle can no longer turn it by their own first axis (an idle pedal used to
-  hold the steering at full lock). An input a device does not have (an axis number past its last)
-  is skipped instead of read as half pressed.
+- Wheels: with a steering wheel connected, other joysticks no longer steer with their axes, so
+  separate pedals, a handbrake or a throttle can no longer turn it by their own first axis (an idle
+  pedal used to hold the steering at full lock). Gamepads and the keyboard still steer. An input a
+  device does not have (an axis number past its last) is skipped instead of read as half pressed.
 - Fixed a possible freeze in games that read the picture back (an EFB peek waited for the window's
   thread while holding what that thread needed).
 - Crashes and freezes from bad game data or a struggling GPU: textures, palettes and copies above
-  32 MB of memory are found (GP 2 has 48 MB), and out-of-range values in the game's graphics and
-  sound commands, a damaged disc image's executable table, or the hang report's thread list are
-  checked instead of read past their ends. A GPU that runs out of memory, or whose driver crashes,
-  no longer crashes OpenGP or freezes a game waiting for a readback: the frame is skipped and, if
-  it goes on, the player is told.
+  32 MB of memory are found (both games have 48 MB), and out-of-range values in the game's
+  graphics and sound commands, a damaged disc image's executable table, or the hang report's
+  thread list are checked instead of read past their ends. A GPU that runs out of memory no longer
+  crashes OpenGP or freezes a game waiting for a readback: the frame is skipped and, if it goes
+  on, the player is told.
 - Linked cabinets on different computers: each cabinet's messages now go out as soon as the game
   sends them. They used to wait for the other computer to acknowledge the one before, which it can
   delay by up to 200 ms, so they arrived in bursts and the other players' karts lagged behind
-  their controls. Every computer in a linked race needs this version.
-- Linked cabinets are harder to disrupt from the network. A cabinet only links with computers on
-  the local network (or this one), never the internet; a cabinet's number stays with the cabinet
-  that has it, so another computer can no longer take it over or send it away; a connection that
-  says it is a cabinet must come from where that cabinet is; and connections that never introduce
-  themselves, or that the game never takes, are closed instead of piling up.
-- A cabinet running another version of OpenGP is no longer silently ignored: the Game tab names it
-  ("OpenGP at 192.168.1.20 can't link with this one"). 1.0.1's link is not compatible with 1.0.0's or 0.4.0's.
+  their controls.
+- Linked cabinets only link with computers on the local network (or this one), never the internet.
+  A computer on one of this computer's own networks counts as being on the local network, so
+  linking over a virtual LAN such as Radmin VPN or Hamachi, or over a local network that uses
+  public addresses, works as it did in 1.0.0. A connection to the link from outside the local
+  network is closed at once. It can no longer hold one of the places where the other cabinets'
+  connections wait, so a scanner on the internet cannot stop a linked race from starting.
+- Linked cabinets are harder to disrupt by mistake: a cabinet's number stays with the cabinet that
+  has it, so a second cabinet given the same number by mistake can no longer take it over or send
+  it away; a connection that says it is a cabinet must come from where that cabinet is; and
+  connections that never introduce themselves, or that the game never takes, are closed instead of
+  piling up. The cabinets still trust each other, as arcade machines do: link only on networks you
+  trust (see [docs/playing.md](docs/playing.md#linked-cabinets)).
+- A 1.0.1 cabinet no longer silently ignores a cabinet on a version of OpenGP it can't link with:
+  the Game tab names it ("OpenGP at 192.168.1.20 (an older OpenGP) can't link with this one: run
+  the same version on every cabinet."). 1.0.1's link is not compatible with 1.0.0's or 0.4.0's,
+  and a 1.0.0 or 0.4.0 cabinet still ignores a 1.0.1 one without a word.
 - A linked game no longer freezes for up to 2 seconds when another cabinet refuses a connection,
   and a message the network could not take at once is sent whole later instead of cut short.
 - When a game restarts (the test menu, a reboot, a lost link), the other cabinets now see its
@@ -113,6 +135,8 @@ documents); the larger improvements the audit found follow in 1.1.
 
 - [docs/packaging.md](docs/packaging.md) lists what each system needs (Windows 10 version 1803 or
   later, a Vulkan driver, the Linux compilers) and explains how to update without losing saves.
+  When you update into a new folder, move your images in `ISO/` (and `private/`) too, and keep the
+  old folder until the games start from the new one.
 - The documents were checked against the code and corrected throughout: the menu's option names
   (the menu now says **Fit the window** and **Match the window**, as the documents do), the tests,
   the recompiler's address classes, the media board and link notes, the build options and
@@ -122,8 +146,9 @@ documents); the larger improvements the audit found follow in 1.1.
 
 ### For contributors
 
-- `CONTRIBUTING.md` (the no-game-data rule, licences, testing), `SECURITY.md`, and issue forms
-  that ask for the version, the system and the hang report, and never for game files.
+- `CONTRIBUTING.md` (the feature lock, the no-game-data rule, licences, testing), `SECURITY.md`,
+  and issue forms: one for bugs that asks for the version, the system and the hang report, and
+  never for game files, and one for design tweaks. There is none for new features.
 - CI checks every push for anything that looks like game data (`tools/check_game_data.py`: game
   file types, binaries, large files, a copy of a supported `main.dol`).
 - CI and package workflows: actions pinned by commit and kept current by Dependabot, read-only
@@ -135,10 +160,11 @@ documents); the larger improvements the audit found follow in 1.1.
   workflow runs for tags, build-file changes and by hand.
 - `.gitattributes` keeps line endings LF on every platform, and `.gitignore` covers more build,
   editor and dump files.
-- Steadier tests: the link tests pick free ports instead of always 47600, the pause tests have no
-  deadline a busy computer can miss, every test process keeps its files in a folder of its own,
-  the differential test's random functions are the same on every platform, and the vertex test
-  checks for determinism on ARM64 as well as for exact values on x86-64.
+- Steadier tests: the link tests pick free ports instead of always 47600, the pause tests no
+  longer have a 25 ms deadline a busy computer can miss, every test process keeps its files in a
+  folder of its own, the differential test's random functions no longer depend on the standard
+  library, and the vertex test checks for determinism on ARM64 as well as for exact values on
+  x86-64.
 - The games' hand-written sources are listed once (`cmake/game_sources.cmake`), for the source
   build and the installer alike, and the package check fails if one is missing.
 - `tools/devshell.ps1` finds the Visual Studio installation that has Clang when a newer one
@@ -259,7 +285,7 @@ you are playing on Discord. It comes with installer packages for Windows, Linux 
   as on a cabinet, where the image sits in a larger memory. Any read that still fails is printed.
 - If the game's picture stops for 10 seconds while it is not paused, OpenGP writes a hang report,
   `user/hang-report.txt`: each of the game's threads with its call stack. See
-  [docs/playing.md](docs/playing.md#if-the-game-freezes).
+  [docs/playing.md](docs/playing.md#if-the-game-freezes-or-crashes).
 
 ## 0.3.0 (2026-10-12)
 
