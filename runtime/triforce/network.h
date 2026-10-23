@@ -137,7 +137,7 @@ struct LinkStatus {
   bool clash = false;               // another cabinet has this one's number
   std::string error;                // why the link cannot run (a port in use), or ""
   // OpenGP at another address that cannot link with this one (another
-  // version), heard from in the last few seconds: "192.168.1.20 (0.4.0)".
+  // version), heard from in the last few seconds: "192.168.1.20 (an older OpenGP)".
   std::vector<std::string> incompatible;
 };
 

@@ -286,7 +286,7 @@ TEST_CASE("a cabinet's number stays with the cabinet that has it") {
     send_beacon(1, 2, 3, 0xAAAA, false);
     return one.net.link_status().found[3];
   }));
-  // ... and another sender saying it is 3 cannot send it away.
+  // ... and a second cabinet given number 3 by mistake cannot send it away.
   send_beacon(1, 2, 3, 0xBBBB, true);
   run_until({&one}, [] { return false; }, 300);
   CHECK(one.net.link_status().found[3]);

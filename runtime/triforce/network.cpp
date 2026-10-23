@@ -251,9 +251,10 @@ constexpr int kCabinets = 4;
 constexpr u16 kGamePort = 5000;
 constexpr u16 kGamePorts = 9;  // 5000-5008: a cabinet moves on to the next when it listens again
 constexpr int kPortsPerCabinet = 10;
-// 2: OpenGP 1.0 (TCP_NODELAY; the beacon carries OpenGP's version). The first
-// six bytes of the hello and the beacon (magic, version, cabinet) stay the
-// same in every version, so that any OpenGP can tell another version's.
+// 1: OpenGP 0.4.0 and 1.0.0. 2: OpenGP 1.0.1 (TCP_NODELAY; the beacon carries
+// OpenGP's version). The first six bytes of the hello and the beacon (magic,
+// version, cabinet) stay the same in every version, so that any OpenGP can
+// tell another version's.
 constexpr u8 kLinkVersion = 2;
 constexpr std::size_t kHelloSize = 16, kBeaconSize = 40, kBeaconVersionAt = 24, kBeaconVersionSize = 16;
 constexpr std::size_t kMaxIncoming = 8;               // connections waiting on a link listener
@@ -641,8 +642,10 @@ class Network::Link {
       Peer& p = peers_[b.cabinet];
       const bool known = found(b.cabinet, now);
       // A number belongs to the cabinet that has it until that one leaves or
-      // goes quiet: another sender (a second cabinet with the same number, or
-      // someone else on the network) cannot take it over or send it away.
+      // goes quiet, so a second cabinet given the same number by mistake
+      // cannot take it over or send it away. This is no guard against a
+      // hostile computer on the network, which sees the random number in
+      // every beacon: linked cabinets trust their network.
       if (known && p.nonce != b.nonce) continue;
       if (b.leaving) {
         if (known) net_log("link: cabinet %d left", b.cabinet);
