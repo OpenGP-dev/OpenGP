@@ -40,7 +40,7 @@ With the installer package, put the images in its `ISO` folder and run `OpenGP`
    download, and the games build without it.
 3. Configure and build as usual (see [building.md](building.md)). CMake builds each game whose
    `main.dol` is present and has the expected hash, and skips the others.
-4. Run the game's launcher. It finds the image in `ISO/` or `private/` (or takes `--iso`), and
+4. Run the game. It finds the image in `ISO/` or `private/` (or takes `--iso`), and
    runs only if the image holds the same `main.dol` the build was made from; any other image (a
    different game, region or revision) is refused with its hash.
 

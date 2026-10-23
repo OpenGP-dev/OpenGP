@@ -16,7 +16,8 @@ OpenGP takes input from outside in these places:
 
 - **Linked cabinets** (`runtime/triforce/network.cpp`): UDP beacons and TCP connections on the local
   network, and the games' own link protocol.
-- **Disc images** and the files in `user/` (settings, controls, Mario Cards, `reboot.bin`).
+- **Disc images** and the files in `user/` (settings, controls, Mario Cards, `images.toml`,
+  `reboot-<game ID>.bin`).
 - **Discord** (`runtime/discord/`): the local connection to the Discord app.
 - **The installer** (`tools/installer/`): the compiler download on Windows and the processes it
   runs.

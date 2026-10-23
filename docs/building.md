@@ -84,7 +84,7 @@ version and the game.
 
 Controls and playing are covered in [playing.md](playing.md).
 
-The launcher finds the image in `ISO/` or `private/` (or takes `--iso`), boots it and runs the
+`opengp-mkgp2` finds the image in `ISO/` or `private/` (or takes `--iso`), boots it and runs the
 game in a window (Vulkan, or Metal on macOS, through SDL3's GPU API). It prints:
 - the game's `OSReport` output;
 - a status line every `--status` seconds (default 5; 0 for none): retraces, frames and draws so
@@ -143,7 +143,7 @@ Environment variables for debugging:
 The status line also shows where time goes: the guest thread's time in draws (pipeline state,
 textures, vertex transform) and EFB readbacks, and the render thread's time rendering and idle.
 
-After a crash, the launcher prints the faulting address (and the guest address, if the access
+After a crash, the game prints the faulting address (and the guest address, if the access
 was into guest memory) and a backtrace of `module+offset` entries. Resolve them with
 `llvm-symbolizer --obj=build/<preset>/games/mkgp2/opengp-mkgp2.exe --relative-address <offset>...`.
 
@@ -155,7 +155,7 @@ was into guest memory) and a backtrace of `module+offset` entries. Resolve them 
 | `OPENGP_BUILD_GAMES` | `ON` | Build the games whose `main.dol` is present in `orig/` |
 | `OPENGP_GENERATED_DEBUG_INFO` | `OFF` | Emit debug info for recompiled game code (large and slow) |
 | `OPENGP_BUILD_VIDEO` | `ON` | Build the renderer. Needs SDL3 and glslang: installed copies are used if CMake finds them (`SDL3` package, `glslangValidator`), otherwise the pinned releases are downloaded and built |
-| `OPENGP_TRACE_CALLS` | `OFF` | Track each guest thread's call stack in recompiled code, for the launcher's status output (slower) |
+| `OPENGP_TRACE_CALLS` | `OFF` | Track each guest thread's call stack in recompiled code, for the game's status output (slower) |
 | `OPENGP_METAL_SHADERS` | `ON` on macOS | Also convert the shaders to the Metal Shading Language, with SPIRV-Cross (for SDL's Metal backend) |
 | `OPENGP_BUILD_INPUT` | `OFF` | Build the controller and webcam libraries without the renderer (for the launcher project, which builds OpenGP's libraries as part of itself) |
 | `OPENGP_PACKAGE` | `OFF` | Build the installer package instead of the games (see [packaging.md](packaging.md)) |

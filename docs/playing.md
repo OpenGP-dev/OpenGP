@@ -8,17 +8,17 @@ details.
 
 - **From the installer package**: unpack it, put your disc images in its `ISO` folder and run
   `OpenGP` (or drop an image on `OpenGP.exe`). It builds each game you have an image of, once;
-  see [packaging.md](packaging.md). The launchers then sit next to it.
+  see [packaging.md](packaging.md). The games then sit next to it.
 - **From source**: see [building.md](building.md) and [game-files.md](game-files.md).
 
 ## Starting a game
 
-Each game has its own launcher: `opengp-mkgp1` for Mario Kart Arcade GP and `opengp-mkgp2` for
+Each game is its own program: `opengp-mkgp1` for Mario Kart Arcade GP and `opengp-mkgp2` for
 Mario Kart Arcade GP 2. They work the same way, and everything on this page applies to both.
 
 The games behave like the arcade cabinet: insert a coin and press start; in the menus, steer to
 choose and step on the gas pedal to decide. Turn on free play in the menu (Esc), or start the
-launcher with `--free-play`, to play without coins ("Step on gas pedal to start").
+game with `--free-play`, to play without coins ("Step on gas pedal to start").
 
 ```sh
 opengp-mkgp2 --free-play                                # in the installer package's folder
@@ -63,11 +63,12 @@ the pause control does nothing, and the menu opens over the running game.
 
 The menu's settings are saved in `user/settings.toml` when the menu closes and when the game quits,
 along with the window's size. The file can be edited by hand; command-line options (see
-[building.md](building.md#running)) override it for one run without changing it. A value OpenGP
-does not understand keeps its setting, and the game says which on screen; a file it cannot read at
-all is kept as `settings.toml.bad`, for you to fix, and the defaults are used. If a setting, a
-Mario Card or a screenshot cannot be saved (a folder you cannot write to, a full disk), the game
-says so on screen: keep OpenGP in a folder you can write to, not in Program Files.
+[building.md](building.md#running)) override it for one run without changing it. An aspect ratio
+or camera source OpenGP does not know keeps its setting, and the game says so on screen; other
+values of the wrong type are ignored, and numbers out of range are brought into range. A file it
+cannot read at all is kept as `settings.toml.bad`, for you to fix, and the defaults are used. If
+a setting, a Mario Card or a screenshot cannot be saved (a folder you cannot write to, a full
+disk), the game says so on screen: keep OpenGP in a folder you can write to, not in Program Files.
 
 ### Widescreen
 
