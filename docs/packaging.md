@@ -46,9 +46,13 @@ give it its new path) and the game uses it from then on.
 Your saves, Mario Cards and settings are in the package's `user/` folder. To update OpenGP:
 
 1. Unpack the new package over the old one, replacing its files. Or unpack it into a new folder and
-   move `user/` into it from the old one; on Windows, move `toolchain/` too, so the compiler
-   isn't downloaded again if the new version uses the same one.
-2. Run `OpenGP` once. It rebuilds the games for the new version, from the images it recorded.
+   move `user/` into it from the old one. Move your images from the old `ISO/` folder into the new
+   one too, and `private/` if you made one. On Windows, move `toolchain/` as well, so the compiler
+   isn't downloaded again if the new version uses the same one. Images you keep elsewhere stay
+   where they are.
+2. Run `OpenGP` once. It rebuilds the games for the new version, from the images it recorded or
+   finds in `ISO/`. If you unpacked into a new folder, don't delete the old one until the games
+   start from the new one.
 
 Every linked cabinet must run the same version of OpenGP.
 
@@ -72,7 +76,7 @@ installer checks its SHA-256 and unpacks the x86-64 part, about 480 MB, into `to
 the `curl` and `tar` that come with Windows 10 and later.
 
 **Linux.** The installer uses the system's C++ compiler: the first of `c++`, `g++`, `clang++` and
-the versioned names (`g++-12` to `g++-15`, `clang++-16` to `clang++-20`) that is GCC 12 or later or
+the versioned names (`g++-12` to `g++-20`, `clang++-16` to `clang++-25`) that is GCC 12 or later or
 Clang 16 or later. It skips older ones. On Ubuntu 22.04, whose `g++` is GCC 11,
 `sudo apt install g++-12` installs one; on newer Debian and Ubuntu, `sudo apt install g++` does.
 

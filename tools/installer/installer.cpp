@@ -108,8 +108,13 @@ bool load_package(const fs::path& home, Package* package, std::string* error) {
   p.system_libs = strings(build["system_libs"].node());
   p.executable_suffix = build["executable_suffix"].value_or(std::string());
   p.link_group = build["link_group"].value_or(true);
-  p.common_sources = strings(build["common_sources"].node());
-  p.game_sources = strings(build["game_sources"].node());
+  // A package from 1.0.0 lists neither: these are its sources.
+  const auto common = build["common_sources"];
+  const auto own = build["game_sources"];
+  p.common_sources = common ? strings(common.node())
+                            : std::vector<std::string>{"main.cpp",       "arcade.cpp",   "cabinet.cpp",
+                                                       "camera_use.cpp", "game_log.cpp", "sdk_hle.cpp"};
+  p.game_sources = own ? strings(own.node()) : std::vector<std::string>{"patches.cpp", "status.cpp"};
   if (p.common_sources.empty() || p.game_sources.empty()) {
     if (error) *error = utf8(p.sdk / "package.toml") + ": no game sources listed";
     return false;
@@ -161,9 +166,15 @@ bool find_compiler(const Package& package, const std::string& requested, const R
       const fs::path archive = dir / archive_name;
       report.line("Downloading the compiler (once, about 190 MB): " + package.toolchain_url);
       // -C - resumes a download that was interrupted.
-      const ProcessResult download = run_process(
-          {system_tool("curl"), "-fL", "--retry", "3", "-C", "-", "-o", archive_name, package.toolchain_url},
-          utf8(dir));
+      const std::vector<std::string> curl = {system_tool("curl"), "-fL", "--retry", "3", "-C", "-",
+                                             "-o", archive_name, package.toolchain_url};
+      ProcessResult download = run_process(curl, utf8(dir));
+      if (download.exit_code == 33) {
+        // 33: the server, or a proxy on the way, ignored the request to resume
+        // (and would every time): download it again from the beginning.
+        fs::remove(archive, ec);
+        download = run_process(curl, utf8(dir));
+      }
       if (download.exit_code != 0) {
         if (error)
           *error = "cannot download " + package.toolchain_url + " (check the internet connection and run OpenGP again):\n" +

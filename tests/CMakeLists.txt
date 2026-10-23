@@ -92,6 +92,15 @@ add_executable(test_paths test_paths.cpp)
 target_link_libraries(test_paths PRIVATE opengp_settings gekkorecomp_lib doctest opengp_warnings)
 add_test(NAME paths COMMAND test_paths)
 
+add_executable(test_installer test_installer.cpp)
+target_link_libraries(test_installer PRIVATE opengp_installer_lib doctest opengp_warnings)
+if(WIN32)
+  target_link_libraries(test_installer PRIVATE ws2_32)
+endif()
+add_test(NAME installer COMMAND test_installer)
+# The download tests' server is on this computer: curl must not send its requests to a proxy.
+set_tests_properties(installer PROPERTIES ENVIRONMENT "no_proxy=127.0.0.1;NO_PROXY=127.0.0.1")
+
 # Crash reports: a probe crashes in several ways; each must leave a report.
 add_executable(crash_probe crash_probe.cpp)
 target_link_libraries(crash_probe PRIVATE opengp_machine opengp_warnings)
