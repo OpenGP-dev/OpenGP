@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 (2026-10-23)
+
+The first release of OpenGP (0.1.0 to 0.4.0 were internal), with installer packages for Windows,
+Linux and macOS. It brings smoother busy courses and loads, and even frame pacing for FreeSync and
+G-Sync monitors. OpenGP is now feature-locked: from here on, releases bring only bug fixes and
+design tweaks.
+
+Known issue: on Windows, OpenGP 1.0.0 doesn't work in a folder whose path has characters outside
+the system's code page, such as a user folder named José or 日本. Use a folder whose path has
+only plain letters (see [docs/packaging.md](docs/packaging.md#known-issue-on-windows)). A patch
+release fixes this.
 
 ### Even frame pacing
 
@@ -36,6 +46,12 @@ From a profile of a whole playthrough of GP 2:
 - The webcam is on only while the game uses it: while your photo is taken, for a moment as the
   game starts, and on the test menu's camera page. It used to stay on, light and all, for as long
   as the game ran, taking about 5% of a CPU core for pictures nothing used.
+
+### Licences
+
+- The installer packages carry the licences of the third-party code in them:
+  `THIRD-PARTY-NOTICES.md` lists SDL 3, Dear ImGui, toml++, the boot ROM fonts, the XXH64 hash and
+  the parts ported from Dolphin, with their notices, and `licenses/` holds their licence files.
 
 ## 0.4.0 (2026-10-16)
 
