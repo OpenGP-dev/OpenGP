@@ -206,9 +206,11 @@ void print_backtrace() {
   std::fflush(stderr);
 #ifdef _WIN32
   // Started from Explorer, the console window closes with the process: say
-  // so in a window too.
+  // so in a window too. (Not when the OpenGP launcher started it: it says so
+  // itself.)
   DWORD pids[2];
-  if (GetConsoleProcessList(pids, 2) <= 1 && !std::getenv("OPENGP_NO_CRASH_DIALOG")) {
+  if (GetConsoleProcessList(pids, 2) <= 1 && !std::getenv("OPENGP_NO_CRASH_DIALOG") &&
+      !std::getenv("OPENGP_LAUNCHER")) {
     g_watchdog_off = true;  // the message stays until it is read
     wchar_t text[1200];
     std::swprintf(text, std::size(text), L"OpenGP has crashed.%ls%ls", g_report_path[0] ? L"\n\nThe crash report is in\n" : L"",
