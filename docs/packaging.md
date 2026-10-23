@@ -76,7 +76,7 @@ installer checks its SHA-256 and unpacks the x86-64 part, about 480 MB, into `to
 the `curl` and `tar` that come with Windows 10 and later.
 
 **Linux.** The installer uses the system's C++ compiler: the first of `c++`, `g++`, `clang++` and
-the versioned names (`g++-12` to `g++-15`, `clang++-16` to `clang++-20`) that is GCC 12 or later or
+the versioned names (`g++-12` to `g++-20`, `clang++-16` to `clang++-25`) that is GCC 12 or later or
 Clang 16 or later. It skips older ones. On Ubuntu 22.04, whose `g++` is GCC 11,
 `sudo apt install g++-12` installs one; on newer Debian and Ubuntu, `sudo apt install g++` does.
 
