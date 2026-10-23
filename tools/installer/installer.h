@@ -6,7 +6,8 @@
 // runtime. Nothing derived from a game is part of the package.
 //
 // The package (see docs/packaging.md):
-//   OpenGP[.exe]            this program
+//   OpenGP[.exe]            the launcher, which uses this library (OpenGP.app on macOS)
+//   opengp-install[.exe]    this library's command-line program
 //   sdk/package.toml        version, compiler and linker settings
 //   sdk/include/            the runtime's headers
 //   sdk/lib/                the runtime, as static libraries

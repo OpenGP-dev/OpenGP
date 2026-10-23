@@ -47,7 +47,7 @@ your GGPE02.iso ─extract─> main.dol ─decomp-toolkit─> symbols.txt
 | Input | `runtime/input/` | Keyboard, gamepads and wheels (SDL3) mapped onto the cabinet's controls, force feedback, scripted input |
 | Launcher | `runtime/app/` | Command line, settings, window, the in-game menu (Dear ImGui) |
 | Games | `games/` | Per-game symbol maps, recompiler config, patches and launcher (`mkgp1`, `mkgp2`); what both share in `common/` (SDK replacements, the arcade library's free play and test-menu restart) |
-| Installer | `tools/installer/` | Builds the games on the player's machine from the installer package (see [docs/packaging.md](docs/packaging.md)) |
+| Installer | `tools/installer/` | Builds the games on the player's machine from the installer package: the library the package's launcher uses, and `opengp-install` (see [docs/packaging.md](docs/packaging.md)) |
 | Scripts | `tools/*.py`, `tools/devshell.ps1` | Game setup (extract and verify `main.dol`), naming functions (SDK signatures, the GP 2 decomp, matching functions between the games), Windows build shell |
 | Tests | `tests/` | Decoder tests, known-answer semantics tests, and differential tests (interpreter vs recompiled code) |
 
@@ -71,10 +71,10 @@ The code is held to the same checks as any other:
 
 ## Playing
 
-Download the installer package for Windows, Linux or macOS (Apple Silicon) from the releases, unpack it, put your disc
-images in its `ISO` folder and run `OpenGP`: it builds the games on your machine from your images
-(see [docs/packaging.md](docs/packaging.md)), then play with `opengp-mkgp2` or `opengp-mkgp1`
-([docs/playing.md](docs/playing.md)).
+Download the installer package for Windows, Linux or macOS (Apple Silicon) from the releases,
+unpack it and open `OpenGP`, the launcher. Add your disc image of each game: OpenGP builds the games
+on your machine from your images, then plays them (see [docs/packaging.md](docs/packaging.md) and
+[docs/playing.md](docs/playing.md)). On the command line, `opengp-install` builds them the same way.
 
 ## Building
 

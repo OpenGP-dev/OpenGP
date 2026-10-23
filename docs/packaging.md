@@ -1,19 +1,24 @@
 # The installer package
 
-OpenGP releases are installer packages. A package has everything except the games. Its installer
-builds each game on the player's computer from the player's own disc image, so no code or data
-from the games is ever distributed. [game-files.md](game-files.md) explains why that matters.
+OpenGP releases are installer packages. A package has everything except the games. Its launcher,
+`OpenGP`, builds each game on the player's computer from the player's own disc image, so no code
+or data from the games is ever distributed. [game-files.md](game-files.md) explains why that
+matters.
 
 ## Using it
 
 1. Unpack `OpenGP-<version>-windows-x64.zip`, `OpenGP-<version>-linux-x64.tar.gz` or
    `OpenGP-<version>-macos-arm64.tar.gz` anywhere. On Windows, choose a folder whose path has only
    plain letters (see [the known issue](#known-issue-on-windows)).
-2. Put your images in its `ISO` folder. Images elsewhere work too if you give their paths to the
-   installer. On Windows, their paths must have only plain letters too.
-3. Run `OpenGP`. On Windows you can double-click `OpenGP.exe` or drop an image on it.
+2. Open `OpenGP`, the launcher: `OpenGP.exe` on Windows, `OpenGP.app` on macOS. The first time,
+   Windows and macOS may stop you; see [Windows](#opening-the-package-on-windows-the-first-time)
+   and [macOS](#opening-the-package-on-macos-the-first-time) below.
+3. Add your disc image of each game with **Add disc image**, or drop it on the window. Images in
+   the package's `ISO` folder are found without that. On Windows, their paths must have only plain
+   letters too.
+4. Choose **Install**. OpenGP builds the game from your image, once. Then **Play** starts it.
 
-For each game it finds an image of, the installer does four things:
+To build a game, OpenGP's installer does four things:
 
 1. It checks the image's game ID, and the SHA-1 of its `main.dol` against the supported release.
 2. It recompiles `main.dol` into C++ with the same recompiler the source build uses.
@@ -21,14 +26,25 @@ For each game it finds an image of, the installer does four things:
    into `opengp-mkgp2` or `opengp-mkgp1` in the package folder.
 4. It records the image's path in `user/images.toml`, so the game finds the image later.
 
-Building a game takes one to three minutes, once. You can install either game on its own. If the
-installer finds no image for a game, it skips that game and builds the other.
+Building a game takes one to three minutes, once. You can install either game on its own. After
+updating the package, OpenGP shows **Update** on each game that an earlier version built, and
+builds it again.
 
-When you run the installer again, it rebuilds only the games that an earlier version of the
-package built. After updating the package, run it again. `--force` rebuilds every game.
+OpenGP starts the games, which run like a source build's games, as [playing.md](playing.md)
+describes. Their settings, saves and screenshots go in the package's `user/` folder.
+
+### On the command line
+
+`opengp-install` (`opengp-install.exe`), next to OpenGP, is the same installer for the command
+line. It builds each game from the images you give it, or without any, from the images the games
+were built from before, then those in `ISO/`. On Windows you can also drop an image on
+`opengp-install.exe`. If it finds no image for a game, it skips that game and builds the other.
+
+When you run it again, it rebuilds only the games that an earlier version of the package built.
+`--force` rebuilds every game.
 
 ```
-OpenGP [IMAGE...] [--force] [--jobs N] [--cxx COMPILER] [--keep-build]
+opengp-install [IMAGE...] [--force] [--jobs N] [--cxx COMPILER] [--keep-build]
 ```
 
 - `--jobs N` compiles N files at a time. The default is one per CPU thread.
@@ -36,18 +52,15 @@ OpenGP [IMAGE...] [--force] [--jobs N] [--cxx COMPILER] [--keep-build]
 - `--keep-build` keeps the generated C++ and the object files in `build/<game ID>/`. The installer
   deletes them once the game is built otherwise.
 
-The games then run like a source build's games, which [playing.md](playing.md) describes. Their
-settings, saves and screenshots go in the package's `user/` folder.
-
 ### Known issue on Windows
 
 OpenGP 1.0.0 doesn't work on Windows when the path of the package folder, or of a disc image you
-give the installer or a game (`--iso`) or drop on `OpenGP.exe`, has any character other than
-A to Z, digits and simple punctuation. That includes accented letters such as é, ü and ñ, whatever
-language Windows uses, and other scripts such as 日本: a user folder named José is enough. There
-the installer fails to build the games, and the games can crash as they start, fail to open the
-image or fail to save. Put the package in a folder such as `C:\Games\OpenGP`, and your images in
-its `ISO` folder. A patch release fixes this.
+add in OpenGP, give `opengp-install` or a game (`--iso`), or drop on either, has any character
+other than A to Z, digits and simple punctuation. That includes accented letters such as é, ü and
+ñ, whatever language Windows uses, and other scripts such as 日本: a user folder named José is
+enough. There OpenGP fails to build the games, and the games can crash as they start, fail to open
+the image or fail to save. Put the package in a folder such as `C:\Games\OpenGP`, and your images
+in its `ISO` folder. A patch release fixes this.
 
 ## The compiler
 
@@ -58,8 +71,8 @@ the `curl` and `tar` that come with Windows 10 and later.
 
 **Linux.** The installer uses the system's C++ compiler, `c++`, `g++` or `clang++`. It needs GCC 12
 or later, or Clang 16 or later. On Ubuntu 22.04, whose `g++` is GCC 11, `sudo apt install g++-12`
-installs one; then run `OpenGP --cxx g++-12`. On newer Debian and Ubuntu, `sudo apt install g++`
-does.
+installs one; then build the games with `opengp-install --cxx g++-12`, as OpenGP's **Install** uses
+the first of `c++`, `g++` and `clang++`. On newer Debian and Ubuntu, `sudo apt install g++` does.
 
 **macOS.** The installer uses Apple's Clang from the Xcode Command Line Tools, which
 `xcode-select --install` installs. The package needs Apple Silicon and macOS 13 or later.
@@ -71,26 +84,31 @@ runtime links with any supported compiler.
 ### Opening the package on Windows the first time
 
 The package isn't signed, because signing costs money every year. Windows may warn that it
-"protected your PC" the first time you run `OpenGP.exe`. Choose **More info**, then **Run anyway**.
+"protected your PC" the first time you open `OpenGP.exe`. Choose **More info**, then **Run anyway**.
 To avoid the warning, right-click the zip before unpacking it, choose **Properties**, tick
 **Unblock** and press OK.
 
 ### Opening the package on macOS the first time
 
 Apple has not signed the package, because signing needs a paid Apple developer account. macOS
-refuses to open the downloaded `OpenGP` until you allow it once:
+refuses to open the downloaded `OpenGP.app` until you allow it once:
 
-- **macOS 15 and later**: open `OpenGP` once and close the warning. Then, in **System Settings >
-  Privacy & Security**, choose **Open Anyway** next to the message about `OpenGP`, and confirm.
-- **macOS 13 and 14**: right-click `OpenGP` in Finder and choose **Open**.
+- **macOS 15 and later**: open OpenGP once and close the warning. Then, in **System Settings >
+  Privacy & Security**, choose **Open Anyway** next to the message about OpenGP, and confirm.
+- **macOS 13 and 14**: right-click OpenGP in Finder and choose **Open**.
 - **Either**: run `xattr -dr com.apple.quarantine <package folder>` in Terminal before opening it.
 
-The games the installer builds on your Mac open normally.
+If OpenGP then says that macOS is running it from a temporary copy, move the whole package folder
+in Finder (to your Documents folder, for example) and open OpenGP from there. The games OpenGP
+builds on your Mac open normally.
 
 ## What is in it
 
 ```
-OpenGP[.exe]            the installer
+OpenGP[.exe]            the launcher, which players open (OpenGP.app on macOS, with its Qt inside)
+qt/, qt.conf            the Qt the launcher uses, on Windows and Linux (on Windows its DLLs and the
+                        Visual C++ runtime are next to OpenGP.exe)
+opengp-install[.exe]    the installer, for the command line
 sdk/package.toml        the version, the pinned compiler, compile and link settings
 sdk/include/            the runtime's headers
 sdk/lib/                the runtime as static libraries, with SDL3 and Dear ImGui
@@ -138,8 +156,8 @@ cmake --build --preset package-linux
 cmake --install build/package-linux          # -> out/OpenGP-linux-x64
 ```
 
-To try a package build, run its installer, for example `out/OpenGP-windows-x64/OpenGP.exe`, with
-an image.
+To try a package build, run its installer, for example `out/OpenGP-windows-x64/opengp-install.exe`,
+with an image.
 
 Some settings must change together:
 - CI builds the runtime with the llvm-mingw release that `cmake/package.cmake` pins, and the
