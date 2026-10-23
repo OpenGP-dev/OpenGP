@@ -17,7 +17,11 @@ namespace app {
 
 namespace {
 
+// How long a notice stays: time to read it (about 16 characters a second),
+// within these bounds.
 constexpr auto kNoticeTime = std::chrono::milliseconds(2500);
+constexpr auto kNoticeTimeMax = std::chrono::seconds(15);
+constexpr auto kNoticeTimePerChar = std::chrono::milliseconds(60);
 
 // Width of the menu window at a UI scale of 1 (a 720-pixel-high window).
 constexpr float kMenuWidth = 640.0f;
@@ -124,7 +128,16 @@ bool Menu::handle_event(const SDL_Event& e) {
 }
 
 void Menu::notify(std::string message) {
-  notices_.push_back({std::move(message), Clock::now() + kNoticeTime});
+  const auto reading = kNoticeTimePerChar * static_cast<int>(std::min<std::size_t>(message.size(), 1000));
+  const Clock::time_point until = Clock::now() + std::clamp<Clock::duration>(reading, kNoticeTime, kNoticeTimeMax);
+  // The same message again (a save that keeps failing) stays up once.
+  for (Notice& n : notices_) {
+    if (n.text == message) {
+      n.until = until;
+      return;
+    }
+  }
+  notices_.push_back({std::move(message), until});
   if (notices_.size() > 4) notices_.erase(notices_.begin());
 }
 
@@ -492,7 +505,11 @@ void Menu::draw_notices() {
                                  ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
                                  ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs;
   if (ImGui::Begin("##notices", nullptr, flags)) {
+    // Long ones wrap at the menu's width, within the window.
+    const float width = std::min(kMenuWidth * scale_, io.DisplaySize.x - 4 * pad);
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width);
     for (const Notice& n : notices_) ImGui::TextUnformatted(n.text.c_str());
+    ImGui::PopTextWrapPos();
   }
   ImGui::End();
 }

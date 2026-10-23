@@ -58,7 +58,7 @@ class Menu final : public video::Overlay {
   // (the menu is open, or the event opened or closed it).
   bool handle_event(const SDL_Event& event);
 
-  // Shows a message for a few seconds.
+  // Shows a message for a few seconds, a long one for longer.
   void notify(std::string message);
 
   // Shows that the game is paused (while the menu is closed).
