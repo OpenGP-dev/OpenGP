@@ -634,7 +634,11 @@ int run(const Game& game, int argc, char** argv) {
     std::snprintf(reason, sizeof(reason), "fatal: %s", message);
     os::crash_now(reason);
   };
-  app::start_hang_watch(machine, names, user_dir / "hang-report.txt", header);
+  // Hang reports, from when the game starts running: a message about a
+  // start-up failure can stay open for as long as the player likes.
+  auto watch_for_hangs = [&user_dir, &header] {
+    app::start_hang_watch(machine, names, user_dir / "hang-report.txt", header);
+  };
   os::start_profiler_from_env();
 
   std::thread([timeout_s = o.timeout_s, status_s = o.status_s, print_status] {
@@ -717,6 +721,7 @@ int run(const Game& game, int argc, char** argv) {
 
     static video::FrameQueue queue;
     machine.gpu().set_output(&queue);
+    watch_for_hangs();  // once: the loop below never ends, it quits or restarts
     std::thread([] {
       os::set_interactive_thread();
       machine.run();
@@ -972,6 +977,7 @@ int run(const Game& game, int argc, char** argv) {
   }
 #endif
 
+  watch_for_hangs();
   machine.run();
   print_status("entry point returned");
   return 0;
