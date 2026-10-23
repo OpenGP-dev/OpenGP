@@ -166,9 +166,15 @@ bool find_compiler(const Package& package, const std::string& requested, const R
       const fs::path archive = dir / archive_name;
       report.line("Downloading the compiler (once, about 190 MB): " + package.toolchain_url);
       // -C - resumes a download that was interrupted.
-      const ProcessResult download = run_process(
-          {system_tool("curl"), "-fL", "--retry", "3", "-C", "-", "-o", archive_name, package.toolchain_url},
-          utf8(dir));
+      const std::vector<std::string> curl = {system_tool("curl"), "-fL", "--retry", "3", "-C", "-",
+                                             "-o", archive_name, package.toolchain_url};
+      ProcessResult download = run_process(curl, utf8(dir));
+      if (download.exit_code == 33) {
+        // 33: the server, or a proxy on the way, ignored the request to resume
+        // (and would every time): download it again from the beginning.
+        fs::remove(archive, ec);
+        download = run_process(curl, utf8(dir));
+      }
       if (download.exit_code != 0) {
         if (error)
           *error = "cannot download " + package.toolchain_url + " (check the internet connection and run OpenGP again):\n" +

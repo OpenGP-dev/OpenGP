@@ -94,6 +94,9 @@ add_test(NAME paths COMMAND test_paths)
 
 add_executable(test_installer test_installer.cpp)
 target_link_libraries(test_installer PRIVATE opengp_installer_lib doctest opengp_warnings)
+if(WIN32)
+  target_link_libraries(test_installer PRIVATE ws2_32)
+endif()
 add_test(NAME installer COMMAND test_installer)
 
 # Crash reports: a probe crashes in several ways; each must leave a report.
