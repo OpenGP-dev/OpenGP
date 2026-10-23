@@ -137,13 +137,27 @@ struct LinkStatus {
   bool clash = false;               // another cabinet has this one's number
   std::string error;                // why the link cannot run (a port in use), or ""
   // OpenGP at another address that cannot link with this one (another
-  // version), heard from in the last few seconds: "192.168.1.20 (0.4.0)".
+  // version), heard from in the last few seconds: "192.168.1.20 (an older OpenGP)".
   std::vector<std::string> incompatible;
 };
 
 // "a.b.c.d" in host byte order; false if `text` is not one.
 bool parse_ipv4(std::string_view text, u32* ip);
 std::string ipv4_string(u32 ip);
+
+// One of this computer's networks: an interface's address and netmask, in
+// host byte order.
+struct Subnet {
+  u32 ip = 0;
+  u32 mask = 0;
+};
+
+// Whether the link takes beacons and connections from `ip`: from this
+// computer, and with linking on the local network (`lan`), from a private,
+// link-local or shared (CGNAT) address, or from one of this computer's own
+// `networks` (a virtual LAN on other addresses, such as Radmin VPN's or
+// Hamachi's). Never from elsewhere on the internet.
+bool link_allows(u32 ip, bool lan, std::span<const Subnet> networks);
 
 class Network {
  public:
@@ -183,10 +197,6 @@ class Network {
   // Whether socket `fd`'s connection on the host sends each write at once
   // (TCP_NODELAY, which every link connection gets). For tests.
   bool sends_without_delay(u32 fd) const;
-
-  // Closes every socket the game has open (as a cabinet's board does when it
-  // reboots): the other cabinets see the connections close.
-  void close_all();
 
   static constexpr std::size_t kSockets = 64;  // numbers 1-63; 0 is never used
 

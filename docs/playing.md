@@ -158,7 +158,8 @@ when the game starts, so a change takes effect when it restarts.
   Like the arcade machines, linked cabinets trust each other: there is no password, and another
   computer on the same network could disrupt a race. Link over networks you trust (your home, a
   LAN party), not public Wi-Fi. OpenGP only links with computers on a local network (private
-  addresses), never over the internet.
+  addresses, or a network this computer is on, such as a Radmin VPN or Hamachi network), never
+  over the internet.
 
   If the cabinets don't find each other ("looking for other cabinets" stays on), check that the
   firewall lets OpenGP use the network: if you said no to Windows' question, allow

@@ -286,7 +286,7 @@ TEST_CASE("a cabinet's number stays with the cabinet that has it") {
     send_beacon(1, 2, 3, 0xAAAA, false);
     return one.net.link_status().found[3];
   }));
-  // ... and another sender saying it is 3 cannot send it away.
+  // ... and a second cabinet given number 3 by mistake cannot send it away.
   send_beacon(1, 2, 3, 0xBBBB, true);
   run_until({&one}, [] { return false; }, 300);
   CHECK(one.net.link_status().found[3]);
@@ -340,4 +340,42 @@ TEST_CASE("cabinets find each other while the game is busy, and see one stop") {
   // Two says goodbye as it stops, so one knows at once (well before the
   // beacons' timeout).
   CHECK(wait([&] { return !one.net.link_status().found[2]; }, 1000));
+}
+
+namespace {
+
+u32 ipv4(const char* text) {
+  u32 ip = 0;
+  CHECK(triforce::parse_ipv4(text, &ip));
+  return ip;
+}
+
+}  // namespace
+
+TEST_CASE("the link takes beacons and connections from local networks only") {
+  using triforce::link_allows;
+  const std::vector<triforce::Subnet> none;
+  // This computer, always; nothing else without linking on the local network.
+  CHECK(link_allows(ipv4("127.0.0.1"), false, none));
+  CHECK_FALSE(link_allows(ipv4("192.168.1.20"), false, none));
+  // With it, private, link-local and shared (CGNAT) addresses, but not the
+  // internet.
+  for (const char* a : {"127.0.0.1", "10.1.2.3", "172.16.0.5", "172.31.255.1", "192.168.1.20", "169.254.3.4",
+                        "100.64.0.1", "100.127.255.254"})
+    CHECK_MESSAGE(link_allows(ipv4(a), true, none), a);
+  for (const char* a : {"8.8.8.8", "172.32.0.1", "100.128.0.1", "26.1.2.3", "25.1.2.3", "203.0.113.200"})
+    CHECK_MESSAGE(!link_allows(ipv4(a), true, none), a);
+
+  // A network this computer is on counts too: a virtual LAN on public
+  // addresses (Radmin VPN's 26/8, Hamachi's 25/8), or a LAN on a public range.
+  const std::vector<triforce::Subnet> own = {
+      {ipv4("26.10.20.30"), 0xFF000000}, {ipv4("25.1.1.1"), 0xFF000000}, {ipv4("203.0.113.7"), 0xFFFFFF00}};
+  for (const char* a : {"26.99.1.2", "25.200.3.4", "203.0.113.200", "192.168.1.20"})
+    CHECK_MESSAGE(link_allows(ipv4(a), true, own), a);
+  for (const char* a : {"8.8.8.8", "27.1.2.3", "203.0.114.1"}) CHECK_MESSAGE(!link_allows(ipv4(a), true, own), a);
+  CHECK_FALSE(link_allows(ipv4("26.99.1.2"), false, own));
+
+  // A network wider than a /8 (an odd netmask) never lets the internet in.
+  const std::vector<triforce::Subnet> wide = {{ipv4("26.10.20.30"), 0}, {ipv4("26.10.20.30"), 0xFE000000}};
+  for (const char* a : {"8.8.8.8", "27.1.2.3"}) CHECK_MESSAGE(!link_allows(ipv4(a), true, wide), a);
 }
