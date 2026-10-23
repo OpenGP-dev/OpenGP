@@ -124,7 +124,7 @@ struct LinkOptions {
   std::string game;      // the game's ID (GGPE02): only cabinets playing the same game link
   u16 port = kLinkPort;  // the first host port (above)
   bool lan = false;      // also link over the local network: listen on every interface, broadcast the beacons
-  std::string version;   // OpenGP's version, which the beacons carry (cabinets of other versions do not link)
+  std::string version;   // OpenGP's version, which the beacons carry (the link version decides who links)
 };
 
 // What the link sees, for the menu.
@@ -136,7 +136,7 @@ struct LinkStatus {
   std::array<bool, 5> linked{};     // by number: ... both ways (the games make one each way)
   bool clash = false;               // another cabinet has this one's number
   std::string error;                // why the link cannot run (a port in use), or ""
-  // OpenGP at another address that cannot link with this one (another
+  // OpenGP at another address that cannot link with this one (another link
   // version), heard from in the last few seconds: "192.168.1.20 (an older OpenGP)".
   std::vector<std::string> incompatible;
 };

@@ -134,9 +134,9 @@ is grey and the console says why.
 
 Up to four cabinets link, so that up to four players race each other in Versus mode, as in an
 arcade. Each cabinet is a copy of OpenGP: on the same computer, or on computers on the same local
-network. Both games link, each with its own kind (GP 2 with GP 2, GP with GP). Every cabinet needs
-the same version of OpenGP: a cabinet running another version is not linked with, and the Game tab
-names it.
+network. Both games link, each with its own kind (GP 2 with GP 2, GP with GP). Run the same
+version of OpenGP on every cabinet: a cabinet whose version can't link with this one is left out,
+and the Game tab names it.
 
 Each cabinet needs its own number, 1 to 4: **Cabinet number** in the menu's Game tab
 (`[link] cabinet` in `user/settings.toml`, or `--cabinet N` for one run). **The game's setting**

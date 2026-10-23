@@ -54,7 +54,7 @@ Your saves, Mario Cards and settings are in the package's `user/` folder. To upd
    finds in `ISO/`. If you unpacked into a new folder, don't delete the old one until the games
    start from the new one.
 
-Every linked cabinet must run the same version of OpenGP.
+Update every linked cabinet: cabinets on different versions of OpenGP may not link.
 
 ```
 OpenGP [IMAGE...] [--force] [--jobs N] [--cxx COMPILER] [--keep-build]
