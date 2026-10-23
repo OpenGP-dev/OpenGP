@@ -13,6 +13,7 @@
 #include "hw/vi.h"
 #include "machine.h"
 #include "os/activity.h"
+#include "os/crash.h"
 #include "os/utf8.h"
 #include "triforce/network.h"
 
@@ -131,6 +132,8 @@ void start_hang_watch(opengp::Machine& machine, const FunctionNames& names, std:
     int reports = 0;
     for (;;) {
       std::this_thread::sleep_for(std::chrono::seconds(1));
+      // A crash report is being written, or its message is up: not a hang.
+      if (os::crashing()) continue;
       const u64 now_frames = machine.gpu().frames();
       if (now_frames != frames || machine.hardware().paused()) {
         frames = now_frames;

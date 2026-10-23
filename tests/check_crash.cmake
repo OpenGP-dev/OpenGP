@@ -1,6 +1,6 @@
 # Runs tests/crash_probe for each kind of crash and checks that the process
 # ends with exit code 3 and leaves a crash report that names the crash and has
-# the callback's part.
+# the callback's part (which sees os::crashing()).
 #
 #   cmake -DPROBE=<crash_probe> -DDIR=<scratch folder> -P check_crash.cmake
 
@@ -17,7 +17,7 @@ foreach(how fatal null abort overflow)
     message(FATAL_ERROR "${how}: no crash report\n${err}")
   endif()
   file(READ "${report}" text)
-  if(NOT text MATCHES "\\[crash\\] crash_probe" OR NOT text MATCHES "probe callback ran")
+  if(NOT text MATCHES "\\[crash\\] crash_probe" OR NOT text MATCHES "probe callback ran, crashing")
     message(FATAL_ERROR "${how}: the report is incomplete:\n${text}")
   endif()
   message(STATUS "${how}: report written")

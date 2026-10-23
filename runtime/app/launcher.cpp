@@ -750,7 +750,8 @@ int run(const Game& game, int argc, char** argv) {
       stop_link();
       stop_outputs();
       std::fflush(stdout);
-      std::_Exit(0);
+      // Closed while the crash message was up (Windows): still a crash.
+      std::_Exit(os::crashing() ? 3 : 0);
     };
 
     // Applies settings that changed (in the menu, by resizing the window...).

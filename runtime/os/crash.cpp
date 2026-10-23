@@ -330,4 +330,6 @@ void crash_now(const char* reason) {
   end_report();
 }
 
+bool crashing() { return g_crashing.load(); }
+
 }  // namespace os
