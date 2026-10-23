@@ -6,15 +6,17 @@ details.
 
 ## Installing
 
-- **From the installer package**: unpack it, put your disc images in its `ISO` folder and run
-  `OpenGP` (or drop an image on `OpenGP.exe`). It builds each game you have an image of, once;
-  see [packaging.md](packaging.md). The games then sit next to it.
+- **From the installer package**: unpack it, open `OpenGP` (the launcher) and add your disc image
+  of each game. It builds each game you have an image of, once, and then plays it; see
+  [packaging.md](packaging.md). On the command line, `opengp-install` builds them the same way.
+  The games, `opengp-mkgp2` and `opengp-mkgp1`, then sit next to OpenGP.
 - **From source**: see [building.md](building.md) and [game-files.md](game-files.md).
 
 ## Starting a game
 
 Each game is its own program: `opengp-mkgp1` for Mario Kart Arcade GP and `opengp-mkgp2` for
-Mario Kart Arcade GP 2. They work the same way, and everything on this page applies to both.
+Mario Kart Arcade GP 2. In an installer package, OpenGP starts them (**Play**). They work the same
+way, and everything on this page applies to both.
 
 The games behave like the arcade cabinet: insert a coin and press start; in the menus, steer to
 choose and step on the gas pedal to decide. Turn on free play in the menu (Esc), or start the

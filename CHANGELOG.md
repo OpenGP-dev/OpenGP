@@ -195,6 +195,11 @@ you give it, has any character other than A to Z, digits and simple punctuation 
 日本, as in a user folder named José). Put the package in a folder such as `C:\Games\OpenGP`, and
 your images in its `ISO` folder. 1.0.1 fixes this.
 
+### The package
+
+- Open `OpenGP` (`OpenGP.exe`, `OpenGP.app`), the launcher, and add your disc image: it builds the
+  games from it and plays them. The command-line installer is now `opengp-install`.
+
 ### Even frame pacing
 
 - **Even frame pacing** (Video tab, off by default; `[video] even_pacing`) shows each frame on the
@@ -233,8 +238,9 @@ From a profile of a whole playthrough of GP 2:
 ### Licences
 
 - The installer packages carry the licences of the third-party code in them:
-  `THIRD-PARTY-NOTICES.md` lists SDL 3, Dear ImGui, toml++, the boot ROM fonts, the XXH64 hash and
-  the parts ported from Dolphin, with their notices, and `licenses/` holds their licence files.
+  `THIRD-PARTY-NOTICES.md` lists SDL 3, Dear ImGui, toml++, the boot ROM fonts, the XXH64 hash, the
+  parts ported from Dolphin, and the launcher's Qt (LGPL-3.0, and the code Qt contains), typeface
+  and scancode tables, with their notices, and `licenses/` holds their licence files.
 
 ## 0.4.0 (2026-10-16)
 

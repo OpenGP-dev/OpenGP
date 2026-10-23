@@ -46,9 +46,9 @@ your GGPE02.iso ─extract─> main.dol ─decomp-toolkit─> symbols.txt
 | Machine | `runtime/hw/`, `runtime/os/`, `runtime/triforce/`, `runtime/gx/` | Hardware models (interrupts, timers, VI, DSP, AI, SI, EXI, DI), boot and guest threads, the Triforce boards, and the GPU (command processor, vertex loading and transform, textures, EFB copies) |
 | Renderer | `runtime/video/` | SDL3 GPU renderer: the TEV ubershader, EFB, presenting |
 | Input | `runtime/input/` | Keyboard, gamepads and wheels (SDL3) mapped onto the cabinet's controls, force feedback, scripted input |
-| Launcher | `runtime/app/` | Command line, settings, window, the in-game menu (Dear ImGui) |
-| Games | `games/` | Per-game symbol maps, recompiler config, patches and launcher (`mkgp1`, `mkgp2`); what both share in `common/` (SDK replacements, the arcade library's free play and test-menu restart) |
-| Installer | `tools/installer/` | Builds the games on the player's machine from the installer package (see [docs/packaging.md](docs/packaging.md)) |
+| App | `runtime/app/` | Command line, settings, window, the in-game menu (Dear ImGui) |
+| Games | `games/` | Per-game manifest, symbol maps, recompiler config and patches (`mkgp1`, `mkgp2`); what both share in `common/` (their `main()`, SDK replacements, the arcade library's free play and test-menu restart) |
+| Installer | `tools/installer/` | Builds the games on the player's machine from the installer package: the library the package's launcher uses, and `opengp-install` (see [docs/packaging.md](docs/packaging.md)) |
 | Scripts | `tools/*.py`, `tools/devshell.ps1` | Game setup (extract and verify `main.dol`), naming functions (SDK signatures, the GP 2 decomp, matching functions between the games), Windows build shell |
 | Tests | `tests/` | Decoder, known-answer semantics and differential tests (interpreter vs recompiled code), and tests of the hardware, renderer front end, settings, input, link, paths, the installer and crash reports |
 
@@ -72,10 +72,10 @@ The code is held to the same checks as any other:
 
 ## Playing
 
-Download the installer package for Windows, Linux or macOS (Apple Silicon) from the releases, unpack it, put your disc
-images in its `ISO` folder and run `OpenGP`: it builds the games on your machine from your images
-(see [docs/packaging.md](docs/packaging.md)), then play with `opengp-mkgp2` or `opengp-mkgp1`
-([docs/playing.md](docs/playing.md)).
+Download the installer package for Windows, Linux or macOS (Apple Silicon) from the releases,
+unpack it and open `OpenGP`, the launcher. Add your disc image of each game: OpenGP builds the games
+on your machine from your images, then plays them (see [docs/packaging.md](docs/packaging.md) and
+[docs/playing.md](docs/playing.md)). On the command line, `opengp-install` builds them the same way.
 
 ## Building
 
@@ -113,8 +113,9 @@ OpenGP is Copyright (C) 2026 the OpenGP contributors and is licensed under the *
 runtime and tools are ported from the [Dolphin emulator](https://github.com/dolphin-emu/dolphin)
 (GPL-2.0-or-later) and are marked as such in the source. The third-party code OpenGP and its
 packages include keeps its own licence: SDL 3 (zlib), Dear ImGui and toml++ (MIT), the boot ROM
-fonts in `thirdparty/gc-fonts` (Dolphin's free replacements, based on Droid Sans, Apache-2.0) and
-others, all listed with their licences in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+fonts in `thirdparty/gc-fonts` (Dolphin's free replacements, based on Droid Sans, Apache-2.0), Qt 6
+in the packages' launcher (LGPL-3.0) and others, all listed with their licences in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## Milestones
 
