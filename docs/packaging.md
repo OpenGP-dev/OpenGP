@@ -5,6 +5,27 @@ OpenGP releases are installer packages. A package has everything except the game
 or data from the games is ever distributed. [game-files.md](game-files.md) explains why that
 matters.
 
+## Requirements
+
+- **Windows** 10 or later, x64.
+- **Linux** on x86-64: Ubuntu 22.04, Debian 12 or newer, with an X11 desktop, or XWayland on a
+  Wayland one.
+- **macOS** 13 or later, on Apple Silicon.
+
+Building the games also needs a C++ compiler: see [The compiler](#the-compiler).
+
+On Linux, OpenGP's window uses Qt's X11 support. The package carries the libraries for it that a
+desktop may lack: `libxcb-cursor0`, which the Ubuntu and Xubuntu desktops of 22.04 and 24.04 leave
+out, and the other xcb-util libraries. The rest come with an X11 desktop; Ubuntu's, Xubuntu's and
+Kubuntu's have them all. If OpenGP doesn't open, run it in a terminal. If it says that it could not
+load the Qt platform plugin "xcb", install them. On Debian and Ubuntu:
+
+```sh
+sudo apt install libxkbcommon-x11-0 libxcb-xkb1 libxcb-randr0 libxcb-render0 libxcb-shape0 \
+  libxcb-shm0 libxcb-sync1 libxcb-xfixes0 libxcb-glx0 libx11-xcb1 libsm6 libice6 \
+  libegl1 libgl1 libopengl0 libfontconfig1
+```
+
 ## Using it
 
 1. Unpack `OpenGP-<version>-windows-x64.zip`, `OpenGP-<version>-linux-x64.tar.gz` or

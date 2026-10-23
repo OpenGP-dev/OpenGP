@@ -13,6 +13,11 @@ you give it, has any character other than A to Z, digits and simple punctuation 
 your images in its `ISO` folder (see [docs/packaging.md](docs/packaging.md#known-issue-on-windows)).
 A patch release fixes this.
 
+### The package
+
+- Open `OpenGP` (`OpenGP.exe`, `OpenGP.app`), the launcher, and add your disc image: it builds the
+  games from it and plays them. The command-line installer is now `opengp-install`.
+
 ### Even frame pacing
 
 - **Even frame pacing** (Video tab, off by default; `[video] even_pacing`) shows each frame on the
