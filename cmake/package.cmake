@@ -57,8 +57,9 @@ elseif(APPLE)
 else()
   set(toolchain_section "")
   # The usual names, then versioned ones (Ubuntu 22.04's g++ is GCC 11).
-  set(cxx_candidates c++ g++ clang++ g++-15 g++-14 g++-13 g++-12 clang++-20 clang++-19 clang++-18 clang++-17
-                     clang++-16)
+  set(cxx_candidates c++ g++ clang++ g++-20 g++-19 g++-18 g++-17 g++-16 g++-15 g++-14 g++-13 g++-12
+                     clang++-25 clang++-24 clang++-23 clang++-22 clang++-21 clang++-20 clang++-19 clang++-18
+                     clang++-17 clang++-16)
   set(link_flags -pthread)
   set(system_libs -ldl -lm -lrt)
   set(executable_suffix "")
