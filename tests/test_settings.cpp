@@ -147,15 +147,46 @@ TEST_CASE("card folder") {
   CHECK_FALSE(cards.inserted());
 
   // A name from settings.toml that is not a file name holds no card.
-  for (const char* bad : {"../Luigi", "a/b", "a\\b", "C:x", "CON", "com1", "nul.txt", ".hidden", "trailing.",
-                          "trailing ", "a?b", "a\"b", "a*b"}) {
+  const std::vector<std::string> bad_names = {"", ".", "..", "../Luigi", "a/b", "a\tb", std::string(241, 'x')};
+  for (const std::string& bad : bad_names) {
     CHECK_FALSE_MESSAGE(triforce::CardFolder::valid_name(bad), bad);
     cards.hold(bad);
     CHECK(cards.held().empty());
     CHECK_FALSE(cards.exists(bad));
   }
-  for (const char* good : {"Card 1", "Mario's card", "Luigi", "COM10", "Console"})
-    CHECK_MESSAGE(triforce::CardFolder::valid_name(good), good);
+  const std::vector<std::string> good_names = {"Card 1", "Mario's card", "Luigi", "COM10", "Console", ".hidden",
+                                               std::string(240, 'x')};
+  for (const std::string& good : good_names) CHECK_MESSAGE(triforce::CardFolder::valid_name(good), good);
+  // Names only Windows refuses: other systems keep them, as 1.0.0 did.
+  for (const char* windows :
+       {"a\\b", "C:x", "CON", "com1", "nul.txt", "trailing.", "trailing ", "Who?", "a\"b", "a*b", "a<b>", "a|b"}) {
+#ifdef _WIN32
+    CHECK_FALSE_MESSAGE(triforce::CardFolder::valid_name(windows), windows);
+#else
+    CHECK_MESSAGE(triforce::CardFolder::valid_name(windows), windows);
+#endif
+  }
+}
+
+TEST_CASE("card folder: only cards it can hold are listed") {
+  const fs::path dir = temp_dir("card_names");
+  triforce::CardFolder cards(dir.string());
+  write(dir / "Card 1.bin", std::string(69, 'x'));
+#ifndef _WIN32
+  write(dir / "..bin", std::string(69, 'x'));  // "."
+  write(dir / "a\tb.bin", std::string(69, 'x'));
+  // Names Windows refuses, which a Linux or macOS card can have.
+  write(dir / "Who?.bin", std::string(69, 'x'));
+  write(dir / "Mario: 1st.bin", std::string(69, 'x'));
+  CHECK(cards.list() == std::vector<std::string>{"Card 1", "Mario: 1st", "Who?"});
+#else
+  CHECK(cards.list() == std::vector<std::string>{"Card 1"});
+#endif
+  for (const std::string& name : cards.list()) {
+    CHECK(cards.exists(name));
+    cards.hold(name);
+    CHECK(cards.held() == name);
+  }
 }
 
 TEST_CASE("reboot files") {

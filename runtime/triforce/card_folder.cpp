@@ -6,7 +6,6 @@
 #include <cctype>
 #include <cstdio>
 #include <filesystem>
-#include <string_view>
 
 #include "os/atomic_file.h"
 
@@ -17,12 +16,14 @@ namespace fs = std::filesystem;
 CardFolder::CardFolder(std::string dir) : dir_(std::move(dir)) {}
 
 bool CardFolder::valid_name(const std::string& name) {
-  if (name.empty() || name.size() > 240 || name.front() == '.' || name.back() == '.' || name.back() == ' ')
-    return false;
-  for (const char c : name) {
-    if (static_cast<unsigned char>(c) < 0x20 || std::string_view("/\\:*?\"<>|").find(c) != std::string_view::npos)
-      return false;
-  }
+  // Everywhere: one file in the folder.
+  if (name.empty() || name.size() > 240 || name == "." || name == "..") return false;
+  for (const char c : name)
+    if (static_cast<unsigned char>(c) < 0x20 || c == '/') return false;
+#ifdef _WIN32
+  // Windows' own rules: other systems allow these names, and their cards keep working.
+  if (name.back() == '.' || name.back() == ' ') return false;
+  if (name.find_first_of("\\:*?\"<>|") != std::string::npos) return false;
   // Windows' device names, with or without an extension.
   std::string base = name.substr(0, name.find('.'));
   while (!base.empty() && base.back() == ' ') base.pop_back();
@@ -31,6 +32,7 @@ bool CardFolder::valid_name(const std::string& name) {
     if (base == device) return false;
   if (base.size() == 4 && (base.rfind("COM", 0) == 0 || base.rfind("LPT", 0) == 0) && base[3] >= '0' && base[3] <= '9')
     return false;
+#endif
   return true;
 }
 
@@ -45,7 +47,8 @@ std::vector<std::string> CardFolder::list() const {
   for (const auto& entry : fs::directory_iterator(os::utf8_path(dir_), ec)) {
     if (entry.path().extension() != ".bin" || !entry.is_regular_file(ec)) continue;
     const auto stem = entry.path().stem().u8string();
-    names.emplace_back(stem.begin(), stem.end());
+    std::string name(stem.begin(), stem.end());
+    if (valid_name(name)) names.push_back(std::move(name));  // only cards it can hold
   }
   std::sort(names.begin(), names.end());
   return names;
