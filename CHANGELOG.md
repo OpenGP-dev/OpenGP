@@ -1,11 +1,13 @@
 # Changelog
 
-## Unreleased
+## 1.0.1 (2026-11-02)
 
-1.0.1 follows a full audit of OpenGP: its code, build, installer packages, documents and licences.
-It has the fixes the audit found, for saves, crashes, security, paths, the installer and the
-documents. OpenGP is feature-locked at 1.0, so later releases bring only bug fixes and design
-tweaks.
+The first public release of OpenGP, with installer packages for Windows, Linux and macOS. In a
+package, `OpenGP` (`OpenGP.exe`, `OpenGP.app`) is the launcher: add your disc image, and it builds
+the games from it and plays them. 1.0.1 is 1.0.0, an internal release whose notes follow, with the
+fixes from a full audit of the code, build, installer packages, documents and licences. The fixes
+are for saves, crashes, security, paths, the installer and the documents. OpenGP is feature-locked
+at 1.0, so later releases bring only bug fixes and design tweaks.
 
 ### Smoother
 

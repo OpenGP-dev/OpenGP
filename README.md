@@ -22,9 +22,9 @@ features such as higher resolutions, widescreen and remappable controls.
 > network), you can pause when you play solo, and Discord shows what you are playing. A menu (Esc) has the settings, the controls and the Mario Cards; the games' own test
 > menus work too. See [docs/playing.md](docs/playing.md) and the [milestones](#milestones).
 
-The latest release is **1.0.1**, with the fixes from a full audit of the code, build, packages,
-documents and licences, and installer packages for Windows, Linux and macOS (see
-[CHANGELOG.md](CHANGELOG.md)).
+The latest release is **1.0.1**, the first public release, with installer packages for Windows,
+Linux and macOS and the fixes from a full audit of the code, build, packages, documents and
+licences (see [CHANGELOG.md](CHANGELOG.md)).
 
 ## How it works
 
@@ -139,8 +139,9 @@ OpenGP is feature-locked at 1.0, with only bug fixes and design tweaks from here
 | M15 | Discord Rich Presence: the character, course and race position, read from the game's state (the decomp's names) and sent over Discord's local connection, without Discord's SDK (**done** ahead of 1.0, 0.4.0) | yes |
 | 1.0 | Release: the installer package with linked cabinets and the camera (**done**, 1.0.0) | yes |
 
-Releases come with installer packages for Windows, Linux and macOS. 0.1.0 to 1.0.0 are internal
+Releases come with installer packages for Windows, Linux and macOS. 0.1.0 to 1.0.0 were internal
 releases: they are tags in this repository, with their notes in [CHANGELOG.md](CHANGELOG.md).
+1.0.1 is the first public release.
 
 ## Acknowledgements
 
