@@ -10,7 +10,7 @@ from the games is ever distributed. [game-files.md](game-files.md) explains why 
    `OpenGP-<version>-macos-arm64.tar.gz` anywhere. On Windows, choose a folder whose path has only
    plain letters (see [the known issue](#known-issue-on-windows)).
 2. Put your images in its `ISO` folder. Images elsewhere work too if you give their paths to the
-   installer.
+   installer. On Windows, their paths must have only plain letters too.
 3. Run `OpenGP`. On Windows you can double-click `OpenGP.exe` or drop an image on it.
 
 For each game it finds an image of, the installer does four things:
@@ -41,11 +41,13 @@ settings, saves and screenshots go in the package's `user/` folder.
 
 ### Known issue on Windows
 
-OpenGP 1.0.0 doesn't work in a folder whose path has characters outside the system's code page,
-such as a user folder named José or 日本. There the installer fails to build the games, and the
-games can crash as they start or fail to save. Put the package in a folder whose path has only
-plain letters (A to Z), digits and simple punctuation, such as `C:\Games\OpenGP`. A patch release
-fixes this.
+OpenGP 1.0.0 doesn't work on Windows when the path of the package folder, or of a disc image you
+give the installer or a game (`--iso`) or drop on `OpenGP.exe`, has any character other than
+A to Z, digits and simple punctuation. That includes accented letters such as é, ü and ñ, whatever
+language Windows uses, and other scripts such as 日本: a user folder named José is enough. There
+the installer fails to build the games, and the games can crash as they start, fail to open the
+image or fail to save. Put the package in a folder such as `C:\Games\OpenGP`, and your images in
+its `ISO` folder. A patch release fixes this.
 
 ## The compiler
 

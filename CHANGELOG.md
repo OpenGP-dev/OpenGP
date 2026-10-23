@@ -7,10 +7,11 @@ Linux and macOS. It brings smoother busy courses and loads, and even frame pacin
 G-Sync monitors. OpenGP is now feature-locked: from here on, releases bring only bug fixes and
 design tweaks.
 
-Known issue: on Windows, OpenGP 1.0.0 doesn't work in a folder whose path has characters outside
-the system's code page, such as a user folder named José or 日本. Use a folder whose path has
-only plain letters (see [docs/packaging.md](docs/packaging.md#known-issue-on-windows)). A patch
-release fixes this.
+Known issue: on Windows, OpenGP 1.0.0 doesn't work when the path of its folder, or of a disc image
+you give it, has any character other than A to Z, digits and simple punctuation (such as é, ü or
+日本, as in a user folder named José). Put the package in a folder such as `C:\Games\OpenGP`, and
+your images in its `ISO` folder (see [docs/packaging.md](docs/packaging.md#known-issue-on-windows)).
+A patch release fixes this.
 
 ### Even frame pacing
 
