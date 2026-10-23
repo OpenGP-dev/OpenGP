@@ -1,0 +1,15 @@
+name: Design tweak
+description: A change to how OpenGP looks or reads, not a new feature.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        OpenGP is feature-locked at 1.0: it takes bug fixes and design tweaks (wording, layout, how
+        something looks), not new features. See CONTRIBUTING.md.
+  - type: textarea
+    id: tweak
+    attributes:
+      label: What you would change, and why
+    validations:
+      required: true
