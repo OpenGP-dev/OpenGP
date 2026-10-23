@@ -485,7 +485,8 @@ int run(const Game& game, int argc, char** argv) {
                           "image in the ISO folder next to OpenGP.");
     return start_failed(std::string("No disc image of ") + game.title + " (" + game.id +
                         ") found. Put it in the ISO folder next to OpenGP, or start the game with --iso PATH. If "
-                        "you moved it, drop it on the OpenGP installer so the game knows where it is.");
+                        "you moved it, add it again in OpenGP (or give it to opengp-install) so the game knows "
+                        "where it is.");
   }
   if (!check_image(game, o.image)) return 1;
 

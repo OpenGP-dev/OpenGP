@@ -7,7 +7,7 @@ matters.
 
 ## Requirements
 
-- **Windows**: Windows 10 version 1803 or later, 64-bit, with a graphics driver that supports
+- **Windows**: Windows 10 version 1809 or later, 64-bit, with a graphics driver that supports
   Vulkan. Most GPUs have one; install your GPU maker's current driver if the game says it found
   none.
 - **Linux**: x86-64, a Vulkan driver (Mesa's, or the GPU maker's), and GCC 12 or later or Clang 16

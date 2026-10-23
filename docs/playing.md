@@ -1,6 +1,6 @@
 # Playing
 
-OpenGP needs Windows 10 (version 1803 or later, 64-bit), Linux or macOS 13 on Apple Silicon, and a
+OpenGP needs Windows 10 (version 1809 or later, 64-bit), Linux or macOS 13 on Apple Silicon, and a
 graphics driver with Vulkan (on macOS, Metal). [packaging.md](packaging.md#requirements) has the
 details.
 

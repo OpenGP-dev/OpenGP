@@ -133,7 +133,7 @@ tweaks.
 
 ### Documents
 
-- [docs/packaging.md](docs/packaging.md) lists what each system needs (Windows 10 version 1803 or
+- [docs/packaging.md](docs/packaging.md) lists what each system needs (Windows 10 version 1809 or
   later, a Vulkan driver, the Linux compilers) and explains how to update without losing saves.
   When you update into a new folder, move your images in `ISO/` (and `private/`) too, and keep the
   old folder until the games start from the new one.
