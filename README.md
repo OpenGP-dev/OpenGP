@@ -137,8 +137,9 @@ OpenGP is feature-locked at 1.0, with only bug fixes and design tweaks from here
 | M15 | Discord Rich Presence: the character, course and race position, read from the game's state (the decomp's names) and sent over Discord's local connection, without Discord's SDK (**done** ahead of 1.0, 0.4.0) | yes |
 | 1.0 | Release: the installer package with linked cabinets and the camera (**done**, 1.0.0) | yes |
 
-Releases come with installer packages for Windows, Linux and macOS. 0.1.0 to 0.3.0 were internal
+Releases come with installer packages for Windows, Linux and macOS. 0.1.0 to 0.4.0 were internal
 releases: they are tags in this repository, with their notes in [CHANGELOG.md](CHANGELOG.md).
+1.0.0 is the first release.
 
 ## Acknowledgements
 
