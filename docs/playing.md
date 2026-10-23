@@ -164,8 +164,10 @@ when the game starts, so a change takes effect when it restarts.
   If the cabinets don't find each other ("looking for other cabinets" stays on), check that the
   firewall lets OpenGP use the network: if you said no to Windows' question, allow
   `opengp-mkgp2` (and `opengp-mkgp1`) in Windows Security > Firewall & network protection > Allow
-  an app through firewall, for private networks. Wi-Fi with "client isolation" (common on guest
-  networks) keeps computers from seeing each other; use a wired connection or another network.
+  an app through firewall, for private networks. If Windows calls your home network public, set it
+  to private (Settings > Network & internet > your network > Private network). Wi-Fi with "client
+  isolation" (common on guest networks) keeps computers from seeing each other; use a wired
+  connection or another network.
 
 Start the cabinets, and wait for the later ones to get through their start-up (the attract mode
 begins): a cabinet links to the others as it starts. Then start a game on one cabinet. The others show "Waiting for entry!", and players who insert a

@@ -172,3 +172,17 @@ Some settings must change together:
   compiles that list, and the package writes it into `package.toml` for the installer.
 - The link libraries in `cmake/package.cmake` must cover what the runtime and SDL3 need. The
   probe fails if one is missing.
+
+## Releasing
+
+1. Set the new version in `project(OpenGP VERSION ...)` in `CMakeLists.txt`. Every release needs a
+   new one: the installer rebuilds the games only when the version changes.
+2. In `CHANGELOG.md`, replace "not released yet" in the new version's heading with the date, with
+   a short summary under it.
+3. In `README.md`, name the new version as the latest release.
+4. Run the package workflow by hand on the release commit (Actions > Package > Run workflow, or
+   `gh workflow run package.yml --ref <branch>`), and check that all three packages build.
+5. Merge the release branch into `main` with `git merge --no-ff`.
+6. Tag the merge `v<version>`, the same version as in `CMakeLists.txt`, and push the tag. The
+   workflow builds the packages again and attaches them to a draft release; it fails if the tag
+   and the version differ. Check the draft, then publish it.

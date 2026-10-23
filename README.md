@@ -1,16 +1,17 @@
 # OpenGP
 
-OpenGP is a work-in-progress **native PC port of Mario Kart Arcade GP and Mario Kart Arcade GP 2**
+OpenGP is a **native PC port of Mario Kart Arcade GP and Mario Kart Arcade GP 2**
 (Namco, 2005 and 2007, Triforce arcade hardware). It is built by **static recompilation**, the
 same approach as [Zelda64Recomp](https://github.com/Zelda64Recomp/Zelda64Recomp) and
 [UnleashedRecomp](https://github.com/hedge-dev/UnleashedRecomp).
 
 The game's PowerPC (Gekko) machine code is translated into C++ ahead of time. That C++ is then
 compiled together with a runtime that stands in for the Triforce hardware (GameCube GPU, audio
-DSP, AM-Baseboard, AM-Mediaboard), so the game runs as a normal native program, with room for
-modern features such as higher resolutions, widescreen and remappable controls.
+DSP, AM-Baseboard, AM-Mediaboard), so the game runs as a normal native program, with modern
+features such as higher resolutions, widescreen and remappable controls.
 
-> **Status: playable.** Milestones 1 to 12, 14 and 15 are done. Mario Kart Arcade GP 2 (7,612
+> **Status: 1.0, feature-complete.** Milestones 1 to 12, 14 and 15 are done, and OpenGP is
+> feature-locked: only bug fixes and design tweaks from here. Mario Kart Arcade GP 2 (7,612
 > functions) and Mario Kart Arcade GP (7,504 functions) recompile, boot from their disc images
 > through the emulated Triforce hardware (media board, baseboard, JVS I/O, card reader) and play in
 > a window or fullscreen (Vulkan, or Metal on macOS), in 4:3 or widescreen and at up to 8 times
@@ -19,10 +20,10 @@ modern features such as higher resolutions, widescreen and remappable controls.
 > the games' music and sound effects (their DSP audio microcode is emulated). A webcam can stand in
 > for the cabinet's camera, up to four cabinets link for Versus races (on one computer or a local
 > network), you can pause when you play solo, and Discord shows what you are playing. A menu (Esc) has the settings, the controls and the Mario Cards; the games' own test
-> menus work too. See [docs/playing.md](docs/playing.md) and the [roadmap](#roadmap).
+> menus work too. See [docs/playing.md](docs/playing.md) and the [milestones](#milestones).
 
-The latest release is **0.4.0**, with linked cabinets and Discord Rich Presence, and installer
-packages for Windows, Linux and macOS (see [CHANGELOG.md](CHANGELOG.md)).
+The latest release is **1.0.0**, the first release, with installer packages for Windows, Linux
+and macOS (see [CHANGELOG.md](CHANGELOG.md)).
 
 ## How it works
 
@@ -114,7 +115,9 @@ packages include keeps its own licence: SDL 3 (zlib), Dear ImGui and toml++ (MIT
 fonts in `thirdparty/gc-fonts` (Dolphin's free replacements, based on Droid Sans, Apache-2.0) and
 others, all listed with their licences in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
-## Roadmap
+## Milestones
+
+OpenGP is feature-locked at 1.0, with only bug fixes and design tweaks from here on.
 
 | # | Milestone | Needs the game |
 |---|-----------|----------------|
@@ -130,12 +133,13 @@ others, all listed with their licences in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-N
 | M10 | What the GP 2 decomp ([mkgp2-decomp](https://github.com/naari3/mkgp2-decomp)) knows: its function names in both games' symbol maps, and the games' own debug messages (`--game-log`), for working on M11 and M12 (**done**, 0.3.0) | yes |
 | M11 | The NamCam2 camera from a webcam: player photos. The camera is an HTTP server on the media board's network, so this starts the network (the socket API on host sockets) (**done**, 0.3.0) | yes |
 | M12 | Linked cabinets: the rest of the media board's network, several instances racing each other on one PC or a LAN (**done** ahead of 1.0, 0.4.0) | yes |
-| 1.0 | Release: the installer package with linked cabinets and the camera; 1.0.1 follows with the fixes from a full audit of the code, build, packages, documents and licences | yes |
 | M14 | Pause: freeze the game (its threads, sound and timers) from the menu or a button; the arcade games have no pause of their own. Only when playing solo: a game linked to other cabinets (M12) keeps running (**done** ahead of 1.0, 0.3.0) | yes |
 | M15 | Discord Rich Presence: the character, course and race position, read from the game's state (the decomp's names) and sent over Discord's local connection, without Discord's SDK (**done** ahead of 1.0, 0.4.0) | yes |
+| 1.0 | Release: the installer package with linked cabinets and the camera (**done**, 1.0.0) | yes |
 
-Releases come with installer packages for Windows, Linux and macOS. 0.1.0 to 0.3.0 were internal
+Releases come with installer packages for Windows, Linux and macOS. 0.1.0 to 0.4.0 were internal
 releases: they are tags in this repository, with their notes in [CHANGELOG.md](CHANGELOG.md).
+1.0.0 is the first release.
 
 ## Acknowledgements
 

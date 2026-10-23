@@ -112,24 +112,13 @@ documents); the larger improvements the audit found follow in 1.1.
 ### Documents
 
 - [docs/packaging.md](docs/packaging.md) lists what each system needs (Windows 10 version 1803 or
-  later, a Vulkan driver, the Linux compilers) and explains how to update without losing saves,
-  how to get past Windows SmartScreen, and the macOS 15 "Open Anyway" step.
+  later, a Vulkan driver, the Linux compilers) and explains how to update without losing saves.
 - The documents were checked against the code and corrected throughout: the menu's option names
   (the menu now says **Fit the window** and **Match the window**, as the documents do), the tests,
   the recompiler's address classes, the media board and link notes, the build options and
   environment variables, Mac keys, and wheel calibration.
-- The installer package now carries all the documents, so their links work, and
-  [docs/game-files.md](docs/game-files.md) starts with preparing an image, for players and source
+- [docs/game-files.md](docs/game-files.md) starts with preparing an image, for players and source
   builds alike.
-
-### Licences
-
-- The installer packages now carry the licences of the third-party code in them:
-  `THIRD-PARTY-NOTICES.md` lists SDL 3, Dear ImGui, toml++, the boot ROM fonts, the XXH64 hash and
-  the parts ported from Dolphin, and `licenses/` holds their licence files. README's Legal section
-  names them and where OpenGP's source is.
-- Every source file with code ported from Dolphin now says so itself, with Dolphin's copyright, not
-  only its header.
 
 ### For contributors
 
@@ -168,7 +157,17 @@ documents); the larger improvements the audit found follow in 1.1.
   fallback clock, used only when no machine is running, no longer overflows after about eight
   minutes of the computer's uptime.
 
-## 1.0.0 (not released yet)
+## 1.0.0 (2026-10-23)
+
+The first release of OpenGP (0.1.0 to 0.4.0 were internal), with installer packages for Windows,
+Linux and macOS. It brings smoother busy courses and loads, and even frame pacing for FreeSync and
+G-Sync monitors. OpenGP is now feature-locked: from here on, releases bring only bug fixes and
+design tweaks.
+
+Known issue: on Windows, OpenGP 1.0.0 doesn't work when the path of its folder, or of a disc image
+you give it, has any character other than A to Z, digits and simple punctuation (such as é, ü or
+日本, as in a user folder named José). Put the package in a folder such as `C:\Games\OpenGP`, and
+your images in its `ISO` folder. 1.0.1 fixes this.
 
 ### Even frame pacing
 
@@ -204,6 +203,12 @@ From a profile of a whole playthrough of GP 2:
 - The webcam is on only while the game uses it: while your photo is taken, for a moment as the
   game starts, and on the test menu's camera page. It used to stay on, light and all, for as long
   as the game ran, taking about 5% of a CPU core for pictures nothing used.
+
+### Licences
+
+- The installer packages carry the licences of the third-party code in them:
+  `THIRD-PARTY-NOTICES.md` lists SDL 3, Dear ImGui, toml++, the boot ROM fonts, the XXH64 hash and
+  the parts ported from Dolphin, with their notices, and `licenses/` holds their licence files.
 
 ## 0.4.0 (2026-10-16)
 
