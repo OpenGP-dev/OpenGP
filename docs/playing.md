@@ -132,15 +132,26 @@ when the game starts, so a change takes effect when it restarts.
 
 - **On one computer**, give each copy its own user folder as well as its own number, since two
   copies sharing one would overwrite each other's settings and saves:
-  `opengp-mkgp2 --user-dir user2 --cabinet 2`. To drive them all at once from one keyboard or
-  gamepad, turn on **Use the controls in the background too** (Controls tab) in each.
+  `opengp-mkgp2 --user-dir user2 --cabinet 2`. A copy with its own user folder looks for the disc
+  image only in `ISO/` and `private/`: if yours is elsewhere, add `--iso` and its path. To drive
+  them all at once from one keyboard or gamepad, turn on **Use the controls in the background
+  too** (Controls tab) in each.
 - **On a local network**, turn on **Link over the local network** on each computer
   (`[link] lan = true`, or `--lan`). The cabinets find each other by broadcasting on the network.
-  The first time, Windows asks whether OpenGP may use the network: allow it (on the kind of
-  network you are on, which Windows may call public). macOS asks whether OpenGP, or the Terminal
-  you start it from, may find devices on your local network: allow that too.
-  The link uses ports 28500 to 28539 (TCP and UDP) on each computer; `[link] port` moves them
+  The first time, Windows asks whether OpenGP may use the network: allow it. macOS asks whether
+  OpenGP, or the Terminal you start it from, may find devices on your local network: allow that
+  too. The link uses ports 28500 to 28539 (TCP and UDP) on each computer; `[link] port` moves them
   (give every cabinet the same).
+
+  Like the arcade machines, linked cabinets trust each other: there is no password, and another
+  computer on the same network could disrupt a race. Link over networks you trust (your home, a
+  LAN party), not public Wi-Fi.
+
+  If the cabinets don't find each other ("looking for other cabinets" stays on), check that the
+  firewall lets OpenGP use the network: if you said no to Windows' question, allow
+  `opengp-mkgp2` (and `opengp-mkgp1`) in Windows Security > Firewall & network protection > Allow
+  an app through firewall, for private networks. Wi-Fi with "client isolation" (common on guest
+  networks) keeps computers from seeing each other; use a wired connection or another network.
 
 Start the cabinets, and wait for the later ones to get through their start-up (the attract mode
 begins): a cabinet links to the others as it starts. Then start a game on one cabinet. The others show "Waiting for entry!", and players who insert a
