@@ -258,7 +258,6 @@ std::string g_reboot_file = "reboot.bin";
     std::_Exit(1);
   }
   stop_link();
-  if (g_network) g_network->close_all();  // the other cabinets see the connections close
   stop_outputs();
   std::vector<std::string> args = o.args;
   args.push_back("--reboot");

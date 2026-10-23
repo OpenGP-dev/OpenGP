@@ -854,11 +854,6 @@ void Network::take_incoming(Socket& listener) {
 
 Network::Socket* Network::find(u32 fd) { return fd < kSockets ? sockets_[fd].get() : nullptr; }
 
-void Network::close_all() {
-  for (auto& s : sockets_) s.reset();
-  if (link_) update_link();
-}
-
 bool Network::sends_without_delay(u32 fd) const {
   const Socket* s = fd < kSockets ? sockets_[fd].get() : nullptr;
   if (!s || s->host == kNoSocket) return false;
