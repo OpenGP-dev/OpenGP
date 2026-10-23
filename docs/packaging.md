@@ -179,18 +179,21 @@ cmake --install build/package-macos          # -> out/OpenGP-macos-arm64
 ```
 
 **Linux.** Build with GCC 12 on the oldest distribution the package supports. The installer links
-the games against the player's system libraries, so the runtime must not need newer ones.
+the games against the player's system libraries, so the runtime must not need newer ones. Set `CC`
+and `CXX` for the whole build, the launcher's below included.
 
 ```sh
-CC=gcc-12 CXX=g++-12 cmake --preset package-linux
+export CC=gcc-12 CXX=g++-12
+cmake --preset package-linux
 cmake --build --preset package-linux
 cmake --install build/package-linux          # -> out/OpenGP-linux-x64
 ```
 
 Then build the launcher against the same checkout, and install it into the package folder, as the
 launcher's README says under Building. The folder must be given as a full path: Qt's deployment
-fails on a relative one. On Windows, do that in OpenGP's dev shell (`tools/devshell.ps1`) with the
-MSVC build of Qt, and add `-DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl`:
+fails on a relative one. On Linux, do that with `CC` and `CXX` still set to GCC 12: the launcher
+builds OpenGP's libraries too. On Windows, do it in OpenGP's dev shell (`tools/devshell.ps1`) with
+the MSVC build of Qt, and add `-DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl`:
 
 ```sh
 cmake -S <launcher> -B build/launcher -G Ninja -DCMAKE_BUILD_TYPE=Release \
