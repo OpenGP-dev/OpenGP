@@ -135,7 +135,7 @@ sdk/package.toml        the version, the pinned compiler, compile and link setti
 sdk/include/            the runtime's headers
 sdk/lib/                the runtime as static libraries, with SDL3 and Dear ImGui
 sdk/games/<game>/       game.toml, recomp.toml, config/symbols.txt, patches.cpp, status.cpp
-sdk/games/common/       the launcher's main() and the code the games share
+sdk/games/common/       the games' main() and the code they share
 ISO/                    for your images
 licenses/               the licences of the third-party code in the package
 docs/, README.md, LICENSE, CHANGELOG.md, THIRD-PARTY-NOTICES.md

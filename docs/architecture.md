@@ -360,9 +360,9 @@ turn free play on); `app::run` does the rest:
 Releases ship everything but the games: the runtime as static libraries with its headers, the
 recompiler (inside the installer) and the games' own files. The installer checks the player's image,
 recompiles its `main.dol`, compiles the result with a C++ compiler (llvm-mingw on Windows, the
-system's on Linux and macOS) and links it with the runtime. It is a library: the package's
-launcher, `OpenGP` (from opengp-launcher), builds the games with it, and so does `opengp-install`,
-its command-line program. See [packaging.md](packaging.md).
+system's on Linux and macOS) and links it with the runtime. It is a library: the program players
+open, `OpenGP` (from opengp-launcher), builds the games with it, and so does `opengp-install`, its
+command-line program. See [packaging.md](packaging.md).
 
 ### Reboots (`runtime/os/reboot.h`)
 
