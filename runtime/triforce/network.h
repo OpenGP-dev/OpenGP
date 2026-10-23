@@ -145,6 +145,20 @@ struct LinkStatus {
 bool parse_ipv4(std::string_view text, u32* ip);
 std::string ipv4_string(u32 ip);
 
+// One of this computer's networks: an interface's address and netmask, in
+// host byte order.
+struct Subnet {
+  u32 ip = 0;
+  u32 mask = 0;
+};
+
+// Whether the link takes beacons and connections from `ip`: from this
+// computer, and with linking on the local network (`lan`), from a private,
+// link-local or shared (CGNAT) address, or from one of this computer's own
+// `networks` (a virtual LAN on other addresses, such as Radmin VPN's or
+// Hamachi's). Never from elsewhere on the internet.
+bool link_allows(u32 ip, bool lan, std::span<const Subnet> networks);
+
 class Network {
  public:
   // `memory` returns the media board memory at an address, to the end of its

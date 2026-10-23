@@ -151,9 +151,11 @@ sockaddr_in host_address(Endpoint e) {
 // The broadcast addresses of the computer's networks (host byte order), so
 // that the link's beacons reach the local network whichever one it is (a
 // broadcast to 255.255.255.255 leaves by one network only, which may be a
-// VPN's or a virtual machine's).
-std::vector<u32> broadcast_addresses() {
+// VPN's or a virtual machine's). Each network's address and netmask go in
+// `subnets` (see link_allows).
+std::vector<u32> broadcast_addresses(std::vector<Subnet>* subnets) {
   std::vector<u32> out;
+  subnets->clear();
 #ifdef _WIN32
   ULONG size = 16 * 1024;
   std::vector<u8> buffer(size);
@@ -172,7 +174,9 @@ std::vector<u32> broadcast_addresses() {
       if (u->Address.lpSockaddr->sa_family != AF_INET || u->OnLinkPrefixLength == 0 || u->OnLinkPrefixLength > 30)
         continue;
       const u32 ip = ntohl(reinterpret_cast<const sockaddr_in*>(u->Address.lpSockaddr)->sin_addr.s_addr);
-      out.push_back(ip | (0xFFFFFFFFu >> u->OnLinkPrefixLength));
+      const u32 host_bits = 0xFFFFFFFFu >> u->OnLinkPrefixLength;
+      out.push_back(ip | host_bits);
+      subnets->push_back({ip, ~host_bits});
     }
   }
 #else
@@ -182,6 +186,9 @@ std::vector<u32> broadcast_addresses() {
     if (!i->ifa_addr || i->ifa_addr->sa_family != AF_INET || !i->ifa_broadaddr) continue;
     if (!(i->ifa_flags & IFF_UP) || !(i->ifa_flags & IFF_BROADCAST) || (i->ifa_flags & IFF_LOOPBACK)) continue;
     out.push_back(ntohl(reinterpret_cast<const sockaddr_in*>(i->ifa_broadaddr)->sin_addr.s_addr));
+    if (i->ifa_netmask)
+      subnets->push_back({ntohl(reinterpret_cast<const sockaddr_in*>(i->ifa_addr)->sin_addr.s_addr),
+                          ntohl(reinterpret_cast<const sockaddr_in*>(i->ifa_netmask)->sin_addr.s_addr)});
   }
   freeifaddrs(list);
 #endif
@@ -305,9 +312,8 @@ struct Beacon {
   bool leaving = false;  // the cabinet is stopping
 };
 
-// Addresses a beacon or connection may come from: this computer, and with
-// linking on the local network, the private, link-local and shared (CGNAT,
-// used by virtual LANs such as Tailscale) ranges. Not the internet.
+// This computer, and the private, link-local and shared (CGNAT, used by
+// virtual LANs such as Tailscale) ranges (see link_allows).
 bool is_loopback(u32 ip) { return (ip >> 24) == 127; }
 bool is_local_network(u32 ip) {
   return is_loopback(ip) || (ip >> 24) == 10 || (ip >> 20) == (0xAC10u >> 4) || (ip >> 16) == 0xC0A8 ||
@@ -386,6 +392,17 @@ std::string ipv4_string(u32 ip) {
   char buf[16];
   std::snprintf(buf, sizeof(buf), "%u.%u.%u.%u", ip >> 24, (ip >> 16) & 0xFF, (ip >> 8) & 0xFF, ip & 0xFF);
   return buf;
+}
+
+bool link_allows(u32 ip, bool lan, std::span<const Subnet> networks) {
+  if (is_loopback(ip)) return true;
+  if (!lan) return false;
+  // One of this computer's networks counts if it is no wider than a /8 (as
+  // Radmin VPN's and Hamachi's are), so that an odd netmask never lets the
+  // internet in.
+  return is_local_network(ip) || std::any_of(networks.begin(), networks.end(), [ip](const Subnet& n) {
+           return (n.mask >> 24) == 0xFF && (ip & n.mask) == (n.ip & n.mask);
+         });
 }
 
 // A guest socket: a host socket until it connects to a service.
@@ -479,6 +496,12 @@ class Network::Link {
     }
     wake_.notify_all();
   }
+  // Whether beacons and connections may come from `ip` (link_allows, with
+  // this computer's networks).
+  bool allows(u32 ip) const {
+    std::lock_guard lock(mutex_);
+    return link_allows(ip, options_.lan, networks_);
+  }
   // A cabinet heard from recently.
   bool peer(int cabinet, Peer* out) const {
     std::lock_guard lock(mutex_);
@@ -521,6 +544,13 @@ class Network::Link {
       lock.unlock();
       if (cabinet && socket_cabinet_ != cabinet && now >= next_open_) open(cabinet, now);
       if (socket_ != kNoSocket) {
+        if (options_.lan && now >= next_networks_) {
+          std::vector<Subnet> networks;
+          broadcasts_ = broadcast_addresses(&networks);  // networks come and go
+          next_networks_ = now + std::chrono::seconds(10);
+          std::lock_guard network_lock(mutex_);
+          networks_ = std::move(networks);
+        }
         receive();
         if (changed || now >= next_beacon_) {
           send(listening, false);
@@ -584,7 +614,7 @@ class Network::Link {
       const u32 ip = ntohl(from.sin_addr.s_addr);
       // Only from this computer, or with linking on the local network, from
       // an address on one: never from the internet.
-      if (!is_loopback(ip) && !(options_.lan && is_local_network(ip))) continue;
+      if (!allows(ip)) continue;
       u8 version = 0;
       if (!beacon_magic(data, static_cast<std::size_t>(r), &version)) continue;
       if (version != kLinkVersion) {
@@ -649,10 +679,6 @@ class Network::Link {
                sizeof(to));
     };
     const Clock::time_point now = Clock::now();
-    if (options_.lan && now >= next_networks_) {
-      broadcasts_ = broadcast_addresses();  // networks come and go
-      next_networks_ = now + std::chrono::seconds(10);
-    }
     std::array<u32, kCabinets + 1> found_at{};
     {
       std::lock_guard lock(mutex_);
@@ -687,6 +713,7 @@ class Network::Link {
   std::map<u32, Incompatible> incompatible_;  // by address
   Clock::time_point clash_seen_{};
   std::string error_;
+  std::vector<Subnet> networks_;  // this computer's, with linking on the local network
 
   // The thread's own.
   HostSocket socket_ = kNoSocket;  // bound to this cabinet's beacon port
