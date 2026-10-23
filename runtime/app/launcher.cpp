@@ -731,6 +731,7 @@ int run(const Game& game, int argc, char** argv) {
     watch_for_hangs();  // once: the loop below never ends, it quits or restarts
     std::thread([] {
       os::set_interactive_thread();
+      os::prepare_thread_for_crashes();  // as for the game's other threads
       machine.run();
       std::fprintf(stderr, "[opengp] entry point returned\n");
     }).detach();
