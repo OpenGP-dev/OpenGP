@@ -77,7 +77,8 @@ documents); the larger improvements the audit found follow in 1.1.
 - The menu's Resume button now saves the settings, as Esc does. Closing the console window saves
   and tells linked cabinets, as closing the game's window does. A wheel's forces and a gamepad's
   rumble stop when the game quits or restarts.
-- A card name from `settings.toml` that cannot be a file name (`..`, `/`, `CON`...) holds no card.
+- A card name from `settings.toml` that cannot be a file name on that system (`..`, `/`, and on
+  Windows `CON`, `?`...) holds no card.
 - Widescreen: GP no longer leaves out objects in the side strips either (GP 2 was fixed in 1.0.0).
 - Wheels: with a steering wheel connected, steering comes from the wheel only, so separate pedals,
   a handbrake or a throttle can no longer turn it by their own first axis (an idle pedal used to
