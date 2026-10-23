@@ -127,8 +127,9 @@ builds on your Mac open normally.
 
 ```
 OpenGP[.exe]            the launcher, which players open (OpenGP.app on macOS, with its Qt inside)
-qt/, qt.conf            the Qt the launcher uses, on Windows and Linux (on Windows its DLLs and the
-                        Visual C++ runtime are next to OpenGP.exe)
+qt/, qt.conf            the Qt the launcher uses, on Windows and Linux. On Windows, Qt's DLLs are
+                        next to OpenGP.exe, with Microsoft's Visual C++ runtime and Direct3D shader
+                        compilers (d3dcompiler_47.dll, dxcompiler.dll and dxil.dll)
 opengp-install[.exe]    the installer, for the command line
 sdk/package.toml        the version, the pinned compiler, compile and link settings
 sdk/include/            the runtime's headers

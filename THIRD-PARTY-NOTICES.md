@@ -11,7 +11,7 @@ folder of an installer package.
 An installer package also holds the launcher, `OpenGP` (`OpenGP.exe`, `OpenGP.app`), from
 <https://github.com/OpenGP-dev/opengp-launcher>. It is under the GPL-3.0-or-later too, and is built
 from that repository together with the OpenGP release the package comes from. The work in the
-last four rows comes with it. Its own notices are `licenses/launcher-THIRD-PARTY-NOTICES.md` in the
+last five rows comes with it. Its own notices are `licenses/launcher-THIRD-PARTY-NOTICES.md` in the
 package.
 
 | Work | Licence | Where |
@@ -28,6 +28,7 @@ package.
 | M PLUS Rounded 1c | OFL-1.1 | installer packages: the launcher's typeface, built into it |
 | SDL's scancode tables | zlib | installer packages: built into the launcher, for the keys pressed in its window |
 | [xcb-util](https://xcb.freedesktop.org/) and [ICU](https://icu.unicode.org/), which Qt needs | MIT/X11 and HPND; Unicode licence | Linux packages only: `qt/lib/` |
+| Microsoft's Visual C++ runtime and Direct3D shader compilers | Microsoft's terms for redistributable files | Windows packages only: next to `OpenGP.exe` |
 
 The build also uses [glslang](https://github.com/KhronosGroup/glslang) and, on macOS,
 [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) to compile OpenGP's own shaders. Neither is
@@ -511,6 +512,15 @@ source).
 The launcher turns the keys pressed in its window into the SDL scancodes the games name keys by,
 with SDL 3.4's own tables, copied unchanged into `src/core/scancode_tables.cpp` in the launcher's
 source. They are under SDL's zlib licence, as under "SDL 3" above.
+
+## Microsoft's runtime files
+
+A Windows package carries, next to `OpenGP.exe`, files of Microsoft's that the launcher and Qt
+need: the Visual C++ runtime (`vcruntime140.dll`, `msvcp140.dll` and the others of its kind), and
+Direct3D's shader compilers, which Qt's `windeployqt` adds (`d3dcompiler_47.dll`, and
+`dxcompiler.dll` and `dxil.dll` when the Windows SDK has them). They are Copyright Microsoft
+Corporation, and are not under the GPL. They come with the package as redistributable files of
+Visual Studio and the Windows SDK, under Microsoft's licence terms for those.
 
 ## doctest
 
