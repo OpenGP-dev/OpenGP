@@ -21,7 +21,8 @@ namespace {
 // The SDK's globals in low memory.
 constexpr u32 kCurrentThread = 0x800000E4;  // OSGetCurrentThread()
 constexpr u32 kActiveThreads = 0x800000DC;  // __OSActiveThreadQueue.head
-// OSThread (Dolphin SDK <dolphin/os/OSThread.h>; its OSContext comes first).
+// The SDK's OSThread, as the games use it (offsets only; its OSContext comes
+// first).
 constexpr u32 kThreadSp = 0x004;            // context.gpr[1]
 constexpr u32 kThreadLr = 0x084;            // context.lr
 constexpr u32 kThreadSrr0 = 0x198;          // context.srr0: where it resumes

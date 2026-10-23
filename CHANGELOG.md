@@ -1,6 +1,21 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 (2026-10-23)
+
+An internal release, as 0.1.0 to 0.4.0 were, with installer packages for Windows, Linux and macOS.
+It brings smoother busy courses and loads, and even frame pacing for FreeSync and G-Sync monitors.
+OpenGP is now feature-locked: from here on, releases bring only bug fixes and design tweaks.
+
+Known issue: on Windows, OpenGP 1.0.0 doesn't work when the path of its folder, or of a disc image
+you give it, has any character other than A to Z, digits and simple punctuation (such as é, ü or
+日本, as in a user folder named José). Put the package in a folder such as `C:\Games\OpenGP`, and
+your images in its `ISO` folder (see [docs/packaging.md](docs/packaging.md#known-issue-on-windows)).
+A patch release fixes this.
+
+### The package
+
+- Open `OpenGP` (`OpenGP.exe`, `OpenGP.app`), the launcher, and add your disc image: it builds the
+  games from it and plays them. The command-line installer is now `opengp-install`.
 
 ### Even frame pacing
 
@@ -36,6 +51,13 @@ From a profile of a whole playthrough of GP 2:
 - The webcam is on only while the game uses it: while your photo is taken, for a moment as the
   game starts, and on the test menu's camera page. It used to stay on, light and all, for as long
   as the game ran, taking about 5% of a CPU core for pictures nothing used.
+
+### Licences
+
+- The installer packages carry the licences of the third-party code in them:
+  `THIRD-PARTY-NOTICES.md` lists SDL 3, Dear ImGui, toml++, the boot ROM fonts, the XXH64 hash, the
+  parts ported from Dolphin, and the launcher's Qt (LGPL-3.0, and the code Qt contains), typeface
+  and scancode tables, with their notices, and `licenses/` holds their licence files.
 
 ## 0.4.0 (2026-10-16)
 

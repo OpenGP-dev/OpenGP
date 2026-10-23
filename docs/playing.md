@@ -2,19 +2,21 @@
 
 ## Installing
 
-- **From the installer package**: unpack it, put your disc images in its `ISO` folder and run
-  `OpenGP` (or drop an image on `OpenGP.exe`). It builds each game you have an image of, once;
-  see [packaging.md](packaging.md). The launchers then sit next to it.
+- **From the installer package**: unpack it, open `OpenGP` (the launcher) and add your disc image
+  of each game. It builds each game you have an image of, once, and then plays it; see
+  [packaging.md](packaging.md). On the command line, `opengp-install` builds them the same way.
+  The games, `opengp-mkgp2` and `opengp-mkgp1`, then sit next to OpenGP.
 - **From source**: see [building.md](building.md) and [game-files.md](game-files.md).
 
 ## Starting a game
 
-Each game has its own launcher: `opengp-mkgp1` for Mario Kart Arcade GP and `opengp-mkgp2` for
-Mario Kart Arcade GP 2. They work the same way, and everything on this page applies to both.
+Each game is its own program: `opengp-mkgp1` for Mario Kart Arcade GP and `opengp-mkgp2` for
+Mario Kart Arcade GP 2. In an installer package, OpenGP starts them (**Play**). They work the same
+way, and everything on this page applies to both.
 
 The games behave like the arcade cabinet: insert a coin and press start; in the menus, steer to
 choose and step on the gas pedal to decide. Turn on free play in the menu (Esc), or start the
-launcher with `--free-play`, to play without coins ("Step on gas pedal to start").
+game with `--free-play`, to play without coins ("Step on gas pedal to start").
 
 ```sh
 build/<preset>/games/mkgp1/opengp-mkgp1 --free-play
@@ -49,8 +51,8 @@ too, and **Pause when the window is unfocused** (Game tab) pauses it while you a
 window. The pause control can be changed like the others (Controls tab, or `pause` in
 `controls.toml`). The game's clock falls behind by the time spent paused, until it next starts.
 
-Pausing is only for playing solo. Once the game has linked to another cabinet (on this computer or
-a LAN), the other cabinets need it to keep running, so it doesn't pause again until it restarts:
+Pausing is only for playing solo. Once the game has linked to another cabinet (on this computer
+or the local network), the other cabinets need it to keep running, so it doesn't pause again until it restarts:
 the pause control does nothing, and the menu opens over the running game.
 
 ## Settings
@@ -61,7 +63,7 @@ along with the window's size. The file can be edited by hand; command-line optio
 
 ### Widescreen
 
-The aspect ratio is **Fit the window** by default: the picture takes the window's shape, from 4:3
+The aspect ratio is **Scale to fit** by default: the picture takes the window's shape, from 4:3
 up to 32:9 (a window narrower than 4:3 gets black bars above and below). 4:3, 16:9, 16:10 and 21:9
 can also be chosen; the window then gets bars at the sides if its shape differs.
 
@@ -72,7 +74,7 @@ the edge of the wide one.
 
 ### Internal resolution
 
-The game renders at its native 640x528 times the internal resolution. **Match the window** (the
+The game renders at its native 640x528 times the internal resolution. **Scale to fit** (the
 default) picks the smallest multiple at least as tall as the window: 2x for 720p, 3x for 1080p,
 5x for 4K.
 
@@ -132,15 +134,28 @@ when the game starts, so a change takes effect when it restarts.
 
 - **On one computer**, give each copy its own user folder as well as its own number, since two
   copies sharing one would overwrite each other's settings and saves:
-  `opengp-mkgp2 --user-dir user2 --cabinet 2`. To drive them all at once from one keyboard or
-  gamepad, turn on **Use the controls in the background too** (Controls tab) in each.
+  `opengp-mkgp2 --user-dir user2 --cabinet 2`. A copy with its own user folder looks for the disc
+  image only in `ISO/` and `private/`: if yours is elsewhere, add `--iso` and its path. To drive
+  them all at once from one keyboard or gamepad, turn on **Use the controls in the background
+  too** (Controls tab) in each.
 - **On a local network**, turn on **Link over the local network** on each computer
   (`[link] lan = true`, or `--lan`). The cabinets find each other by broadcasting on the network.
-  The first time, Windows asks whether OpenGP may use the network: allow it (on the kind of
-  network you are on, which Windows may call public). macOS asks whether OpenGP, or the Terminal
-  you start it from, may find devices on your local network: allow that too.
-  The link uses ports 28500 to 28539 (TCP and UDP) on each computer; `[link] port` moves them
+  The first time, Windows asks whether OpenGP may use the network: allow it. macOS asks whether
+  OpenGP, or the Terminal you start it from, may find devices on your local network: allow that
+  too. The link uses ports 28500 to 28539 (TCP and UDP) on each computer; `[link] port` moves them
   (give every cabinet the same).
+
+  Like the arcade machines, linked cabinets trust each other: there is no password, and another
+  computer on the same network could disrupt a race. Link over networks you trust (your home, a
+  LAN party), not public Wi-Fi.
+
+  If the cabinets don't find each other ("looking for other cabinets" stays on), check that the
+  firewall lets OpenGP use the network: if you said no to Windows' question, allow
+  `opengp-mkgp2` (and `opengp-mkgp1`) in Windows Security > Firewall & network protection > Allow
+  an app through firewall, for private networks. If Windows calls your home network public, set it
+  to private (Settings > Network & internet > your network > Private network). Wi-Fi with "client
+  isolation" (common on guest networks) keeps computers from seeing each other; use a wired
+  connection or another network.
 
 Start the cabinets, and wait for the later ones to get through their start-up (the attract mode
 begins): a cabinet links to the others as it starts. Then start a game on one cabinet. The others show "Waiting for entry!", and players who insert a

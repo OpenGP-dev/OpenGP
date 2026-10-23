@@ -6,7 +6,9 @@
 //
 // Timing is fixed NTSC 480i (the Triforce always runs NTSC): 525 lines per
 // frame at 30000/1001 Hz, i.e. 1050 half-lines of 1287 time-base ticks each.
-// Based on Dolphin's VideoInterface.cpp (GPL-2.0-or-later).
+//
+// Based on Dolphin's VideoInterface.cpp (Copyright Dolphin Emulator Project,
+// GPL-2.0-or-later).
 #pragma once
 
 #include <array>

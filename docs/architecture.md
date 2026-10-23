@@ -12,9 +12,8 @@ A matching decompilation means rewriting every function by hand until it compile
 bytes. That takes years. Static recompilation is mechanical: once the recompiler and runtime
 work, the whole game is translated at once.
 
-A decompilation can still come later. The symbol files use the decomp-toolkit format, so a
-decomp project can share them. Hand-written C++ can also replace individual recompiled
-functions (see "Overriding functions" below).
+The symbol files use the decomp-toolkit format, so a decomp project can share them. Hand-written
+C++ can also replace individual recompiled functions (see "Overriding functions" below).
 
 ## Pipeline
 
@@ -96,8 +95,8 @@ Instruction semantics are **not** duplicated in the generator:
 - The helpers are `inline`, so the compiler folds them down to the equivalent hand-written C++.
 - The interpreter calls the same helpers.
 
-Performance work comes later and is not needed for correctness. The plan is to keep guest registers
-in C++ locals rather than in `ctx`, as XenonRecomp does.
+Guest registers live in `ctx`, not in C++ locals as in XenonRecomp. The performance work is in the
+runtime (see the CHANGELOG).
 
 ### Address classification
 
@@ -361,7 +360,9 @@ turn free play on); `app::run` does the rest:
 Releases ship everything but the games: the runtime as static libraries with its headers, the
 recompiler (inside the installer) and the games' own files. The installer checks the player's image,
 recompiles its `main.dol`, compiles the result with a C++ compiler (llvm-mingw on Windows, the
-system's on Linux and macOS) and links it with the runtime. See [packaging.md](packaging.md).
+system's on Linux and macOS) and links it with the runtime. It is a library: the program players
+open, `OpenGP` (from opengp-launcher), builds the games with it, and so does `opengp-install`, its
+command-line program. See [packaging.md](packaging.md).
 
 ### Reboots (`runtime/os/reboot.h`)
 
@@ -438,8 +439,8 @@ JSON; no Discord SDK), connecting while Discord runs, reconnecting when it resta
 within Discord's rate limit. The pictures are art assets in OpenGP's Discord application, uploaded
 there from the games' textures; nothing from the games is in the code.
 
-## What comes next
+## Scope
 
-| Area | Plan |
-|------|------|
-| GPU | Remaining GX features as games need them (depth textures, z-freeze, destination alpha with blending, logic ops) |
+OpenGP is feature-locked at 1.0: from here on it takes only bug fixes and design tweaks. The GPU
+emulation still lacks some GX features (depth textures, z-freeze, destination alpha with
+blending, logic ops); one is added only if a game is found to draw something wrong without it.

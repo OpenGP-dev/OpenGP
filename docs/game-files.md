@@ -12,6 +12,10 @@ them stays on your machine.
 
 ## Setting up
 
+In an installer package, OpenGP builds the games from your images: add them in OpenGP, or put them
+in the package's `ISO` folder (see [packaging.md](packaging.md)). Prepare them as step 1 says. The
+other steps are for building from source.
+
 1. Put your Dolphin-ready images (`.iso` / `.gcm`) in `ISO/` or `private/` at the repository root.
    Both folders are gitignored.
    - Raw NAND dumps must be converted first with
@@ -31,9 +35,9 @@ them stays on your machine.
      fixing.
 3. Configure and build as usual (see [building.md](building.md)). CMake builds each game whose
    `main.dol` is present and has the expected hash, and skips the others.
-4. Run the game's launcher. It finds the image in `ISO/` or `private/` (or takes `--iso`), and
-   runs only if the image holds the same `main.dol` the build was made from; any other image (a
-   different game, region or revision) is refused with its hash.
+4. Run the game (`opengp-mkgp2` or `opengp-mkgp1`). It finds the image in `ISO/` or `private/` (or
+   takes `--iso`), and runs only if the image holds the same `main.dol` the build was made from; any
+   other image (a different game, region or revision) is refused with its hash.
 
 ## What gets committed
 

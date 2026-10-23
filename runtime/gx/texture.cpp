@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Decoders ported from Dolphin's TextureDecoder_Generic.cpp,
+// TextureDecoder_Util.h and LookUpTables.h (Copyright Dolphin Emulator
+// Project, GPL-2.0-or-later).
 
 #include "gx/texture.h"
 

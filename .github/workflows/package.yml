@@ -1,14 +1,28 @@
 name: Package
 
 # Builds the installer packages (see docs/packaging.md): the runtime, the
-# recompiler and the installer, which builds each game on the player's
-# machine from their own disc image. No game code or data is in them.
+# recompiler, the installer, which builds each game on the player's machine
+# from their own disc image, and the launcher players open, OpenGP, which
+# builds the games with the installer's code. No game code or data is in them.
 on:
   push:
     branches: [main, 'claude/**']
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      launcher_ref:
+        description: "The launcher's branch, tag or commit (default: LAUNCHER_REF)"
+        required: false
+        type: string
+
+env:
+  # The launcher release the packages carry, from OpenGP-dev/opengp-launcher,
+  # built against this checkout of OpenGP. A run by hand can name another.
+  LAUNCHER_REF: v1.0.0
+  # The Qt the launcher is built with, which the packages carry and
+  # THIRD-PARTY-NOTICES.md names: change both together.
+  QT_VERSION: '6.10.3'
 
 jobs:
   windows:
@@ -16,6 +30,26 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+      # A version tag must name the version the packages are built as.
+      - name: Check the tag against the project version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $project = [regex]::Match((Get-Content CMakeLists.txt -Raw), 'project\(OpenGP VERSION ([0-9.]+)').Groups[1].Value
+          if (($env:GITHUB_REF_NAME -replace '^v', '') -ne $project) {
+            throw "The tag $env:GITHUB_REF_NAME does not match the project version $project in CMakeLists.txt"
+          }
+      # The launcher's repository is private, and this workflow's own token
+      # can't read another repository: a token that can is a secret.
+      - name: Check for the launcher's token
+        shell: pwsh
+        env:
+          LAUNCHER_TOKEN: ${{ secrets.LAUNCHER_TOKEN }}
+        run: |
+          if (-not $env:LAUNCHER_TOKEN) {
+            Write-Output "::error title=No LAUNCHER_TOKEN::The packages include the launcher, and checking out OpenGP-dev/opengp-launcher needs a token that can read it, in the secret LAUNCHER_TOKEN (see docs/packaging.md, Building the package)."
+            exit 1
+          }
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -60,7 +94,54 @@ jobs:
           ctest --preset package-windows
           cmake --install build/package-windows
           python tools/package_probe.py out/OpenGP-windows-x64 build/package-windows --cxx "$env:OPENGP_LLVM_MINGW/bin/x86_64-w64-mingw32-clang++.exe"
-          Compress-Archive -Path out/OpenGP-windows-x64 -DestinationPath "OpenGP-${{ steps.pin.outputs.project }}-windows-x64.zip"
+      - name: Check out the launcher
+        uses: actions/checkout@v5
+        with:
+          repository: OpenGP-dev/opengp-launcher
+          ref: ${{ inputs.launcher_ref || env.LAUNCHER_REF }}
+          path: launcher
+          token: ${{ secrets.LAUNCHER_TOKEN }}
+          submodules: false
+          persist-credentials: false
+      - name: Install Qt
+        uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125  # v4.4.1
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2022_64
+          cache: true
+      # With clang-cl and the MSVC Qt, in the environment CI's Windows job
+      # uses (tools/devshell.ps1); not llvm-mingw, which is for the games.
+      - name: Build, test and install the launcher
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          . ./tools/devshell.ps1
+          cmake -S launcher -B build/launcher -G Ninja -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl "-DCMAKE_PREFIX_PATH=$env:QT_ROOT_DIR" `
+            "-DOPENGP_SOURCE_DIR=${{ github.workspace }}" "-DLAUNCHER_DEV_HOME=" "-DLAUNCHER_NEWS_URL="
+          cmake --build build/launcher
+          ctest --test-dir build/launcher --output-on-failure
+          # A full path: Qt's deployment fails on a relative prefix.
+          cmake --install build/launcher --prefix "${{ github.workspace }}/out/OpenGP-windows-x64"
+      # In a copy, as the launcher writes user/ and build/ where it runs, and
+      # with only the package's Qt, not the one installed above.
+      - name: Check the launcher in the package
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $launcher = [regex]::Match((Get-Content launcher/CMakeLists.txt -Raw), 'project\(OpenGPLauncher VERSION ([0-9.]+)').Groups[1].Value
+          $expected = "OpenGP Launcher $launcher (OpenGP ${{ steps.pin.outputs.project }})"
+          Copy-Item -Recurse out/OpenGP-windows-x64 $env:RUNNER_TEMP
+          Set-Location (Join-Path $env:RUNNER_TEMP OpenGP-windows-x64)
+          Remove-Item Env:QT_PLUGIN_PATH, Env:QML2_IMPORT_PATH -ErrorAction SilentlyContinue
+          $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -and -not $_.StartsWith($env:QT_ROOT_DIR) }) -join ';'
+          # Piped, so that PowerShell waits for the windowed program.
+          $version = (./OpenGP.exe --version | Out-String).Trim()
+          if ($version -ne $expected) { throw "OpenGP --version printed '$version', not '$expected'" }
+          ./OpenGP.exe --smoke-test | Out-Host
+      - name: Archive the package
+        shell: pwsh
+        run: Compress-Archive -Path out/OpenGP-windows-x64 -DestinationPath "OpenGP-${{ steps.pin.outputs.project }}-windows-x64.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: OpenGP-windows-x64
@@ -76,6 +157,25 @@ jobs:
       CXX: g++-12
     steps:
       - uses: actions/checkout@v5
+      # A version tag must name the version the packages are built as.
+      - name: Check the tag against the project version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(sed -n 's/^project(OpenGP VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "The tag $GITHUB_REF_NAME does not match the project version $version in CMakeLists.txt" >&2
+            exit 1
+          fi
+      # The launcher's repository is private, and this workflow's own token
+      # can't read another repository: a token that can is a secret.
+      - name: Check for the launcher's token
+        env:
+          LAUNCHER_TOKEN: ${{ secrets.LAUNCHER_TOKEN }}
+        run: |
+          if [ -z "$LAUNCHER_TOKEN" ]; then
+            echo "::error title=No LAUNCHER_TOKEN::The packages include the launcher, and checking out OpenGP-dev/opengp-launcher needs a token that can read it, in the secret LAUNCHER_TOKEN (see docs/packaging.md, Building the package)."
+            exit 1
+          fi
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -92,6 +192,61 @@ jobs:
           ctest --preset package-linux
           cmake --install build/package-linux
           python tools/package_probe.py out/OpenGP-linux-x64 build/package-linux --cxx g++-12
+      - name: Check out the launcher
+        uses: actions/checkout@v5
+        with:
+          repository: OpenGP-dev/opengp-launcher
+          ref: ${{ inputs.launcher_ref || env.LAUNCHER_REF }}
+          path: launcher
+          token: ${{ secrets.LAUNCHER_TOKEN }}
+          submodules: false
+          persist-credentials: false
+      # OpenGL's development files for Qt's CMake files, and the X11 libraries
+      # Qt's xcb platform needs. The install copies the xcb-util ones
+      # (libxcb-cursor0 to libxcb-util1) into the package, and stops without them.
+      - name: Install what Qt needs
+        run: >
+          sudo apt-get install -y libgl1-mesa-dev libfontconfig1 libxkbcommon-x11-0 libx11-xcb1
+          libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-util1
+          libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-shm0 libxcb-sync1 libxcb-xfixes0 libxcb-xkb1
+      - name: Install Qt
+        uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125  # v4.4.1
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: linux_gcc_64
+          install-deps: false
+          cache: true
+      - name: Build, test and install the launcher
+        run: |
+          cmake -S launcher -B build/launcher -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
+            -DOPENGP_SOURCE_DIR="${{ github.workspace }}" -DLAUNCHER_DEV_HOME= -DLAUNCHER_NEWS_URL=
+          cmake --build build/launcher
+          ctest --test-dir build/launcher --output-on-failure
+          # A full path: Qt's deployment fails on a relative prefix.
+          cmake --install build/launcher --prefix "${{ github.workspace }}/out/OpenGP-linux-x64"
+      # In a copy, as the launcher writes user/ and build/ where it runs, and
+      # with only the package's Qt, not the one installed above. There is no
+      # display: the offscreen platform, which the package carries for this.
+      - name: Check the launcher in the package
+        run: |
+          launcher=$(sed -n 's/^project(OpenGPLauncher VERSION \([0-9.]*\).*/\1/p' launcher/CMakeLists.txt)
+          version=$(sed -n 's/^project(OpenGP VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          expected="OpenGP Launcher $launcher (OpenGP $version)"
+          cp -a out/OpenGP-linux-x64 "$RUNNER_TEMP/"
+          cd "$RUNNER_TEMP/OpenGP-linux-x64"
+          if [ ! -f qt/plugins/platforms/libqoffscreen.so ]; then
+            echo "The package has no offscreen platform plugin (qt/plugins/platforms/libqoffscreen.so)" >&2
+            exit 1
+          fi
+          unset LD_LIBRARY_PATH QT_PLUGIN_PATH QML2_IMPORT_PATH
+          printed=$(./OpenGP --version)
+          if [ "$printed" != "$expected" ]; then
+            echo "OpenGP --version printed '$printed', not '$expected'" >&2
+            exit 1
+          fi
+          QT_QPA_PLATFORM=offscreen ./OpenGP --smoke-test
+      - name: Archive the package
+        run: |
           version=$(sed -n 's/^project(OpenGP VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
           tar -czf "OpenGP-$version-linux-x64.tar.gz" -C out OpenGP-linux-x64
       - uses: actions/upload-artifact@v4
@@ -104,6 +259,25 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
+      # A version tag must name the version the packages are built as.
+      - name: Check the tag against the project version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(sed -n 's/^project(OpenGP VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "The tag $GITHUB_REF_NAME does not match the project version $version in CMakeLists.txt" >&2
+            exit 1
+          fi
+      # The launcher's repository is private, and this workflow's own token
+      # can't read another repository: a token that can is a secret.
+      - name: Check for the launcher's token
+        env:
+          LAUNCHER_TOKEN: ${{ secrets.LAUNCHER_TOKEN }}
+        run: |
+          if [ -z "$LAUNCHER_TOKEN" ]; then
+            echo "::error title=No LAUNCHER_TOKEN::The packages include the launcher, and checking out OpenGP-dev/opengp-launcher needs a token that can read it, in the secret LAUNCHER_TOKEN (see docs/packaging.md, Building the package)."
+            exit 1
+          fi
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -116,6 +290,53 @@ jobs:
           ctest --preset package-macos
           cmake --install build/package-macos
           python tools/package_probe.py out/OpenGP-macos-arm64 build/package-macos --cxx clang++
+      - name: Check out the launcher
+        uses: actions/checkout@v5
+        with:
+          repository: OpenGP-dev/opengp-launcher
+          ref: ${{ inputs.launcher_ref || env.LAUNCHER_REF }}
+          path: launcher
+          token: ${{ secrets.LAUNCHER_TOKEN }}
+          submodules: false
+          persist-credentials: false
+      - name: Install Qt
+        uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125  # v4.4.1
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: clang_64
+          cache: true
+      # Qt's deployment rewrites the libraries it copies into OpenGP.app, and
+      # Apple silicon runs no code without a valid signature: the app is
+      # signed again, ad hoc, after it (the launcher's install does it too).
+      - name: Build, test and install the launcher
+        run: |
+          cmake -S launcher -B build/launcher -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
+            -DOPENGP_SOURCE_DIR="${{ github.workspace }}" -DLAUNCHER_DEV_HOME= -DLAUNCHER_NEWS_URL=
+          cmake --build build/launcher
+          ctest --test-dir build/launcher --output-on-failure
+          # A full path: Qt's deployment fails on a relative prefix.
+          cmake --install build/launcher --prefix "${{ github.workspace }}/out/OpenGP-macos-arm64"
+          codesign --force --deep -s - out/OpenGP-macos-arm64/OpenGP.app
+      # In a copy, as the launcher writes user/ and build/ where it runs, and
+      # with only the package's Qt, not the one installed above.
+      - name: Check the launcher in the package
+        run: |
+          launcher=$(sed -n 's/^project(OpenGPLauncher VERSION \([0-9.]*\).*/\1/p' launcher/CMakeLists.txt)
+          version=$(sed -n 's/^project(OpenGP VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          expected="OpenGP Launcher $launcher (OpenGP $version)"
+          cp -a out/OpenGP-macos-arm64 "$RUNNER_TEMP/"
+          cd "$RUNNER_TEMP/OpenGP-macos-arm64"
+          codesign --verify --deep --strict OpenGP.app
+          unset QT_PLUGIN_PATH QML2_IMPORT_PATH
+          printed=$(OpenGP.app/Contents/MacOS/OpenGP --version)
+          if [ "$printed" != "$expected" ]; then
+            echo "OpenGP --version printed '$printed', not '$expected'" >&2
+            exit 1
+          fi
+          OpenGP.app/Contents/MacOS/OpenGP --smoke-test
+      - name: Archive the package
+        run: |
           version=$(sed -n 's/^project(OpenGP VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
           tar -czf "OpenGP-$version-macos-arm64.tar.gz" -C out OpenGP-macos-arm64
       - uses: actions/upload-artifact@v4

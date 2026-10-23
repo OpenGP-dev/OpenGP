@@ -205,8 +205,12 @@ bypasses:
 - steering wheel initialisation errors ("Wheel error", `e20`);
 - test-mode hardware validation and a stuck seat-initialisation loop.
 
-OpenGP will implement these as `[[patch]]` / `[[hook]]` entries in `games/mkgp2/recomp.toml` once
-the addresses are checked against the real DOL (milestone 3).
+OpenGP took two of its addresses, as `[[patch]]` entries in `games/mkgp2/recomp.toml` (GP has the
+same two at its own addresses): the LINK screen's wait (`0x80084850`) and the default of the
+"camera use" setting (`0x80073BD8`). Both are now only defaults: `games/common/cabinet.cpp`
+lengthens the wait while other cabinets are linking, and `games/common/camera_use.cpp` sets the
+camera setting at start-up. The game passes the other checks on OpenGP's emulated hardware, so
+OpenGP doesn't take them.
 
 ## Boot
 
