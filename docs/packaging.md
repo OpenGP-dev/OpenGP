@@ -174,7 +174,11 @@ run it on the release commit before tagging, since other changes can break a pac
 
 The workflow checks the launcher out with the repository secret `LAUNCHER_TOKEN`, because its own
 token can't read another repository. It is a fine-grained personal access token whose only access
-is read-only Contents on OpenGP-dev/opengp-launcher. Without it, the workflow stops at once.
+is read-only Contents on OpenGP-dev/opengp-launcher. Save it twice, both times as `LAUNCHER_TOKEN`:
+as an Actions secret (Settings > Secrets and variables > Actions) and as a Dependabot secret
+(Settings > Secrets and variables > Dependabot). Dependabot's pull requests, which keep the
+workflows' actions current, get only Dependabot secrets. When the token expires, replace both.
+Without the token, the workflow stops at once.
 
 **Windows.** Unpack the llvm-mingw release that `cmake/package.cmake` pins, then run:
 

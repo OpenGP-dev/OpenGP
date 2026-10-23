@@ -69,14 +69,15 @@ jobs:
             throw "The tag $env:GITHUB_REF_NAME does not match the project version $project in CMakeLists.txt"
           }
       # The launcher's repository is private, and this workflow's own token
-      # can't read another repository: a token that can is a secret.
+      # can't read another repository: a token that can is a secret. It is a
+      # Dependabot secret too, as Dependabot's pull requests get only those.
       - name: Check for the launcher's token
         shell: pwsh
         env:
           LAUNCHER_TOKEN: ${{ secrets.LAUNCHER_TOKEN }}
         run: |
           if (-not $env:LAUNCHER_TOKEN) {
-            Write-Output "::error title=No LAUNCHER_TOKEN::The packages include the launcher, and checking out OpenGP-dev/opengp-launcher needs a token that can read it, in the secret LAUNCHER_TOKEN (see docs/packaging.md, Building the package)."
+            Write-Output "::error title=No LAUNCHER_TOKEN::The packages include the launcher, and checking out OpenGP-dev/opengp-launcher needs a token that can read it, in the secret LAUNCHER_TOKEN: an Actions secret, and a Dependabot secret for Dependabot's pull requests (see docs/packaging.md, Building the package)."
             exit 1
           }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
@@ -199,13 +200,14 @@ jobs:
             exit 1
           fi
       # The launcher's repository is private, and this workflow's own token
-      # can't read another repository: a token that can is a secret.
+      # can't read another repository: a token that can is a secret. It is a
+      # Dependabot secret too, as Dependabot's pull requests get only those.
       - name: Check for the launcher's token
         env:
           LAUNCHER_TOKEN: ${{ secrets.LAUNCHER_TOKEN }}
         run: |
           if [ -z "$LAUNCHER_TOKEN" ]; then
-            echo "::error title=No LAUNCHER_TOKEN::The packages include the launcher, and checking out OpenGP-dev/opengp-launcher needs a token that can read it, in the secret LAUNCHER_TOKEN (see docs/packaging.md, Building the package)."
+            echo "::error title=No LAUNCHER_TOKEN::The packages include the launcher, and checking out OpenGP-dev/opengp-launcher needs a token that can read it, in the secret LAUNCHER_TOKEN: an Actions secret, and a Dependabot secret for Dependabot's pull requests (see docs/packaging.md, Building the package)."
             exit 1
           fi
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
@@ -302,13 +304,14 @@ jobs:
             exit 1
           fi
       # The launcher's repository is private, and this workflow's own token
-      # can't read another repository: a token that can is a secret.
+      # can't read another repository: a token that can is a secret. It is a
+      # Dependabot secret too, as Dependabot's pull requests get only those.
       - name: Check for the launcher's token
         env:
           LAUNCHER_TOKEN: ${{ secrets.LAUNCHER_TOKEN }}
         run: |
           if [ -z "$LAUNCHER_TOKEN" ]; then
-            echo "::error title=No LAUNCHER_TOKEN::The packages include the launcher, and checking out OpenGP-dev/opengp-launcher needs a token that can read it, in the secret LAUNCHER_TOKEN (see docs/packaging.md, Building the package)."
+            echo "::error title=No LAUNCHER_TOKEN::The packages include the launcher, and checking out OpenGP-dev/opengp-launcher needs a token that can read it, in the secret LAUNCHER_TOKEN: an Actions secret, and a Dependabot secret for Dependabot's pull requests (see docs/packaging.md, Building the package)."
             exit 1
           fi
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
