@@ -777,6 +777,13 @@ void Network::take_incoming(Socket& listener) {
     socklen_t from_len = sizeof(from);
     const HostSocket h = ::accept(listener.host, reinterpret_cast<sockaddr*>(&from), &from_len);
     if (h == kNoSocket) break;
+    // Only from an address the beacons are taken from (Link::allows), so that
+    // nothing else holds a place a cabinet needs.
+    if (const u32 ip = ntohl(from.sin_addr.s_addr); !link_->allows(ip)) {
+      net_log("link: a connection from %s is not from a local network; closed", ipv4_string(ip).c_str());
+      close_host(h);
+      continue;
+    }
     // A few cabinets connect at a time: anything past that is turned away.
     if (listener.incoming.size() >= kMaxIncoming) {
       net_log("link: too many connections waiting; one from %s closed", ipv4_string(ntohl(from.sin_addr.s_addr)).c_str());
