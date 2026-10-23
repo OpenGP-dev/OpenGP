@@ -233,6 +233,7 @@ restored.
 | `test_discord` | Discord Rich Presence's messages and client, against a stand-in for Discord |
 | `test_link` | Linked cabinets on one computer: finding each other, connecting, versions, refusing strangers |
 | `test_paths` | Folders named in other scripts ("José Ж 日本"): settings, cards, reboot files, images |
+| `test_installer` | The installer: `package.toml` from this release and from 1.0.0 (which lists no sources), and a compiler download that a server will not resume |
 | `crash_reports` | `crash_probe` crashes on purpose four ways; each must write `crash-report.txt` and exit with code 3 |
 
 The differential test exercises the whole pipeline end to end: DOL parsing, symbol import,
