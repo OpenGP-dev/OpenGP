@@ -22,8 +22,9 @@ features such as higher resolutions, widescreen and remappable controls.
 > network), you can pause when you play solo, and Discord shows what you are playing. A menu (Esc) has the settings, the controls and the Mario Cards; the games' own test
 > menus work too. See [docs/playing.md](docs/playing.md) and the [milestones](#milestones).
 
-The latest release is **1.0.0**, the first release, with installer packages for Windows, Linux
-and macOS (see [CHANGELOG.md](CHANGELOG.md)).
+The latest release is **1.0.1**, with the fixes from a full audit of the code, build, packages,
+documents and licences, and installer packages for Windows, Linux and macOS (see
+[CHANGELOG.md](CHANGELOG.md)).
 
 ## How it works
 
