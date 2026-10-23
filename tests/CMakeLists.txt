@@ -98,6 +98,8 @@ if(WIN32)
   target_link_libraries(test_installer PRIVATE ws2_32)
 endif()
 add_test(NAME installer COMMAND test_installer)
+# The download tests' server is on this computer: curl must not send its requests to a proxy.
+set_tests_properties(installer PROPERTIES ENVIRONMENT "no_proxy=127.0.0.1;NO_PROXY=127.0.0.1")
 
 # Crash reports: a probe crashes in several ways; each must leave a report.
 add_executable(crash_probe crash_probe.cpp)
