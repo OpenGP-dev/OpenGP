@@ -112,8 +112,9 @@ OpenGP is Copyright (C) 2026 the OpenGP contributors and is licensed under the *
 runtime and tools are ported from the [Dolphin emulator](https://github.com/dolphin-emu/dolphin)
 (GPL-2.0-or-later) and are marked as such in the source. The third-party code OpenGP and its
 packages include keeps its own licence: SDL 3 (zlib), Dear ImGui and toml++ (MIT), the boot ROM
-fonts in `thirdparty/gc-fonts` (Dolphin's free replacements, based on Droid Sans, Apache-2.0) and
-others, all listed with their licences in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+fonts in `thirdparty/gc-fonts` (Dolphin's free replacements, based on Droid Sans, Apache-2.0), Qt 6
+in the packages' launcher (LGPL-3.0) and others, all listed with their licences in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## Milestones
 

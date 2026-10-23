@@ -8,6 +8,12 @@ OpenGP, its installer packages and the games the installer builds contain the th
 below. Each keeps its own licence. The full text of each licence is below, or in the `licenses/`
 folder of an installer package.
 
+An installer package also holds the launcher, `OpenGP` (`OpenGP.exe`, `OpenGP.app`), from
+<https://github.com/OpenGP-dev/opengp-launcher>. It is under the GPL-3.0-or-later too, and is built
+from that repository together with the OpenGP release the package comes from. The work in the
+last four rows comes with it. Its own notices are `licenses/launcher-THIRD-PARTY-NOTICES.md` in the
+package.
+
 | Work | Licence | Where |
 |------|---------|-------|
 | [Dolphin](https://github.com/dolphin-emu/dolphin) (ported parts) | GPL-2.0-or-later | `runtime/`, `tools/sigmatch.py`; each file says what it is based on |
@@ -18,6 +24,10 @@ folder of an installer package.
 | Dolphin's software clipper, with portions by Markus Trenkwalder | BSD-3-Clause | `runtime/gx/frontend.cpp` (the backface test) |
 | [xxHash](https://github.com/Cyan4973/xxHash)'s XXH64 algorithm | BSD-2-Clause | `runtime/gx/frontend.cpp` (texture hashing) |
 | [doctest](https://github.com/doctest/doctest) | MIT | `thirdparty/doctest`, the test suite only (not in packages) |
+| [Qt 6](https://www.qt.io/), 6.10.3 | LGPL-3.0 | installer packages: the launcher's interface, as shared libraries |
+| M PLUS Rounded 1c | OFL-1.1 | installer packages: the launcher's typeface, built into it |
+| SDL's scancode tables | zlib | installer packages: built into the launcher, for the keys pressed in its window |
+| [xcb-util](https://xcb.freedesktop.org/) and [ICU](https://icu.unicode.org/), which Qt needs | MIT/X11 and HPND; Unicode licence | Linux packages only: `qt/lib/` |
 
 The build also uses [glslang](https://github.com/KhronosGroup/glslang) and, on macOS,
 [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) to compile OpenGP's own shaders. Neither is
@@ -458,6 +468,43 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
+
+## Qt
+
+The launcher's interface is built with Qt 6, Copyright (C) The Qt Company Ltd. and other
+contributors. The installer packages carry Qt 6.10.3: Qt Core, Qt Gui, Qt Network, Qt Qml, Qt Quick
+and Qt Quick Controls, with the libraries and plugins they need. They are used under the GNU Lesser
+General Public License, version 3 (LGPL-3.0). That is the GNU GPL version 3 ([LICENSE](LICENSE))
+with extra permissions, in `thirdparty/qt/LGPL-3.0.txt` in the source (`licenses/Qt-LGPL-3.0.txt` in
+an installer package), which is Qt's own copy of it.
+
+Qt is not changed, and the launcher links it as shared libraries, so you can replace them with your
+own build of Qt 6.10.3: the DLLs next to `OpenGP.exe` on Windows, the libraries in `qt/lib/` on
+Linux, and the frameworks in `OpenGP.app/Contents/Frameworks/` on macOS (then sign the app again,
+`codesign --force --deep -s - OpenGP.app`). The source code of Qt 6.10.3 is at
+<https://download.qt.io/archive/qt/6.10/6.10.3/>, and in Qt's Git repositories at
+<https://code.qt.io/> (tag `v6.10.3`).
+
+Qt contains third-party code of its own, such as PCRE2, HarfBuzz, FreeType, libpng and zlib,
+depending on the system. "Licenses Used in Qt" lists their licences and notices
+(<https://doc.qt.io/qt-6/licenses-used-in-qt.html>), and so do the `qt_attribution.json` files and
+`LICENSES/` folders of the modules above in Qt 6.10.3's source. On Linux, a package also carries
+the xcb-util libraries and ICU in `qt/lib/`, as Qt needs them. Their notices are in the launcher's
+notices, and their licences in `licenses/xcb-util-COPYING.txt` and `licenses/ICU-LICENSE.txt`.
+
+## M PLUS Rounded 1c
+
+The launcher's typeface, M PLUS Rounded 1c (Regular and ExtraBold), is Copyright 2016 The Rounded
+M+ Project Authors, and is licensed under the SIL Open Font License, version 1.1. The launcher's
+copies are cut down to Latin letters and built into it. The licence is in
+`licenses/MPLUSRounded1c-OFL.txt` in an installer package (`src/fonts/OFL.txt` in the launcher's
+source).
+
+## SDL's scancode tables
+
+The launcher turns the keys pressed in its window into the SDL scancodes the games name keys by,
+with SDL 3.4's own tables, copied unchanged into `src/core/scancode_tables.cpp` in the launcher's
+source. They are under SDL's zlib licence, as under "SDL 3" above.
 
 ## doctest
 

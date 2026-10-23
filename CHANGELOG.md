@@ -51,8 +51,9 @@ From a profile of a whole playthrough of GP 2:
 ### Licences
 
 - The installer packages carry the licences of the third-party code in them:
-  `THIRD-PARTY-NOTICES.md` lists SDL 3, Dear ImGui, toml++, the boot ROM fonts, the XXH64 hash and
-  the parts ported from Dolphin, with their notices, and `licenses/` holds their licence files.
+  `THIRD-PARTY-NOTICES.md` lists SDL 3, Dear ImGui, toml++, the boot ROM fonts, the XXH64 hash, the
+  parts ported from Dolphin, and the launcher's Qt (LGPL-3.0), typeface and scancode tables, with
+  their notices, and `licenses/` holds their licence files.
 
 ## 0.4.0 (2026-10-16)
 
