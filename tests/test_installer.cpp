@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // The installer (tools/installer): reading a package's package.toml, from this
-// release and from older ones, and downloading the compiler.
+// release and from older ones, downloading the compiler, and checking that the
+// package's folder can be written to.
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
 #include <atomic>
+#include <cerrno>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <mutex>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -216,3 +219,23 @@ TEST_CASE("a compiler download that fails otherwise is kept, to be resumed") {
   CHECK(error.starts_with("cannot download " + url));
   CHECK(read(p.home / "toolchain" / "compiler.zip") == "x");
 }
+
+#ifndef _WIN32
+TEST_CASE("a new package in a folder the player cannot write to says so") {
+  // Program Files, say: no build/ yet, and none can be made there. The
+  // reason is the permission, not the missing build/.
+  const fs::path home = opengp_test::temp_dir("read_only_package");
+  fs::permissions(home, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
+  // Root can write there anyway: then there is no reason to check.
+  const bool writable = ::access(home.c_str(), W_OK) == 0;
+  std::string error;
+  if (!writable) CHECK_FALSE(installer::check_writable(home, &error));
+  fs::permissions(home, fs::perms::owner_all, fs::perm_options::replace);
+  if (writable) {
+    MESSAGE("not checked: this user can write to a read-only folder");
+    return;
+  }
+  CHECK(error.find("(" + std::generic_category().message(EACCES) + ")") != std::string::npos);
+  CHECK(error.find(std::generic_category().message(ENOENT)) == std::string::npos);
+}
+#endif

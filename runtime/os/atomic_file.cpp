@@ -115,12 +115,15 @@ bool replace(const fs::path& temp, const fs::path& target, std::string* error) {
 bool write_file_atomically(const std::string& path, const void* data, std::size_t size, std::string* error) {
   std::string why;
   const fs::path target = utf8_path(path);
-  std::error_code ec;
-  if (target.has_parent_path()) fs::create_directories(target.parent_path(), ec);
+  std::error_code ec, folder_ec;
+  if (target.has_parent_path()) fs::create_directories(target.parent_path(), folder_ec);
   fs::path temp = target;
   temp += ".tmp";
   if (write_and_sync(temp, data, size, &why) && replace(temp, target, &why)) return true;
   fs::remove(temp, ec);
+  // A folder that could not be made is the reason (permission denied, say),
+  // not the missing folder the write then found.
+  if (folder_ec) why = folder_ec.message();
   if (error) *error = "cannot write " + path + ": " + why;
   return false;
 }
