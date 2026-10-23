@@ -184,10 +184,6 @@ class Network {
   // (TCP_NODELAY, which every link connection gets). For tests.
   bool sends_without_delay(u32 fd) const;
 
-  // Closes every socket the game has open (as a cabinet's board does when it
-  // reboots): the other cabinets see the connections close.
-  void close_all();
-
   static constexpr std::size_t kSockets = 64;  // numbers 1-63; 0 is never used
 
  private:

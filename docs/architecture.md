@@ -400,8 +400,9 @@ Triforce games use it to enter and leave their test menus). OpenGP replaces `OSR
 `games/common/sdk_hle.cpp`) and restarts the whole process: the launcher writes the reset code and
 the kept memory to `user/reboot-<game ID>.bin` and starts itself again with the same options;
 the new process hands them to the game's `OSInit` (`__OSGetExecParams`). Frame numbers (for
-scripted input and screenshots) carry on across the restart. The old process closes its sockets
-first, so the new one can listen on the same ports.
+scripted input and screenshots) carry on across the restart. The new process does not inherit the
+old one's sockets: they close as the old process ends or is replaced, so the new one can listen on
+the same ports.
 
 ### Input (`runtime/input/`)
 
