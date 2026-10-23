@@ -13,6 +13,7 @@
 #include <cstring>
 #include <mutex>
 #include <random>
+#include <set>
 #include <thread>
 
 #ifdef _WIN32
@@ -613,11 +614,16 @@ class Network::Link {
       }
       const Clock::time_point now = Clock::now();
       const u32 ip = ntohl(from.sin_addr.s_addr);
-      // Only from this computer, or with linking on the local network, from
-      // an address on one: never from the internet.
-      if (!allows(ip)) continue;
       u8 version = 0;
       if (!beacon_magic(data, static_cast<std::size_t>(r), &version)) continue;
+      // Only from this computer, or with linking on the local network, from
+      // an address on one: never from the internet. The log says so once for
+      // each address (the first 16), so a cabinet never found has a reason.
+      if (!allows(ip)) {
+        if (refused_.size() < 16 && refused_.insert(ip).second)
+          net_log("link: a beacon from %s is not from a local network; ignored", ipv4_string(ip).c_str());
+        continue;
+      }
       if (version != kLinkVersion) {
         // Another version of OpenGP: it cannot link with this one, but the
         // player should know it is there.
@@ -722,6 +728,7 @@ class Network::Link {
   HostSocket socket_ = kNoSocket;  // bound to this cabinet's beacon port
   int socket_cabinet_ = 0;         // ... for this number
   std::vector<u32> broadcasts_;    // where the beacons go on the local network
+  std::set<u32> refused_;          // addresses whose beacons were refused (in the log once)
   Clock::time_point next_beacon_{}, next_open_{}, next_networks_{};
   std::thread thread_;
   std::once_flag stopped_;
