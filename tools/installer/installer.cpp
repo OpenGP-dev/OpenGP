@@ -108,8 +108,13 @@ bool load_package(const fs::path& home, Package* package, std::string* error) {
   p.system_libs = strings(build["system_libs"].node());
   p.executable_suffix = build["executable_suffix"].value_or(std::string());
   p.link_group = build["link_group"].value_or(true);
-  p.common_sources = strings(build["common_sources"].node());
-  p.game_sources = strings(build["game_sources"].node());
+  // A package from 1.0.0 lists neither: these are its sources.
+  const auto common = build["common_sources"];
+  const auto own = build["game_sources"];
+  p.common_sources = common ? strings(common.node())
+                            : std::vector<std::string>{"main.cpp",       "arcade.cpp",   "cabinet.cpp",
+                                                       "camera_use.cpp", "game_log.cpp", "sdk_hle.cpp"};
+  p.game_sources = own ? strings(own.node()) : std::vector<std::string>{"patches.cpp", "status.cpp"};
   if (p.common_sources.empty() || p.game_sources.empty()) {
     if (error) *error = utf8(p.sdk / "package.toml") + ": no game sources listed";
     return false;

@@ -92,6 +92,10 @@ add_executable(test_paths test_paths.cpp)
 target_link_libraries(test_paths PRIVATE opengp_settings gekkorecomp_lib doctest opengp_warnings)
 add_test(NAME paths COMMAND test_paths)
 
+add_executable(test_installer test_installer.cpp)
+target_link_libraries(test_installer PRIVATE opengp_installer_lib doctest opengp_warnings)
+add_test(NAME installer COMMAND test_installer)
+
 # Crash reports: a probe crashes in several ways; each must leave a report.
 add_executable(crash_probe crash_probe.cpp)
 target_link_libraries(crash_probe PRIVATE opengp_machine opengp_warnings)
