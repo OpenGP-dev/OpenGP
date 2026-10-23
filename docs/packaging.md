@@ -127,8 +127,17 @@ it holds `toolchain/` too.
 A package is a CMake install of a build configured with `OPENGP_PACKAGE=ON`. `cmake/package.cmake`
 lays it out. The package workflow in `.github/workflows/package.yml` builds all three packages,
 runs the tests, and checks each package with `tools/package_probe.py`. The probe builds the test
-suite's recompiled fixture the way the installer builds a game. For a version tag, the workflow
-attaches the packages to the release.
+suite's recompiled fixture the way the installer builds a game.
+
+The workflow then builds the launcher,
+[opengp-launcher](https://github.com/OpenGP-dev/opengp-launcher) at `LAUNCHER_REF`, against the
+same checkout of OpenGP and with the Qt that `QT_VERSION` names. It runs the launcher's tests,
+installs it into the package, and opens the installed launcher once (`--version` and
+`--smoke-test`). For a version tag, the workflow attaches the packages to the release.
+
+The workflow checks the launcher out with the repository secret `LAUNCHER_TOKEN`, because its own
+token can't read another repository. It is a fine-grained personal access token whose only access
+is read-only Contents on OpenGP-dev/opengp-launcher. Without it, the workflow stops at once.
 
 **Windows.** Unpack the llvm-mingw release that `cmake/package.cmake` pins, then run:
 
@@ -156,8 +165,20 @@ cmake --build --preset package-linux
 cmake --install build/package-linux          # -> out/OpenGP-linux-x64
 ```
 
-To try a package build, run its installer, for example `out/OpenGP-windows-x64/opengp-install.exe`,
-with an image.
+Then build the launcher against the same checkout, and install it into the package folder, as the
+launcher's README says under Building. The folder must be given as a full path: Qt's deployment
+fails on a relative one. On Windows, do that in OpenGP's dev shell (`tools/devshell.ps1`) with the
+MSVC build of Qt, and add `-DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl`:
+
+```sh
+cmake -S <launcher> -B build/launcher -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH=<Qt>/6.10.3/<kit> -DOPENGP_SOURCE_DIR=$PWD -DLAUNCHER_DEV_HOME= -DLAUNCHER_NEWS_URL=
+cmake --build build/launcher
+cmake --install build/launcher --prefix $PWD/out/OpenGP-linux-x64     # or -windows-x64, -macos-arm64
+```
+
+To try a package build, open its launcher, for example `out/OpenGP-windows-x64/OpenGP.exe`, or run
+its installer, `opengp-install`, with an image.
 
 Some settings must change together:
 - CI builds the runtime with the llvm-mingw release that `cmake/package.cmake` pins, and the
@@ -166,6 +187,8 @@ Some settings must change together:
   `opengp_guest_flags` in `CMakeLists.txt` sets.
 - The link libraries in `cmake/package.cmake` must cover what the runtime and SDL3 need. The
   probe fails if one is missing.
+- `LAUNCHER_REF` in the workflow names the launcher release for this OpenGP release. It is built
+  against this OpenGP, whatever its own `external/OpenGP` submodule points to.
 
 ## Releasing
 
@@ -174,9 +197,15 @@ Some settings must change together:
 2. In `CHANGELOG.md`, give the `## Unreleased` heading the version and the date, with a short
    summary under it.
 3. In `README.md`, name the new version as the latest release.
-4. Run the package workflow by hand on the release commit (Actions > Package > Run workflow, or
-   `gh workflow run package.yml --ref <branch>`), and check that all three packages build.
-5. Merge the release branch into `main` with `git merge --no-ff`.
-6. Tag the merge `v<version>`, the same version as in `CMakeLists.txt`, and push the tag. The
+4. Set `LAUNCHER_REF` in `.github/workflows/package.yml` to the tag the launcher release for it
+   will have, such as `v1.0.0`.
+5. Run the package workflow by hand on the release commit (Actions > Package > Run workflow, or
+   `gh workflow run package.yml --ref <branch>`), and check that all three packages build. Until
+   the launcher's tag exists, give its release branch as `launcher_ref`
+   (`-f launcher_ref=<branch>`).
+6. Release the launcher: merge its release branch into its `main`, tag the merge as `LAUNCHER_REF`
+   says, and push the tag. The packages are built from that tag.
+7. Merge the release branch into `main` with `git merge --no-ff`.
+8. Tag the merge `v<version>`, the same version as in `CMakeLists.txt`, and push the tag. The
    workflow builds the packages again and attaches them to a draft release; it fails if the tag
    and the version differ. Check the draft, then publish it.
