@@ -10,8 +10,10 @@ on:
 permissions:
   contents: read
 
+# As in ci.yml: a newer push cancels the older run, except on main, where each
+# commit has a group of its own, so none is cancelled while it waits.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:

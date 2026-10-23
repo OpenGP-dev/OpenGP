@@ -29,9 +29,10 @@ permissions:
   contents: read
 
 # A newer push to the same branch or pull request cancels the older run, except
-# on main, where every commit gets its run.
+# on main, where every commit gets its run: each has a group of its own, as
+# GitHub keeps only one waiting run per group and cancels the others.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # ccache (installed by ccache-action) keeps the compiled objects from the last
