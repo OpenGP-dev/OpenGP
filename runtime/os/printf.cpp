@@ -21,7 +21,7 @@ namespace os {
 
 namespace {
 
-// In MEM1 as mapped (48 MiB for the Triforce games): through the cached or
+// In MEM1 as mapped (48 MiB for GP 2, 24 MiB for GP): through the cached or
 // the uncached view.
 bool readable(u32 addr, u32 bytes = 1) {
   const u64 size = ppc::g_mem1_size ? ppc::g_mem1_size : 24u << 20;

@@ -179,7 +179,8 @@ A 4 GiB host range is reserved, so a guest address is simply `base + addr`:
   corrupting state.
 
 MEM1 is 24 MiB on the GameCube. Its size is a runtime parameter: the machine takes it from the
-disc's `bi2.bin`, which says 48 MiB for the Triforce games (clamped to 24-64 MiB, as Dolphin does).
+disc's `bi2.bin`, which says 48 MiB for GP 2 and 24 MiB for GP (clamped to 24-64 MiB, as Dolphin
+does).
 
 ### Floating point
 

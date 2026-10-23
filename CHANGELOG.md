@@ -100,7 +100,7 @@ tweaks.
 - Fixed a possible freeze in games that read the picture back (an EFB peek waited for the window's
   thread while holding what that thread needed).
 - Crashes and freezes from bad game data or a struggling GPU: textures, palettes and copies above
-  32 MB of memory are found (both games have 48 MB), and out-of-range values in the game's
+  32 MB of memory are found (GP 2 has 48 MB), and out-of-range values in the game's
   graphics and sound commands, a damaged disc image's executable table, or the hang report's
   thread list are checked instead of read past their ends. A GPU that runs out of memory no longer
   crashes OpenGP or freezes a game waiting for a readback: the frame is skipped and, if it goes

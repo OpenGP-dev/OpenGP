@@ -41,7 +41,7 @@ bool Machine::boot(const std::string& image_path, os::BootResult* boot, std::str
   // the system call handler toggles HID0 and returns. Caches are not modelled.
   ppc::g_hooks.syscall = [](ppc::Context&, u8*, u32) {};
 
-  // The disc says how much memory the game expects (Triforce titles: 48 MiB);
+  // The disc says how much memory the game expects (GP 2: 48 MiB, GP: 24 MiB);
   // Dolphin clamps it to 24..64 MiB the same way.
   u32 mem1 = disc_.read_u32(kBi2Offset + 4);
   mem1 = mem1 ? std::clamp(mem1, kMem1Retail, kMem1Max) : kMem1Retail;

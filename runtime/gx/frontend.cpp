@@ -31,7 +31,7 @@ namespace {
 u32 be32(const u8* p) { return (u32{p[0]} << 24) | (u32{p[1]} << 16) | (u32{p[2]} << 8) | p[3]; }
 
 // Physical addresses the GPU takes from the game (textures, TLUTs, preloads,
-// EFB copies): MEM1 is up to 64 MiB (48 for the Triforce games), as for the
+// EFB copies): MEM1 is up to 64 MiB (48 for GP 2, 24 for GP), as for the
 // vertex arrays; reading checks the actual size.
 constexpr u32 kPhysicalMask = 0x03FFFFFF;
 
