@@ -61,7 +61,7 @@ along with the window's size. The file can be edited by hand; command-line optio
 
 ### Widescreen
 
-The aspect ratio is **Fit the window** by default: the picture takes the window's shape, from 4:3
+The aspect ratio is **Scale to fit** by default: the picture takes the window's shape, from 4:3
 up to 32:9 (a window narrower than 4:3 gets black bars above and below). 4:3, 16:9, 16:10 and 21:9
 can also be chosen; the window then gets bars at the sides if its shape differs.
 
@@ -72,7 +72,7 @@ the edge of the wide one.
 
 ### Internal resolution
 
-The game renders at its native 640x528 times the internal resolution. **Match the window** (the
+The game renders at its native 640x528 times the internal resolution. **Scale to fit** (the
 default) picks the smallest multiple at least as tall as the window: 2x for 720p, 3x for 1080p,
 5x for 4K.
 
