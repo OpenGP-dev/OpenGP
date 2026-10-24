@@ -173,13 +173,14 @@ every version tag, on main and pull requests when a CMake file, the installer or
 and by hand (Actions > Package > Run workflow, or `gh workflow run package.yml --ref <branch>`):
 run it on the release commit before tagging, since other changes can break a package too.
 
-The workflow checks the launcher out with the repository secret `LAUNCHER_TOKEN`, because its own
-token can't read another repository. It is a fine-grained personal access token whose only access
-is read-only Contents on OpenGP-dev/opengp-launcher. Save it twice, both times as `LAUNCHER_TOKEN`:
-as an Actions secret (Settings > Secrets and variables > Actions) and as a Dependabot secret
-(Settings > Secrets and variables > Dependabot). Dependabot's pull requests, which keep the
-workflows' actions current, get only Dependabot secrets. When the token expires, replace both.
-Without the token, the workflow stops at once.
+While the launcher's repository is private, the workflow needs the repository secret
+`LAUNCHER_TOKEN` to check it out, because its own token can't read another private repository. It
+is a fine-grained personal access token whose only access is read-only Contents on
+OpenGP-dev/opengp-launcher. Save it twice, both times as `LAUNCHER_TOKEN`: as an Actions secret
+(Settings > Secrets and variables > Actions) and as a Dependabot secret (Settings > Secrets and
+variables > Dependabot), as Dependabot's pull requests get only Dependabot secrets. When the token
+expires, replace both. Once the repository is public, nothing needs setting: without the token the
+workflow uses its own, as in pull requests from forks.
 
 **Windows.** Unpack the llvm-mingw release that `cmake/package.cmake` pins, then run:
 

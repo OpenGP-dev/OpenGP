@@ -68,17 +68,18 @@ jobs:
           if (($env:GITHUB_REF_NAME -replace '^v', '') -ne $project) {
             throw "The tag $env:GITHUB_REF_NAME does not match the project version $project in CMakeLists.txt"
           }
-      # The launcher's repository is private, and this workflow's own token
-      # can't read another repository: a token that can is a secret. It is a
-      # Dependabot secret too, as Dependabot's pull requests get only those.
+      # While the launcher's repository is private, this workflow's own token
+      # can't read it: a token that can is a secret (a Dependabot secret too, as
+      # Dependabot's pull requests get only those). Without it, as in pull
+      # requests from forks, which get no secrets, the launcher is checked out
+      # with the workflow's own token, which can read it once it is public.
       - name: Check for the launcher's token
         shell: pwsh
         env:
           LAUNCHER_TOKEN: ${{ secrets.LAUNCHER_TOKEN }}
         run: |
           if (-not $env:LAUNCHER_TOKEN) {
-            Write-Output "::error title=No LAUNCHER_TOKEN::The packages include the launcher, and checking out OpenGP-dev/opengp-launcher needs a token that can read it, in the secret LAUNCHER_TOKEN: an Actions secret, and a Dependabot secret for Dependabot's pull requests (see docs/packaging.md, Building the package)."
-            exit 1
+            Write-Output "::notice title=No LAUNCHER_TOKEN::No LAUNCHER_TOKEN is set, so the launcher is checked out with this workflow's own token, which can read OpenGP-dev/opengp-launcher only once that repository is public (see docs/packaging.md, Building the package)."
           }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
@@ -132,7 +133,7 @@ jobs:
           repository: OpenGP-dev/opengp-launcher
           ref: ${{ inputs.launcher_ref || env.LAUNCHER_REF }}
           path: launcher
-          token: ${{ secrets.LAUNCHER_TOKEN }}
+          token: ${{ secrets.LAUNCHER_TOKEN || github.token }}
           submodules: false
           persist-credentials: false
       - name: Install Qt
@@ -199,16 +200,17 @@ jobs:
             echo "The tag $GITHUB_REF_NAME does not match the project version $version in CMakeLists.txt" >&2
             exit 1
           fi
-      # The launcher's repository is private, and this workflow's own token
-      # can't read another repository: a token that can is a secret. It is a
-      # Dependabot secret too, as Dependabot's pull requests get only those.
+      # While the launcher's repository is private, this workflow's own token
+      # can't read it: a token that can is a secret (a Dependabot secret too, as
+      # Dependabot's pull requests get only those). Without it, as in pull
+      # requests from forks, which get no secrets, the launcher is checked out
+      # with the workflow's own token, which can read it once it is public.
       - name: Check for the launcher's token
         env:
           LAUNCHER_TOKEN: ${{ secrets.LAUNCHER_TOKEN }}
         run: |
           if [ -z "$LAUNCHER_TOKEN" ]; then
-            echo "::error title=No LAUNCHER_TOKEN::The packages include the launcher, and checking out OpenGP-dev/opengp-launcher needs a token that can read it, in the secret LAUNCHER_TOKEN: an Actions secret, and a Dependabot secret for Dependabot's pull requests (see docs/packaging.md, Building the package)."
-            exit 1
+            echo "::notice title=No LAUNCHER_TOKEN::No LAUNCHER_TOKEN is set, so the launcher is checked out with this workflow's own token, which can read OpenGP-dev/opengp-launcher only once that repository is public (see docs/packaging.md, Building the package)."
           fi
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
@@ -232,7 +234,7 @@ jobs:
           repository: OpenGP-dev/opengp-launcher
           ref: ${{ inputs.launcher_ref || env.LAUNCHER_REF }}
           path: launcher
-          token: ${{ secrets.LAUNCHER_TOKEN }}
+          token: ${{ secrets.LAUNCHER_TOKEN || github.token }}
           submodules: false
           persist-credentials: false
       # OpenGL's development files for Qt's CMake files, and the X11 libraries
@@ -303,16 +305,17 @@ jobs:
             echo "The tag $GITHUB_REF_NAME does not match the project version $version in CMakeLists.txt" >&2
             exit 1
           fi
-      # The launcher's repository is private, and this workflow's own token
-      # can't read another repository: a token that can is a secret. It is a
-      # Dependabot secret too, as Dependabot's pull requests get only those.
+      # While the launcher's repository is private, this workflow's own token
+      # can't read it: a token that can is a secret (a Dependabot secret too, as
+      # Dependabot's pull requests get only those). Without it, as in pull
+      # requests from forks, which get no secrets, the launcher is checked out
+      # with the workflow's own token, which can read it once it is public.
       - name: Check for the launcher's token
         env:
           LAUNCHER_TOKEN: ${{ secrets.LAUNCHER_TOKEN }}
         run: |
           if [ -z "$LAUNCHER_TOKEN" ]; then
-            echo "::error title=No LAUNCHER_TOKEN::The packages include the launcher, and checking out OpenGP-dev/opengp-launcher needs a token that can read it, in the secret LAUNCHER_TOKEN: an Actions secret, and a Dependabot secret for Dependabot's pull requests (see docs/packaging.md, Building the package)."
-            exit 1
+            echo "::notice title=No LAUNCHER_TOKEN::No LAUNCHER_TOKEN is set, so the launcher is checked out with this workflow's own token, which can read OpenGP-dev/opengp-launcher only once that repository is public (see docs/packaging.md, Building the package)."
           fi
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
@@ -332,7 +335,7 @@ jobs:
           repository: OpenGP-dev/opengp-launcher
           ref: ${{ inputs.launcher_ref || env.LAUNCHER_REF }}
           path: launcher
-          token: ${{ secrets.LAUNCHER_TOKEN }}
+          token: ${{ secrets.LAUNCHER_TOKEN || github.token }}
           submodules: false
           persist-credentials: false
       - name: Install Qt
