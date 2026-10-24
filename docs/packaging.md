@@ -62,6 +62,7 @@ describes. Their settings, saves and screenshots go in the package's `user/` fol
 
 ### Updating
 
+When a newer OpenGP is out, the launcher says so on Home, and **Download** opens its release page.
 Your saves, Mario Cards and settings are in the package's `user/` folder. To update OpenGP:
 
 1. Unpack the new package over the old one, replacing its files. Or unpack it into a new folder and

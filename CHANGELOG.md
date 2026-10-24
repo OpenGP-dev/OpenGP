@@ -9,6 +9,12 @@ fixes from a full audit of the code, build, installer packages, documents and li
 are for saves, crashes, security, paths, the installer and the documents. OpenGP is feature-locked
 at 1.0, so later releases bring only bug fixes and design tweaks.
 
+### The launcher
+
+- The launcher says on Home when a newer OpenGP is out, with a link to download it. It looks at
+  OpenGP's latest release on GitHub when it starts and every half hour, unless the news is turned
+  off in its settings, and downloads nothing else.
+
 ### Smoother
 
 - Fewer dropped frames: the hardware's timed events (the display's retraces, the sound's DMA, the
