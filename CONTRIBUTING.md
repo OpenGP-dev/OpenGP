@@ -1,8 +1,7 @@
 # Contributing to OpenGP
 
-OpenGP is feature-locked at 1.0: it takes bug fixes and design tweaks (wording, layout, how
-something looks), not new features. Bug reports and fixes are welcome. Before a larger fix, open an
-issue so we can agree on the approach.
+Bug reports, bug fixes and design tweaks (wording, layout, how something looks) are welcome.
+Before a larger change, open an issue so we can agree on the approach.
 
 ## The one rule: no game data
 

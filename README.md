@@ -10,9 +10,8 @@ compiled together with a runtime that stands in for the Triforce hardware (GameC
 DSP, AM-Baseboard, AM-Mediaboard), so the game runs as a normal native program, with modern
 features such as higher resolutions, widescreen and remappable controls.
 
-> **Status: 1.0, feature-complete.** Milestones 1 to 12, 14 and 15 are done, and OpenGP is
-> feature-locked: only bug fixes and design tweaks from here. Mario Kart Arcade GP 2 (7,612
-> functions) and Mario Kart Arcade GP (7,504 functions) recompile, boot from their disc images
+> **Status: 1.0.** Mario Kart Arcade GP 2 (7,612 functions) and Mario Kart Arcade GP (7,504
+> functions) recompile, boot from their disc images
 > through the emulated Triforce hardware (media board, baseboard, JVS I/O, card reader) and play in
 > a window or fullscreen (Vulkan, or Metal on macOS), in 4:3 or widescreen and at up to 8 times
 > their resolution: insert a coin (or turn on free play), make a Mario Card, pick a character and
@@ -118,8 +117,6 @@ in the packages' launcher (LGPL-3.0) and others, all listed with their licences 
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## Milestones
-
-OpenGP is feature-locked at 1.0, with only bug fixes and design tweaks from here on.
 
 | # | Milestone | Needs the game |
 |---|-----------|----------------|

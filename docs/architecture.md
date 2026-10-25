@@ -477,6 +477,5 @@ there from the games' textures; nothing from the games is in the code.
 
 ## Scope
 
-OpenGP is feature-locked at 1.0: from here on it takes only bug fixes and design tweaks. The GPU
-emulation still lacks some GX features (depth textures, z-freeze, destination alpha with
-blending, logic ops); one is added only if a game is found to draw something wrong without it.
+The GPU emulation leaves out some GX features (depth textures, z-freeze, destination alpha with
+blending, logic ops) that neither game is known to need.

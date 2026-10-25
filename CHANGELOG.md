@@ -6,8 +6,7 @@ The first public release of OpenGP, with installer packages for Windows, Linux a
 package, `OpenGP` (`OpenGP.exe`, `OpenGP.app`) is the launcher: add your disc image, and it builds
 the games from it and plays them. 1.0.1 is 1.0.0, an internal release whose notes follow, with the
 fixes from a full audit of the code, build, installer packages, documents and licences. The fixes
-are for saves, crashes, security, paths, the installer and the documents. OpenGP is feature-locked
-at 1.0, so later releases bring only bug fixes and design tweaks.
+are for saves, crashes, security, paths, the installer and the documents.
 
 ### The launcher
 
@@ -154,9 +153,9 @@ at 1.0, so later releases bring only bug fixes and design tweaks.
 
 ### For contributors
 
-- `CONTRIBUTING.md` (the feature lock, the no-game-data rule, licences, testing), `SECURITY.md`,
+- `CONTRIBUTING.md` (what it takes, the no-game-data rule, licences, testing), `SECURITY.md`,
   and issue forms: one for bugs that asks for the version, the system and the hang report, and
-  never for game files, and one for design tweaks. There is none for new features.
+  never for game files, and one for design tweaks.
 - CI checks every push for anything that looks like game data (`tools/check_game_data.py`: game
   file types, binaries, large files, a copy of a supported `main.dol`).
 - CI and package workflows: actions pinned by commit and kept current by Dependabot, read-only
@@ -195,7 +194,6 @@ at 1.0, so later releases bring only bug fixes and design tweaks.
 
 An internal release, as 0.1.0 to 0.4.0 were, with installer packages for Windows, Linux and macOS.
 It brings smoother busy courses and loads, and even frame pacing for FreeSync and G-Sync monitors.
-OpenGP is now feature-locked: from here on, releases bring only bug fixes and design tweaks.
 
 Known issue: on Windows, OpenGP 1.0.0 doesn't work when the path of its folder, or of a disc image
 you give it, has any character other than A to Z, digits and simple punctuation (such as é, ü or

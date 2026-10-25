@@ -6,7 +6,6 @@
 
 ## Checklist
 
-- [ ] A bug fix or a design tweak, not a new feature.
 - [ ] No game code, data or assets (`python3 tools/check_game_data.py` passes).
 - [ ] New files start with `// SPDX-License-Identifier: GPL-3.0-or-later`; ported Dolphin code says so.
 - [ ] `ctest` passes.

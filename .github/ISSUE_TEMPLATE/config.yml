@@ -3,6 +3,3 @@ contact_links:
   - name: Security problem
     url: https://github.com/OpenGP-dev/OpenGP/security/advisories/new
     about: Report security problems privately (see SECURITY.md).
-  - name: Feature requests
-    url: https://github.com/OpenGP-dev/OpenGP/blob/main/CONTRIBUTING.md
-    about: OpenGP is feature-locked at 1.0 and takes no feature requests, only bug reports and design tweaks (see CONTRIBUTING.md).
