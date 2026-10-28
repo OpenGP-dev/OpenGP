@@ -39,7 +39,7 @@ on:
 env:
   # The launcher release the packages carry, from OpenGP-dev/opengp-launcher,
   # built against this checkout of OpenGP. A run by hand can name another.
-  LAUNCHER_REF: v1.0.1
+  LAUNCHER_REF: v1.0.0
   # The Qt the launcher is built with, which the packages carry and
   # THIRD-PARTY-NOTICES.md names: change both together.
   QT_VERSION: '6.10.3'
