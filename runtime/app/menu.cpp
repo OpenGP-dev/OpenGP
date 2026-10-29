@@ -59,7 +59,13 @@ struct PadLabels {
 };
 
 PadLabels pad_labels() {
-  PadLabels labels;
+  // Once a frame: the hints ask more than once.
+  static int frame = -1;
+  static PadLabels cached;
+  if (frame == ImGui::GetFrameCount()) return cached;
+  frame = ImGui::GetFrameCount();
+  PadLabels& labels = cached;
+  labels = PadLabels{};
   int count = 0;
   SDL_JoystickID* ids = SDL_GetGamepads(&count);
   if (ids && count > 0) {
@@ -272,6 +278,10 @@ void Menu::update(MenuModel& m) {
   theme::set_scale(scale_);
   ImGui::NewFrame();
 
+  // A list left open when the menu closed (the guide button) must not come
+  // back with it.
+  if (!open_ && ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+    ImGui::ClosePopupToLevel(0, false);
   if (open_) {
     open_t_ = std::min(1.0f, open_t_ + io.DeltaTime / kFadeIn);
     // Esc or B: one level up, unless ImGui just used it to close a list.
