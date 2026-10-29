@@ -32,16 +32,29 @@ the card keeps your progress (Mario Coins, titles, unlocked characters). See [Ma
 
 ## The menu
 
-**Esc** (or a gamepad's guide button) opens the menu over the game; Esc again closes it. The game
-pauses while it is open and gets no controls (turn off **Pause while this menu is open** in the
-Game tab to keep it running).
+**Esc** (or a gamepad's guide button) opens the menu over the game: **Resume**, **Settings**,
+**Test menu** (the game's own, for operators: it restarts the game) and **Quit**. The game pauses
+while the menu is open and gets no controls (turn off **Pause while this menu is open** in
+Settings, on the Game page, to keep it running).
 
-| Tab | Settings |
-|-----|----------|
-| Game | The Mario Card you hold; the camera; pausing; Discord; free play and the test menu; linked cabinets |
-| Video | Fullscreen, aspect ratio, internal resolution, VSync, even frame pacing |
+The menu works with the keyboard, a gamepad or the mouse: the arrows (or the d-pad and left stick)
+move, **Enter** (or **A**) selects, and **Esc** (or **B**) goes back one step, out to the game
+from the first one; the guide button closes the menu from anywhere. In Settings, **Page Up** and
+**Page Down** (or **LB** and **RB**) change pages, and **Left** and **Right** change the chosen
+row's value without opening a list. Quitting, the test menu and restoring the default controls
+ask first.
+
+| Page | Settings |
+|------|----------|
+| Game | The Mario Card you hold; pausing; Discord; free play |
+| Video | Full screen, aspect ratio, internal resolution, VSync, even frame pacing |
 | Sound | Volume |
-| Controls | The keys, buttons and axes for each control; force feedback, steering speed, dead zones |
+| Controls | The keys, buttons and axes for each control; steering speed, dead zones, force feedback |
+| Camera | The webcam (or the test pattern) the game takes your photo with |
+| Linked cabinets | This cabinet's number and the link over the local network |
+
+The settings are the launcher's: the launcher's Settings edit the same file. The camera and the
+link settings take effect when the game next starts; the page says so while a change waits.
 
 **F11** (or Alt+Enter) switches between a window and fullscreen, and **F12** saves a screenshot to
 `user/screenshots/`. On a Mac keyboard, hold **Fn** for the F keys (or turn on "Use F1, F2, etc.
@@ -220,9 +233,11 @@ wheel half-way); sticks and wheels steer directly.
 
 ### Changing them
 
-In the menu's **Controls** tab, choose the keyboard, gamepads or wheels and joysticks, then click
-**+** next to a control and press the key or button (or move the axis, the pedal or the wheel)
-to add it; click an input to remove it. Changes apply at once and are saved when the menu closes.
+In the menu's Settings, on the **Controls** page, choose the keyboard, gamepads or wheels and other
+controllers, then choose **Add** next to a control and press the key or button (or move the axis,
+the pedal or the wheel) to add it; Esc cancels. Choose an input (its cross) to remove it. While an
+input is awaited, a gamepad's buttons go to the control, not to the menu. Changes apply at once and
+are saved when the menu closes.
 
 They are kept in `user/controls.toml`, which is written with the defaults the first time the game
 runs (with a window). It can also be edited by hand (then restart); delete it to get the defaults

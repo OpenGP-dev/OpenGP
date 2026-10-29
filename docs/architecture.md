@@ -383,9 +383,12 @@ turn free play on); `app::run` does the rest:
 - the window (fullscreen, and the aspect ratio and internal resolution that follow its size), the
   controls, the sound;
 - the menu (`menu.h`): Dear ImGui, drawn by the renderer over the presented picture
-  (`video::Overlay`), with the settings and the Mario Card the player holds. Settings changed there
-  apply at once; they are saved when the menu closes and at exit, except those set on the command
-  line.
+  (`video::Overlay`), with the settings and the Mario Card the player holds. It is drawn in the
+  OpenGP launcher's look: `menu_theme.h` has the launcher's palette, its typeface (M PLUS Rounded
+  1c, embedded from `thirdparty/fonts`) and icons, and `menu_widgets.h` the widgets, each a Dear
+  ImGui item drawn with the draw lists (a setting's row is one keyboard or gamepad stop). Settings
+  changed there apply at once; they are saved when the menu closes and at exit, except those set
+  on the command line.
 
 ### The installer package (`tools/installer/`)
 

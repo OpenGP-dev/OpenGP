@@ -14,6 +14,22 @@ are for saves, crashes, security, paths, the installer and the documents.
   OpenGP's latest release on GitHub when it starts and every half hour, unless the news is turned
   off in its settings, and downloads nothing else.
 
+### The menu
+
+- The games' menu (Esc, or a gamepad's guide button) is redrawn in the launcher's look, with its
+  typeface. It opens on a card (Resume, Settings, Test menu, Quit); Settings is the launcher's
+  settings dialog, with the same pages: Game, Video, Sound, Controls, Camera and Linked cabinets.
+  Quitting, the test menu and restoring the default controls ask first.
+- It works the same with the keyboard, a gamepad and the mouse. Esc and B go back one step (a
+  list, a question, the dialog, the card) instead of closing the whole menu; Left and Right change
+  the chosen row's value; LB and RB, or Page Up and Page Down, change pages. Every connected
+  gamepad drives it.
+- The press that closes the menu (Enter, A, a click on Resume) no longer reaches the game as its
+  start or item button, and choosing a gamepad input for a control no longer moves the menu too:
+  binding B used to go back as well.
+- The Camera and Linked cabinets pages say when a change waits for the next start. "Paused" is a
+  pill naming the keys that resume, and notices show an icon, red-edged for problems.
+
 ### Smoother
 
 - Fewer dropped frames: the hardware's timed events (the display's retraces, the sound's DMA, the
