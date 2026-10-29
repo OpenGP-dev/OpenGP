@@ -136,6 +136,7 @@ if(OPENGP_BUILD_VIDEO)
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlgpu3.cpp)
   target_include_directories(imgui SYSTEM PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+  target_compile_definitions(imgui PUBLIC IMGUI_DEFINE_MATH_OPERATORS)  # ImVec2 arithmetic, for the menu's widgets
   target_link_libraries(imgui PUBLIC SDL3::SDL3)
 endif()
 
@@ -166,7 +167,7 @@ target_link_libraries(opengp_app
   PRIVATE opengp_warnings)
 target_compile_definitions(opengp_app PRIVATE OPENGP_VERSION="${PROJECT_VERSION}")
 if(OPENGP_BUILD_VIDEO)
-  target_sources(opengp_app PRIVATE app/menu.cpp app/menu_theme.cpp)
+  target_sources(opengp_app PRIVATE app/menu.cpp app/menu_theme.cpp app/menu_widgets.cpp)
   target_link_libraries(opengp_app PUBLIC opengp_video opengp_input opengp_audio opengp_webcam imgui)
   target_compile_definitions(opengp_app PRIVATE OPENGP_VIDEO)
   # The menu's typeface (thirdparty/fonts/mplus-rounded-1c), embedded.
