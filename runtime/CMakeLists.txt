@@ -166,7 +166,19 @@ target_link_libraries(opengp_app
   PRIVATE opengp_warnings)
 target_compile_definitions(opengp_app PRIVATE OPENGP_VERSION="${PROJECT_VERSION}")
 if(OPENGP_BUILD_VIDEO)
-  target_sources(opengp_app PRIVATE app/menu.cpp)
+  target_sources(opengp_app PRIVATE app/menu.cpp app/menu_theme.cpp)
   target_link_libraries(opengp_app PUBLIC opengp_video opengp_input opengp_audio opengp_webcam imgui)
   target_compile_definitions(opengp_app PRIVATE OPENGP_VIDEO)
+  # The menu's typeface (thirdparty/fonts/mplus-rounded-1c), embedded.
+  set(menu_font_dir ${PROJECT_SOURCE_DIR}/thirdparty/fonts/mplus-rounded-1c)
+  foreach(weight Regular ExtraBold)
+    set(out ${CMAKE_CURRENT_BINARY_DIR}/menu_font_${weight}.cpp)
+    add_custom_command(
+      OUTPUT ${out}
+      COMMAND ${CMAKE_COMMAND} -DINPUT=${menu_font_dir}/MPLUSRounded1c-${weight}.ttf -DOUTPUT=${out}
+              -DNAME=kMenuFont${weight} -P ${PROJECT_SOURCE_DIR}/cmake/embed.cmake
+      DEPENDS ${menu_font_dir}/MPLUSRounded1c-${weight}.ttf ${PROJECT_SOURCE_DIR}/cmake/embed.cmake
+      VERBATIM)
+    target_sources(opengp_app PRIVATE ${out})
+  endforeach()
 endif()

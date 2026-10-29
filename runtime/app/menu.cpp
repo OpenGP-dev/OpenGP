@@ -2,6 +2,8 @@
 
 #include "app/menu.h"
 
+#include "app/menu_theme.h"
+
 #include <utility>
 #include <SDL3/SDL.h>
 #include <imgui.h>
@@ -69,7 +71,7 @@ bool Menu::init(SDL_Window* window, SDL_GPUDevice* device, u32 format, std::stri
     ImGui::DestroyContext();
     return false;
   }
-  io.Fonts->AddFontDefaultVector();
+  theme::load_fonts(io);
   window_ = window;
   initialised_ = true;
   return true;
@@ -156,9 +158,11 @@ void Menu::apply_scale(float scale) {
   style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
   style.Colors[ImGuiCol_WindowBg].w = 0.94f;
   style.ScaleAllSizes(scale);
-  style.FontScaleMain = 1.35f;  // 13-pixel default font, about 18 pixels at 720p
+  style.FontSizeBase = theme::kLead;  // 16 pixels at 720p
+  style.FontScaleMain = 1.0f;
   style.FontScaleDpi = scale;
   ImGui::GetStyle() = style;
+  theme::set_scale(scale);
   scale_ = scale;
 }
 

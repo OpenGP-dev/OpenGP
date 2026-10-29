@@ -145,6 +145,9 @@ install(FILES ${sdl3_SOURCE_DIR}/src/video/yuv2rgb/LICENSE DESTINATION licenses 
 install(FILES ${PROJECT_SOURCE_DIR}/thirdparty/tomlplusplus/LICENSE DESTINATION licenses RENAME tomlplusplus-LICENSE.txt)
 install(FILES ${PROJECT_SOURCE_DIR}/thirdparty/gc-fonts/LICENSE DESTINATION licenses RENAME gc-fonts-LICENSE.txt)
 install(FILES ${PROJECT_SOURCE_DIR}/thirdparty/gc-fonts/README.md DESTINATION licenses RENAME gc-fonts-README.md)
+# The menu's typeface (the launcher's too: its install puts the same text in
+# the same place).
+install(FILES ${PROJECT_SOURCE_DIR}/thirdparty/fonts/mplus-rounded-1c/OFL.txt DESTINATION licenses RENAME MPLUSRounded1c-OFL.txt)
 # The launcher the package workflow adds (OpenGP-dev/opengp-launcher) links Qt,
 # under the LGPL. Its install puts the same text in the same place. With it,
 # the notices of the code Qt contains (tools/qt_notices.py makes them).
