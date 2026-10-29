@@ -105,7 +105,7 @@ void apply_style(ImGuiStyle& style, float scale) {
   c[ImGuiCol_NavCursor] = none;  // the widgets draw their own focus rings
   c[ImGuiCol_NavWindowingHighlight] = none;
   c[ImGuiCol_NavWindowingDimBg] = none;
-  c[ImGuiCol_ModalWindowDimBg] = none;  // the menu draws its own scrims
+  c[ImGuiCol_ModalWindowDimBg] = ImVec4(0, 0, 0, 0.45f);  // behind a confirmation
   style.ScaleAllSizes(scale);
   style.FontSizeBase = kBody;
   style.FontScaleMain = 1.0f;

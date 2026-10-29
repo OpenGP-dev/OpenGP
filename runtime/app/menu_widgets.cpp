@@ -61,12 +61,16 @@ struct Item {
   bool hovered = false, held = false, pressed = false;
 };
 
+LastItem g_last_item;
+bool g_list_focus_pending = false;  // a drop-down list just opened
+
 Item begin_item(const char* label, ImVec2 size, ImGuiButtonFlags flags = 0) {
   Item it;
   ImGuiWindow* w = ImGui::GetCurrentWindow();
   if (w->SkipItems) return it;
   it.id = w->GetID(label);
   it.bb = ImRect(w->DC.CursorPos, w->DC.CursorPos + size);
+  g_last_item = {it.id, it.bb.Min, it.bb.Max};
   ImGui::ItemSize(size);
   it.ok = ImGui::ItemAdd(it.bb, it.id);
   if (it.ok) it.pressed = ImGui::ButtonBehavior(it.bb, it.id, &it.hovered, &it.held, flags | ImGuiButtonFlags_NoHoveredOnFocus);
@@ -135,7 +139,7 @@ struct RowFrame {
   Keys keys;
 };
 
-RowFrame row_begin(const Row& row, ImVec2 control_size, ImGuiButtonFlags flags = 0) {
+RowFrame row_begin(const Row& row, ImVec2 control_size, ImGuiButtonFlags flags = 0, bool interactive = true) {
   RowFrame f;
   ImGuiWindow* w = ImGui::GetCurrentWindow();
   if (w->SkipItems) return f;
@@ -155,13 +159,18 @@ RowFrame row_begin(const Row& row, ImVec2 control_size, ImGuiButtonFlags flags =
   const float h = std::max({px(48), content_h + px(14), control_size.y + px(12)});
   f.id = w->GetID(row.label);
   f.bb = ImRect(w->DC.CursorPos, w->DC.CursorPos + ImVec2(avail, h));
+  g_last_item = {f.id, f.bb.Min, f.bb.Max};
   ImGui::ItemSize(f.bb.GetSize());
   if (!row.enabled) ImGui::BeginDisabled();
+  if (!interactive) ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
   f.ok = ImGui::ItemAdd(f.bb, f.id);
+  if (!interactive) ImGui::PopItemFlag();
   if (f.ok) {
-    f.pressed = ImGui::ButtonBehavior(f.bb, f.id, &f.hovered, &f.held, flags | ImGuiButtonFlags_NoHoveredOnFocus);
-    f.focus = focused(f.id);
-    if (row.enabled) f.keys = row_keys(f.id);
+    if (interactive) {
+      f.pressed = ImGui::ButtonBehavior(f.bb, f.id, &f.hovered, &f.held, flags | ImGuiButtonFlags_NoHoveredOnFocus);
+      f.focus = focused(f.id);
+      if (row.enabled) f.keys = row_keys(f.id);
+    }
     ImDrawList* dl = w->DrawList;
     if (f.focus) dl->AddRectFilled(f.bb.Min, f.bb.Max, col(theme::kPanel), px(10));
     else if (f.hovered) dl->AddRectFilled(f.bb.Min, f.bb.Max, col(theme::alpha(theme::kPanel, 0.5f)), px(10));
@@ -194,11 +203,42 @@ bool popup_row(const char* label, bool current) {
   const ImVec2 ts = measure(label);
   draw_text(dl, ImVec2(it.bb.Min.x + px(10), std::round(it.bb.Min.y + (h - ts.y) * 0.5f)),
             current ? theme::kMarquee : theme::kChalk, label);
-  if (current) ImGui::SetItemDefaultFocus();
+  // The list opens on its current value (ImGui's SetItemDefaultFocus()
+  // comes too late: the popup measures itself, clipped, on its first frame).
+  if (current && g_list_focus_pending) {
+    focus(g_last_item, GImGui->NavCursorVisible);
+    ImGui::SetScrollHereY();
+    g_list_focus_pending = false;
+  }
   return it.pressed;
 }
 
 }  // namespace
+
+float binding_chip_width(const char* name) {
+  Font f(Weight::Regular, theme::kBody);
+  return std::round(measure(name).x + px(12) + px(34));
+}
+
+// ---- Focus ----
+
+LastItem last_item() { return g_last_item; }
+
+void focus(const LastItem& item, bool show) {
+  ImGuiContext& g = *GImGui;
+  ImGuiWindow* window = g.CurrentWindow;
+  if (!window || item.id == 0) return;
+  ImGui::SetNavWindow(window);
+  ImGui::SetNavID(item.id, ImGuiNavLayer_Main, g.CurrentFocusScopeId, ImGui::WindowRectAbsToRel(window, ImRect(item.min, item.max)));
+  // A window that just appeared would focus its first item next frame.
+  g.NavInitRequest = false;
+  g.NavInitResult.ID = 0;
+  g.NavAnyRequest = g.NavMoveScoringItems;
+  if (show) {
+    g.NavCursorVisible = true;
+    g.NavHighlightItemUnderNav = true;
+  }
+}
 
 // ---- Shapes ----
 
@@ -452,6 +492,7 @@ bool row_choice(const Row& row, int* index, const std::vector<std::string>& item
     if (f.pressed && !open) {
       if (on_open) on_open();
       ImGui::OpenPopup("list");
+      g_list_focus_pending = true;
     }
     if (count > 0) {
       if (f.keys.left) *index = (*index + count - 1) % count, changed = true;
@@ -510,11 +551,9 @@ bool row_button(const Row& row, const char* button, Kind kind) {
 void row_text(const Row& row, const char* value) {
   Font f(Weight::Regular, theme::kBody);
   const ImVec2 ts = measure(value);
-  Row quiet = row;
-  quiet.enabled = false;  // nothing to do on it
-  RowFrame fr = row_begin(quiet, ImVec2(std::round(ts.x), px(24)));
-  if (fr.ok) draw_text(ImGui::GetWindowDrawList(), ImVec2(fr.control.Min.x, std::round(fr.control.GetCenter().y - ts.y * 0.5f)), theme::kChalk, value);
-  row_end(quiet);
+  RowFrame fr = row_begin(row, ImVec2(std::round(ts.x), px(24)), 0, false);  // nothing to do on it
+  if (fr.ok) draw_text(ImGui::GetWindowDrawList(), ImVec2(fr.control.Min.x, std::round(fr.control.GetCenter().y - ts.y * 0.5f)), theme::kDim, value);
+  row_end(row);
 }
 
 // ---- Groups ----

@@ -813,6 +813,9 @@ int run(const Game& game, int argc, char** argv) {
       };
     }
     bool menu_was_open = false;
+    // After the menu closes, the game gets no controls until they are all
+    // released: the press that closed it (Enter, A, a click) is not for it.
+    bool release_guard = false, menu_open_at_poll = false;
     for (;;) {
       if (g_reboot_requested) {
         save();
@@ -820,7 +823,7 @@ int run(const Game& game, int argc, char** argv) {
         restart(o, user_dir, argv[0], next_boot(*g_pending_reboot), machine.frame_offset() + machine.gpu().frames());
       }
       if (use_menu) {
-        for (const std::string& notice : os::take_player_notices()) menu.notify(notice);
+        for (const std::string& notice : os::take_player_notices()) menu.notify(notice, NoticeKind::Problem);
         // The settings are saved when the menu closes, whatever closed it
         // (Esc, the Guide button, or its Resume button).
         if (menu_was_open && !menu.is_open()) save();
@@ -869,6 +872,8 @@ int run(const Game& game, int argc, char** argv) {
       if (linked) pause_pressed = false;
       model.linked = linked;
       model.link = machine.network().link_status();
+      model.restart_needed = settings.camera != start_settings.camera || settings.webcam != start_settings.webcam ||
+                             settings.cabinet != start_settings.cabinet || settings.lan != start_settings.lan;
       const SDL_WindowFlags window_flags = window ? SDL_GetWindowFlags(window) : 0;
       const bool background = window && ((window_flags & SDL_WINDOW_MINIMIZED) || !(window_flags & SDL_WINDOW_INPUT_FOCUS));
       const bool paused = !linked && (pause_pressed || (menu.is_open() && settings.pause_in_menu) ||
@@ -880,7 +885,16 @@ int run(const Game& game, int argc, char** argv) {
       menu.set_paused(paused);
       if (use_input) {
         // While the menu is open the game gets nothing (the menu has the keys).
-        machine.set_controls(menu.is_open() ? triforce::Controls{} : host_input.poll());
+        if (menu_open_at_poll && !menu.is_open()) release_guard = true;
+        menu_open_at_poll = menu.is_open();
+        triforce::Controls controls = host_input.poll();
+        if (release_guard) {
+          const bool held = controls.test || controls.service || controls.coin || controls.start || controls.item ||
+                            controls.cancel || controls.gas > 16 || controls.brake > 16;
+          if (held) controls = triforce::Controls{};
+          else release_guard = false;
+        }
+        machine.set_controls(menu.is_open() ? triforce::Controls{} : controls);
         // A paused game's wheel forces stop too.
         host_input.set_outputs(paused ? triforce::Outputs{} : machine.outputs());
       }
@@ -905,7 +919,7 @@ int run(const Game& game, int argc, char** argv) {
           link_lost.reset();
         } else if (!link_lost) {
           link_lost = now;
-          menu.notify("The link to the other cabinets was lost: restarting");
+          menu.notify("The link to the other cabinets was lost: restarting", NoticeKind::Problem);
           std::fprintf(stderr, "[opengp] the link to the other cabinets was lost: restarting\n");
         } else if (now - *link_lost >= std::chrono::seconds(4)) {
           save();

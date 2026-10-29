@@ -80,6 +80,21 @@ void info_box(const char* message, bool problem = false);
 // A keycap and what it does ("Esc", "Back"), on one line with the next ones.
 void key_hint(const char* key, const char* action);
 
+// The width a binding chip takes (to wrap a row of them).
+float binding_chip_width(const char* name);
+
+// ---- Focus ----
+
+// The last widget drawn, as an item.
+struct LastItem {
+  ImGuiID id = 0;
+  ImVec2 min, max;
+};
+LastItem last_item();
+// Gives the keyboard's and the gamepad's focus to `item`, drawn in the
+// current window; `show` draws its ring at once (else on the next key).
+void focus(const LastItem& item, bool show);
+
 // ---- Shapes ----
 
 // A 2-pixel focus ring outside `min`..`max`, at `rounding`.
