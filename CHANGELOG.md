@@ -1,9 +1,9 @@
 ## 1.0.1 (2/11/2026)
 
-GP 1: fixed objects popping in at the sides of the screen in widescreen
-Fixed flickering surfaces in Yoshi Park’s Trick House
-Fixed some HUD elements and banners looking stretched in widescreen
-Fixed odd gradient bars at the sides of menus in widescreen
+- GP 1: fixed objects popping in at the sides of the screen in widescreen
+- Fixed flickering surfaces in Yoshi Park’s Trick House
+- Fixed some HUD elements and banners looking stretched in widescreen
+- Fixed odd gradient bars at the sides of menus in widescreen
 Fixed some screen effects looking squeezed in widescreen
 macOS: fixed the rainbow fade effect in GP 2
 Fixed some highlight effects showing as solid white
