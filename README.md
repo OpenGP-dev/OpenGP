@@ -10,21 +10,6 @@ compiled together with a runtime that stands in for the Triforce hardware (GameC
 DSP, AM-Baseboard, AM-Mediaboard), so the game runs as a normal native program, with modern
 features such as higher resolutions, widescreen and remappable controls.
 
-> **Status: 1.0, feature-complete.** Milestones 1 to 12, 14 and 15 are done, and OpenGP is
-> feature-locked: only bug fixes and design tweaks from here. Mario Kart Arcade GP 2 (7,612
-> functions) and Mario Kart Arcade GP (7,504 functions) recompile, boot from their disc images
-> through the emulated Triforce hardware (media board, baseboard, JVS I/O, card reader) and play in
-> a window or fullscreen (Vulkan, or Metal on macOS), in 4:3 or widescreen and at up to 8 times
-> their resolution: insert a coin (or turn on free play), make a Mario Card, pick a character and
-> cup, and race at 60 fps with the keyboard, a gamepad or a steering wheel with force feedback, with
-> the games' music and sound effects (their DSP audio microcode is emulated). A webcam can stand in
-> for the cabinet's camera, up to four cabinets link for Versus races (on one computer or a local
-> network), you can pause when you play solo, and Discord shows what you are playing. A menu (Esc) has the settings, the controls and the Mario Cards; the games' own test
-> menus work too. See [docs/playing.md](docs/playing.md) and the [milestones](#milestones).
-
-The latest release is **1.0.0**, an internal release, with installer packages for Windows, Linux
-and macOS (see [CHANGELOG.md](CHANGELOG.md)).
-
 ## How it works
 
 ```
@@ -69,9 +54,11 @@ The code is held to the same checks as any other:
 - What OpenGP learned from other projects is credited below and in the docs. Nothing is copied
   from projects that have no license, only facts such as addresses.
 
+**TLDR, i check through most commits before committing. i use Claude to commit. so some human commits made by me are also co-authored by Claude.** 
+
 ## Playing
 
-Download the installer package for Windows, Linux or macOS (Apple Silicon) from the releases,
+Download the launcher package for Windows, Linux or macOS (Apple Silicon) from the releases,
 unpack it and open `OpenGP`, the launcher. Add your disc image of each game: OpenGP builds the games
 on your machine from your images, then plays them (see [docs/packaging.md](docs/packaging.md) and
 [docs/playing.md](docs/playing.md)). On the command line, `opengp-install` builds them the same way.
@@ -115,28 +102,6 @@ packages include keeps its own licence: SDL 3 (zlib), Dear ImGui and toml++ (MIT
 fonts in `thirdparty/gc-fonts` (Dolphin's free replacements, based on Droid Sans, Apache-2.0), Qt 6
 in the packages' launcher (LGPL-3.0) and others, all listed with their licences in
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
-
-## Milestones
-
-OpenGP is feature-locked at 1.0, with only bug fixes and design tweaks from here on.
-
-| # | Milestone | Needs the game |
-|---|-----------|----------------|
-| M1 | Scaffolding, recompiler, CPU runtime, test suite, CI (**done**) | no |
-| M2 | MKAGP2 (GGPE02) analysis: symbol map, SDK functions identified, whole game recompiles and builds (**done**) | yes |
-| M3 | Boot to the main loop: guest threads, hardware models, media board, baseboard and JVS, card reader, GPU FIFO (**done**) | yes |
-| M4 | Graphics: vertex loader, textures, TEV ubershader, first frames, attract mode; hardware-check patches as needed (**done**) | yes |
-| M5 | Input and gameplay: JVS mapping, free play, full race, wheel force feedback (**done**) | yes |
-| M6 | Audio: the DSP's AX microcode (driven by MusyX) at a high level, sound output (**done**) | yes |
-| M7 | Card saves, settings menu, resolution scaling, widescreen, fullscreen; the game's test menu (**done**) | yes |
-| M8 | Mario Kart Arcade GP (GGPE01): symbol map, the same runtime, free play, test menu (**done**) | yes |
-| M9 | Installer packages for Windows, Linux and macOS (Apple Silicon, Metal renderer): the prebuilt runtime and recompiler; the installer recompiles and builds the games from the player's own images, so no game code is ever distributed (**done**, 0.2.0) | yes |
-| M10 | What the GP 2 decomp ([mkgp2-decomp](https://github.com/naari3/mkgp2-decomp)) knows: its function names in both games' symbol maps, and the games' own debug messages (`--game-log`), for working on M11 and M12 (**done**, 0.3.0) | yes |
-| M11 | The NamCam2 camera from a webcam: player photos. The camera is an HTTP server on the media board's network, so this starts the network (the socket API on host sockets) (**done**, 0.3.0) | yes |
-| M12 | Linked cabinets: the rest of the media board's network, several instances racing each other on one PC or a LAN (**done** ahead of 1.0, 0.4.0) | yes |
-| M14 | Pause: freeze the game (its threads, sound and timers) from the menu or a button; the arcade games have no pause of their own. Only when playing solo: a game linked to other cabinets (M12) keeps running (**done** ahead of 1.0, 0.3.0) | yes |
-| M15 | Discord Rich Presence: the character, course and race position, read from the game's state (the decomp's names) and sent over Discord's local connection, without Discord's SDK (**done** ahead of 1.0, 0.4.0) | yes |
-| 1.0 | Release: the installer package with linked cabinets and the camera (**done**, 1.0.0) | yes |
 
 Releases come with installer packages for Windows, Linux and macOS. 0.1.0 to 1.0.0 are internal
 releases: they are tags in this repository, with their notes in [CHANGELOG.md](CHANGELOG.md).
