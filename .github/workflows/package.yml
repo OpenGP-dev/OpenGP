@@ -81,7 +81,7 @@ jobs:
           if (-not $env:LAUNCHER_TOKEN) {
             Write-Output "::notice title=No LAUNCHER_TOKEN::No LAUNCHER_TOKEN is set, so the launcher is checked out with this workflow's own token, which can read OpenGP-dev/opengp-launcher only once that repository is public (see docs/packaging.md, Building the package)."
           }
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: '3.12'
       # The compiler the package's runtime is built with must be the one its
@@ -212,7 +212,7 @@ jobs:
           if [ -z "$LAUNCHER_TOKEN" ]; then
             echo "::notice title=No LAUNCHER_TOKEN::No LAUNCHER_TOKEN is set, so the launcher is checked out with this workflow's own token, which can read OpenGP-dev/opengp-launcher only once that repository is public (see docs/packaging.md, Building the package)."
           fi
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: '3.12'
       - name: Install GCC 12, Ninja and SDL3's dependencies
@@ -317,7 +317,7 @@ jobs:
           if [ -z "$LAUNCHER_TOKEN" ]; then
             echo "::notice title=No LAUNCHER_TOKEN::No LAUNCHER_TOKEN is set, so the launcher is checked out with this workflow's own token, which can read OpenGP-dev/opengp-launcher only once that repository is public (see docs/packaging.md, Building the package)."
           fi
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: '3.12'
       - name: Install Ninja
