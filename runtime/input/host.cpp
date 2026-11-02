@@ -409,6 +409,9 @@ float apply_deadzone(float v, float deadzone) {
 
 }  // namespace
 
+// A capture's baseline for an axis that hasn't reported yet (outside -32768..32767).
+constexpr int kUnknownAxis = 1 << 20;
+
 struct HostInput::Impl {
   struct Device {
     SDL_Gamepad* gamepad = nullptr;
@@ -439,7 +442,7 @@ struct HostInput::Impl {
     bool active = false;
     DeviceKind kind = DeviceKind::Keyboard;
     std::size_t control = 0;
-    std::map<SDL_JoystickID, std::vector<Sint16>> axes;  // where each axis was at the start
+    std::map<SDL_JoystickID, std::vector<int>> axes;  // where each axis was at the start, or kUnknownAxis
   } capture;
   float digital_steer = 0.0f;  // -1..1, keys and buttons turn it gradually
   bool pause_held = false;     // the pause control's buttons and axes, at the last poll
@@ -499,8 +502,17 @@ struct HostInput::Impl {
     if (s.invert) v = -v;
     return apply_deadzone(v, deadzone);
   }
+  // Whether a joystick axis has reported where it is. Until a device sends
+  // its first report SDL reads every axis as 0, the middle: a pedal that
+  // rests at one end would read half pressed until it was first moved.
+  static bool reported(const Source& s, const Device* d) {
+    if (s.kind != Source::Kind::JoyAxis || !d || !d->joystick) return true;
+    Sint16 initial = 0;
+    return SDL_GetJoystickAxisInitialState(d->joystick, s.index, &initial);
+  }
   // As a pedal or button: 0..1.
   static float amount(const Source& s, const Device* d, float deadzone) {
+    if (!reported(s, d)) return 0.0f;  // at rest, wherever that is
     float v = raw(s, d);
     if (!is_axis(s)) return v;
     if (s.invert) v = -v;
@@ -833,11 +845,17 @@ void HostInput::start_capture(DeviceKind kind, std::size_t control) {
   m.capture.kind = kind;
   m.capture.control = control;
   for (const auto& [id, d] : m.devices) {
-    std::vector<Sint16>& axes = m.capture.axes[id];
+    std::vector<int>& axes = m.capture.axes[id];
     if (d.gamepad) {
       for (int a = 0; a < SDL_GAMEPAD_AXIS_COUNT; ++a) axes.push_back(SDL_GetGamepadAxis(d.gamepad, static_cast<SDL_GamepadAxis>(a)));
     } else {
-      for (int a = 0; a < SDL_GetNumJoystickAxes(d.joystick); ++a) axes.push_back(SDL_GetJoystickAxis(d.joystick, a));
+      // An axis that hasn't reported yet reads 0 whatever its position: its
+      // first report sets where it rests (see capture_event).
+      for (int a = 0; a < SDL_GetNumJoystickAxes(d.joystick); ++a) {
+        Sint16 initial = 0;
+        axes.push_back(SDL_GetJoystickAxisInitialState(d.joystick, a, &initial) ? SDL_GetJoystickAxis(d.joystick, a)
+                                                                                : kUnknownAxis);
+      }
     }
   }
 }
@@ -917,6 +935,11 @@ bool HostInput::capture_event(const SDL_Event& e) {
     }
     case SDL_EVENT_JOYSTICK_AXIS_MOTION: {
       if (kind != DeviceKind::Joystick || is_gamepad(e.jaxis.which)) return kind == DeviceKind::Joystick;
+      if (baseline(e.jaxis.which, e.jaxis.axis) == kUnknownAxis) {
+        // The axis's first report: where it rests, not a movement.
+        m.capture.axes[e.jaxis.which][e.jaxis.axis] = e.jaxis.value;
+        return true;
+      }
       const int base = baseline(e.jaxis.which, e.jaxis.axis);
       const int moved = e.jaxis.value - base;
       if (std::abs(moved) < kMoved) return true;

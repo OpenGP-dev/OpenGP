@@ -8,6 +8,8 @@
 - Removed the debug spam from the console: the game's SDK messages, hardware logs and the status line every 5 seconds now need `--verbose`
 - Added a first-run hint for inserting a coin and opening the menu
 - Improved wheel and pedal precision: steering and the pedals reach the game at full precision instead of 256 steps
+- Fixed pedals reading as half-pressed until they were first moved
+- Fixed pedals binding to the wrong axis half when bound before they were first moved
 
 ## 1.0.1 (2/11/2026)
 
