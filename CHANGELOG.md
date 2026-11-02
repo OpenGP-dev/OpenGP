@@ -10,6 +10,8 @@
 - Improved wheel and pedal precision: steering and the pedals reach the game at full precision instead of 256 steps
 - Fixed pedals reading as half-pressed until they were first moved
 - Fixed pedals binding to the wrong axis half when bound before they were first moved
+- The webcam no longer switches on at start-up: the game's camera check gets a picture without it
+- Fixed the first photo coming out dark: the webcam's first moment, while it adjusts to the light, is left out
 
 ## 1.0.1 (2/11/2026)
 

@@ -142,9 +142,10 @@ there is no webcam, the game runs without its camera and says so on the console.
 `webcam` (the webcam's name, `""` for the first), and `--camera off|webcam|test` sets it for one
 run.
 
-The webcam is on only while the game uses it: while your photo is taken, for a moment as the game
-starts (it checks its camera), and on the test menu's camera page. Its light goes off a few
-seconds later. If the webcam can't be opened then (another program is using it, say), the photo
+The webcam is on only while the game uses it: while your photo is taken and on the test menu's
+camera page (the game's camera check at start-up gets a grey picture, without the webcam). Its
+light goes off a few seconds later. Its first moment's pictures, dark while it adjusts to the
+room's light, are left out. If the webcam can't be opened then (another program is using it, say), the photo
 is grey and the console says why.
 
 ## Linked cabinets

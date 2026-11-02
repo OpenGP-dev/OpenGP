@@ -6,7 +6,9 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
+#include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -15,6 +17,7 @@
 
 #include "camera/jpeg.h"
 #include "camera/namcam.h"
+#include "camera/warmup.h"
 #include "triforce/network.h"
 
 using namespace gekko;
@@ -211,4 +214,42 @@ TEST_CASE("InetAddr answers in network byte order") {
   CHECK(bytes[1] == 168);
   CHECK(bytes[2] == 29);
   CHECK(bytes[3] == 104);
+}
+
+// ---- A webcam's warm-up ----
+
+TEST_CASE("a webcam's frames show once their brightness is steady") {
+  using namespace std::chrono_literals;
+  camera::Warmup w;
+  const auto t0 = camera::Warmup::Clock::now();
+  w.start(t0);
+  // Dark, then brightening: not yet.
+  CHECK_FALSE(w.frame(5, t0 + 33ms));
+  CHECK_FALSE(w.frame(40, t0 + 66ms));
+  CHECK_FALSE(w.frame(90, t0 + 100ms));
+  CHECK_FALSE(w.frame(120, t0 + 133ms));
+  // Steady, but too soon after switching on.
+  CHECK_FALSE(w.frame(121, t0 + 166ms));
+  CHECK_FALSE(w.frame(122, t0 + 200ms));
+  CHECK_FALSE(w.frame(121, t0 + 233ms));
+  // Steady and old enough.
+  CHECK(w.frame(122, t0 + 266ms));
+  CHECK(w.frame(10, t0 + 300ms));  // and from then on, whatever the picture
+}
+
+TEST_CASE("a webcam that never settles shows after two seconds") {
+  using namespace std::chrono_literals;
+  camera::Warmup w;
+  const auto t0 = camera::Warmup::Clock::now();
+  w.start(t0);
+  CHECK_FALSE(w.frame(10, t0 + 1s));
+  CHECK_FALSE(w.frame(60, t0 + 1500ms));
+  CHECK(w.frame(110, t0 + 2s));
+}
+
+TEST_CASE("mean brightness") {
+  std::vector<u8> rgb(320 * 240 * 3, 200);
+  CHECK(camera::Warmup::mean_brightness(rgb.data(), 320 * 240) == doctest::Approx(200.0));
+  std::fill(rgb.begin(), rgb.end(), u8{0});
+  CHECK(camera::Warmup::mean_brightness(rgb.data(), 320 * 240) == doctest::Approx(0.0));
 }
