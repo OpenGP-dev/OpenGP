@@ -115,7 +115,7 @@ delay, and matters most in fullscreen with FreeSync or G-Sync.
 ## Mario Cards
 
 Cards are saved in `user/cards/GGPE01/` (GP) and `user/cards/GGPE02/` (GP 2), one file per card
-(`Card 1.bin`, ...). In the menu's Game tab you choose the card you hold: you insert it when the
+(`Card 1.bin`, ...); **Open folder**, under the card list, opens that folder. In the menu's Game tab you choose the card you hold: you insert it when the
 game asks for your card, and the game takes it back at the end. **New card** gives you a blank one (answer **No** to "Do you have Mario
 Card?", then buy a card, and it is saved under that name); **No card** plays without one. A card the
 game gives you is yours to hold from then on, so you can keep a card per player. Files can be

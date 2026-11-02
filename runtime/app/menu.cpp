@@ -12,11 +12,13 @@
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <string_view>
 #include <utility>
 
 #include "app/menu_theme.h"
 #include "app/menu_widgets.h"
+#include "os/utf8.h"
 
 namespace app {
 
@@ -47,6 +49,36 @@ std::string pause_keys(const MenuModel& m, bool first = false) {
       if (keys.empty() || !first) keys += (keys.empty() ? "" : " / ") + key;
   }
   return keys;
+}
+
+// Opens a folder (UTF-8) in the system's file manager, making it first if
+// needed. The menu shows a button for this rather than the folder's path,
+// which would show the player's user name on screen and in screenshots.
+bool open_folder(const std::string& folder) {
+  std::error_code ec;
+  const std::filesystem::path path = std::filesystem::absolute(os::utf8_path(folder), ec);
+  if (ec) return false;
+  std::filesystem::create_directories(path, ec);
+#ifdef _WIN32
+  // ShellExecute (SDL_OpenURL on Windows) opens a plain path; a file:// URL
+  // with non-ASCII characters is read in the wrong code page.
+  const std::string url = os::utf8(path.lexically_normal().make_preferred());
+#else
+  // A file:// URL, with everything but unreserved characters and '/'
+  // percent-encoded (macOS needs a valid URL).
+  std::string url = "file://";
+  for (const unsigned char c : os::utf8(path.lexically_normal())) {
+    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' ||
+        c == '.' || c == '~' || c == '/') {
+      url += static_cast<char>(c);
+    } else {
+      char hex[4];
+      std::snprintf(hex, sizeof hex, "%%%02X", c);
+      url += hex;
+    }
+  }
+#endif
+  return SDL_OpenURL(url.c_str());
 }
 
 // Whether the last navigation came from a gamepad (the hints show its buttons).
@@ -531,10 +563,8 @@ void Menu::page_game(MenuModel& m) {
     cards.hold(name);
     s.card = name;
   }
-  const std::string where = "Cards are saved in " + cards.dir();
-  ImGui::Indent(px(12));
-  w::text_wrapped(where.c_str(), theme::kHelp, theme::kDim);
-  ImGui::Unindent(px(12));
+  if (w::row_button({"Card files", "Each card is a file you can copy, back up or share."}, "Open folder"))
+    open_folder(cards.dir());
 
   w::section("Pause");
   const std::string keys = pause_keys(m);
@@ -675,10 +705,8 @@ void Menu::page_controls(MenuModel& m) {
                     &background))
     in.set_background_input(background);
   if (w::row_button({"Bindings", "Every device goes back to OpenGP's defaults."}, "Restore defaults")) confirm_ = Confirm::RestoreDefaults;
-  const std::string where = "Saved in " + in.path();
-  ImGui::Indent(px(12));
-  w::text_wrapped(where.c_str(), theme::kHelp, theme::kDim);
-  ImGui::Unindent(px(12));
+  if (w::row_button({"Controls file", "Your bindings are kept in controls.toml."}, "Open folder"))
+    open_folder(os::utf8(os::utf8_path(in.path()).parent_path()));
 }
 
 void Menu::page_camera(MenuModel& m) {
