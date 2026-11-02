@@ -10,7 +10,8 @@ CI runs this on every push and pull request; run it yourself before committing:
 It checks every file `git ls-files` lists:
 - no disc images, executables or other game file types, and nothing in the
   folders that hold game data (ISO/, private/, orig/, user*/, build/ ...);
-- no binary files, except the free replacement fonts in thirdparty/gc-fonts;
+- no binary files, except the free replacement fonts in thirdparty/gc-fonts and
+  the menu's typeface in thirdparty/fonts (M PLUS Rounded 1c, SIL OFL 1.1);
 - no file over 1 MiB, except the symbol maps and vendored headers;
 - no file identical to a supported game's main.dol (its SHA-1 is in
   games/*/game.toml).
@@ -29,7 +30,7 @@ GAME_TYPES = ("*.iso", "*.gcm", "*.dol", "*.rel", "*.img", "*.nand", "*.bin", "*
               "*.so", "*.dylib", "*.a", "*.lib", "*.o", "*.obj", "*.zip", "*.7z", "*.rar", "*.wav",
               "*.png", "*.jpg", "*.jpeg", "*.tpl", "*.bmp")
 GAME_FOLDERS = ("iso/*", "private/*", "orig/*", "user*/*", "build/*", "out/*", "generated/*", "gp2decomp/*", "ref/*")
-ALLOWED_BINARY = ("thirdparty/gc-fonts/*.bin",)
+ALLOWED_BINARY = ("thirdparty/gc-fonts/*.bin", "thirdparty/fonts/*/*.ttf")
 ALLOWED_LARGE = ("games/*/config/symbols.txt", "thirdparty/*")
 MAX_SIZE = 1 << 20
 
