@@ -5,6 +5,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
+#include <cmath>
+
 #include "input/menu_chord.h"
 #include "input/script.h"
 
@@ -18,6 +20,10 @@ Controls at(const Script& s, gekko::u64 frame) {
   s.apply(frame, c);
   return c;
 }
+
+// The analog controls on the scripts' 0-255 scale.
+int steer(const Controls& c) { return static_cast<int>(std::lround(128.0f + c.steering * 127.0f)); }
+int pedal(float v) { return static_cast<int>(std::lround(v * 255.0f)); }
 
 }  // namespace
 
@@ -38,23 +44,24 @@ TEST_CASE("ranges, relative times and analog values") {
   REQUIRE(s.parse("100 start; +50 item\n+0-20 gas=255 steer=0x10, brake=7  # comment\n1000-2000 steer=200", &error));
   CHECK(at(s, 100).start);
   CHECK(at(s, 150).item);
-  CHECK(at(s, 150).gas == 255);
-  CHECK(at(s, 169).steering == 0x10);
-  CHECK(at(s, 169).brake == 7);
-  CHECK(at(s, 170).gas == 0);
-  CHECK(at(s, 170).steering == 0x80);
-  CHECK(at(s, 1999).steering == 200);
-  CHECK(at(s, 2000).steering == 0x80);
+  CHECK(pedal(at(s, 150).gas) == 255);
+  CHECK(steer(at(s, 169)) == 0x10);
+  CHECK(pedal(at(s, 169).brake) == 7);
+  CHECK(pedal(at(s, 170).gas) == 0);
+  CHECK(steer(at(s, 170)) == 0x80);
+  CHECK(steer(at(s, 1999)) == 200);
+  CHECK(steer(at(s, 2000)) == 0x80);
+  CHECK(at(s, 170).steering == 0.0f);  // straight ahead exactly
 }
 
 TEST_CASE("later events win for analog values; buttons combine") {
   Script s;
   std::string error;
   REQUIRE(s.parse("0-100 gas=10 item; 50-60 gas=20 start", &error));
-  CHECK(at(s, 55).gas == 20);
+  CHECK(pedal(at(s, 55).gas) == 20);
   CHECK(at(s, 55).item);
   CHECK(at(s, 55).start);
-  CHECK(at(s, 70).gas == 10);
+  CHECK(pedal(at(s, 70).gas) == 10);
 }
 
 TEST_CASE("the player's controls show through") {
@@ -62,12 +69,12 @@ TEST_CASE("the player's controls show through") {
   std::string error;
   REQUIRE(s.parse("10 coin", &error));
   Controls c;
-  c.gas = 99;
+  c.gas = 0.5f;
   c.item = true;
   s.apply(10, c);
   CHECK(c.coin);
   CHECK(c.item);
-  CHECK(c.gas == 99);
+  CHECK(c.gas == 0.5f);
 }
 
 TEST_CASE("errors leave the script unchanged") {
@@ -139,8 +146,8 @@ TEST_CASE("other controls are never held back") {
   ChordRun r;
   Controls c;
   c.item = true;
-  c.gas = 200;
+  c.gas = 0.8f;
   r.chord.filter(true, false, r.now, &c);
   CHECK(c.item);
-  CHECK(c.gas == 200);
+  CHECK(c.gas == 0.8f);
 }

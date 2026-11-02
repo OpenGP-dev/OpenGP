@@ -958,7 +958,7 @@ int run(const Game& game, int argc, char** argv) {
         triforce::Controls controls = host_input.poll();
         if (release_guard) {
           const bool held = controls.test || controls.service || controls.coin || controls.start || controls.item ||
-                            controls.cancel || controls.gas > 16 || controls.brake > 16;
+                            controls.cancel || controls.gas > 0.0625f || controls.brake > 0.0625f;
           if (held) controls = triforce::Controls{};
           else release_guard = false;
         }

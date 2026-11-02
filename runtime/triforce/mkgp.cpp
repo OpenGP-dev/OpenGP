@@ -6,6 +6,7 @@
 #include "triforce/mkgp.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 
@@ -77,9 +78,12 @@ void MkgpIOAdapter::update(IOPorts& ports) {
   // its rest position to 0x4000 further. Scale the controls to exactly that,
   // with a little to spare, so that all of their travel is used.
   const auto analog = ports.analog_inputs();
-  const int steer = (c.steering - 0x80) * 0x5200 / 0x7F;
-  analog[0] = static_cast<u16>(std::clamp(0x8000 + steer, 0, 0xFFFF));
-  auto pedal = [](u8 v) { return static_cast<u16>(v ? 0x800 + v * 0x4100 / 0xFF : 0); };
+  const long steer = std::lround(std::clamp(c.steering, -1.0f, 1.0f) * 0x5200);
+  analog[0] = static_cast<u16>(std::clamp(0x8000L + steer, 0L, 0xFFFFL));
+  auto pedal = [](float v) {
+    v = std::clamp(v, 0.0f, 1.0f);
+    return static_cast<u16>(v > 0.0f ? 0x800 + std::lround(v * 0x4100) : 0);
+  };
   analog[1] = pedal(c.gas);
   analog[2] = pedal(c.brake);
 }

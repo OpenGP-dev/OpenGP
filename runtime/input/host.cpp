@@ -748,9 +748,9 @@ triforce::Controls HostInput::poll() {
   const float steer = std::clamp(steer_axis + m.digital_steer, -1.0f, 1.0f);
 
   triforce::Controls c;
-  c.steering = static_cast<u8>(std::lround(128.0f + steer * 127.0f));
-  c.gas = static_cast<u8>(std::lround(amount[kGas] * 255.0f));
-  c.brake = static_cast<u8>(std::lround(amount[kBrake] * 255.0f));
+  c.steering = steer;
+  c.gas = amount[kGas];
+  c.brake = amount[kBrake];
   c.item = amount[kItem] > 0.5f;
   c.cancel = amount[kCancel] > 0.5f;
   c.start = amount[kStart] > 0.5f;
