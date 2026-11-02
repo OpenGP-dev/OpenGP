@@ -45,7 +45,7 @@ std::string pause_keys(const MenuModel& m, bool first = false) {
   std::string keys;
   for (std::size_t c = 0; c < input::HostInput::kControlCount; ++c) {
     if (std::string_view(input::HostInput::control_name(c)) != "pause") continue;
-    for (const std::string& key : m.input->bindings(input::HostInput::DeviceKind::Keyboard, c))
+    for (const std::string& key : m.input->binding_labels(input::HostInput::DeviceKind::Keyboard, c))
       if (keys.empty() || !first) keys += (keys.empty() ? "" : " / ") + key;
   }
   return keys;
@@ -659,7 +659,7 @@ void Menu::page_controls(MenuModel& m) {
     }
     const float chips_x = start.x + px(12) + label_w;
     ImGui::SetCursorPos(ImVec2(chips_x, start.y));
-    const std::vector<std::string> names = in.bindings(kind, control);
+    const std::vector<std::string> names = in.binding_labels(kind, control);
     bool first = true;
     auto place = [&](float width) {
       if (!first) {

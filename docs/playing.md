@@ -246,7 +246,7 @@ at all is kept as `controls.toml.bad` and the default controls are used. Each co
 
 ```toml
 [keyboard]
-gas = ["Up", "W", "Left Shift"]   # SDL key names
+gas = ["Up", "W", "Left Shift"]   # SDL key names, by their place on a US keyboard
 
 [gamepad]
 item = ["a", "x"]                 # SDL gamepad button names
@@ -256,6 +256,9 @@ steer = ["axis0"]
 gas = ["-axis2"]                  # a pedal that reads highest when released
 brake = ["-axis3"]
 ```
+
+The file names keys by where they are on a US keyboard, so it works with any layout; the menu
+shows them as your keyboard's layout prints them (`W` on an AZERTY keyboard shows as **Z**).
 
 Axes: `axis2` is the whole axis, `axis2+` and `axis2-` are one half of it, and a leading `-`
 turns it around. The file itself lists every name.

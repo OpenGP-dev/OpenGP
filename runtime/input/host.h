@@ -67,6 +67,10 @@ class HostInput {
 
   // A control's inputs on one kind of device, named as in the file.
   std::vector<std::string> bindings(DeviceKind kind, std::size_t control) const;
+  // The same, named for the player: keys as the keyboard's layout prints them
+  // (the file keeps the key's place, so "Q" on a QWERTY keyboard shows as "A"
+  // on an AZERTY one).
+  std::vector<std::string> binding_labels(DeviceKind kind, std::size_t control) const;
   void remove_binding(DeviceKind kind, std::size_t control, std::size_t index);
   // Waits for the next input of that kind (a key, a button, a hat, or an
   // axis moved well away from where it was) and adds it to the control.
