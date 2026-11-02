@@ -396,7 +396,7 @@ Releases ship everything but the games: the runtime as static libraries with its
 recompiler (inside the installer) and the games' own files. The installer checks the player's image,
 recompiles its `main.dol`, compiles the result with a C++ compiler (llvm-mingw on Windows, the
 system's on Linux and macOS) and links it with the runtime. It is a library: the program players
-open, `OpenGP` (from opengp-launcher), builds the games with it, and so does `opengp-install`, its
+open, `OpenGP` (from opengp-launcher), builds the games with it, and so does `opengp-cli`, its
 command-line program. See [packaging.md](packaging.md).
 
 ### Reboots (`runtime/os/reboot.h`)

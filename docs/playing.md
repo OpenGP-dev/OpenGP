@@ -8,7 +8,7 @@ details.
 
 - **From the installer package**: unpack it, open `OpenGP` (the launcher) and add your disc image
   of each game. It builds each game you have an image of, once, and then plays it; see
-  [packaging.md](packaging.md). On the command line, `opengp-install` builds them the same way.
+  [packaging.md](packaging.md). On the command line, `opengp-cli` builds them the same way.
   The games, `opengp-mkgp2` and `opengp-mkgp1`, then sit next to OpenGP.
 - **From source**: see [building.md](building.md) and [game-files.md](game-files.md).
 

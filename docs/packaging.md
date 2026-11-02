@@ -78,17 +78,17 @@ Update every linked cabinet: cabinets on different versions of OpenGP may not li
 
 ### On the command line
 
-`opengp-install` (`opengp-install.exe`), next to OpenGP, is the same installer for the command
+`opengp-cli` (`opengp-cli.exe`), next to OpenGP, is the same installer for the command
 line. It builds each game from the images you give it, or without any, from the images the games
 were built from before, then those in `ISO/`. On Windows you can also drop an image on
-`opengp-install.exe`. If it finds no image for a game, it skips that game and builds the other.
+`opengp-cli.exe`. If it finds no image for a game, it skips that game and builds the other.
 
 When you run it again, it rebuilds only the games that an earlier version of the package built.
-`--force` rebuilds every game. If you move an image, give `opengp-install` its new path (or drop it
-on `opengp-install.exe`), and the game uses it from then on.
+`--force` rebuilds every game. If you move an image, give `opengp-cli` its new path (or drop it
+on `opengp-cli.exe`), and the game uses it from then on.
 
 ```
-opengp-install [IMAGE...] [--force] [--jobs N] [--cxx COMPILER] [--keep-build]
+opengp-cli [IMAGE...] [--force] [--jobs N] [--cxx COMPILER] [--keep-build]
 ```
 
 - `--jobs N` compiles N files at a time. The default is one per CPU thread.
@@ -143,7 +143,7 @@ OpenGP[.exe]            the launcher, which players open (OpenGP.app on macOS, w
 qt/, qt.conf            the Qt the launcher uses, on Windows and Linux. On Windows, Qt's DLLs are
                         next to OpenGP.exe, with Microsoft's Visual C++ runtime and Direct3D shader
                         compilers (d3dcompiler_47.dll, dxcompiler.dll and dxil.dll)
-opengp-install[.exe]    the installer, for the command line
+opengp-cli[.exe]        the installer, for the command line
 sdk/package.toml        the version, the pinned compiler, compile and link settings
 sdk/include/            the runtime's headers
 sdk/lib/                the runtime as static libraries, with SDL3 and Dear ImGui
@@ -224,7 +224,7 @@ cmake --install build/launcher --prefix $PWD/out/OpenGP-linux-x64     # or -wind
 ```
 
 To try a package build, open its launcher, for example `out/OpenGP-windows-x64/OpenGP.exe`, or run
-its installer, `opengp-install`, with an image.
+its installer, `opengp-cli`, with an image.
 
 Some settings must change together:
 - CI builds the runtime with the llvm-mingw release that `cmake/package.cmake` pins, and the

@@ -1,3 +1,7 @@
+## Unreleased
+
+- The command-line installer is now called `opengp-cli`, so it is no longer mistaken for the way to install OpenGP (open `OpenGP` for that). If you unpack the new package over an older one, delete the old `opengp-install`
+
 ## 1.0.1 (2/11/2026)
 
 - A new in-game menu in the OpenGP launcher's look: a pause card, with the settings in a dialog
