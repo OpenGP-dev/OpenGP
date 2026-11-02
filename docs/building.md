@@ -76,7 +76,7 @@ build/<preset>/games/mkgp2/opengp-mkgp2 [--iso PATH] [--user-dir PATH] [--timeou
                                         [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]
                                         [--input SCRIPT] [--input-file PATH] [--free-play] [--test-menu]
                                         [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--game-log]
-                                        [--camera off|webcam|test] [--cabinet 1-4] [--lan]
+                                        [--camera off|webcam|test] [--cabinet 1-4] [--lan] [--verbose]
 ```
 
 `opengp-mkgp1` (Mario Kart Arcade GP, in `build/<preset>/games/mkgp1/`) takes the same options. `--version` prints the
@@ -85,9 +85,11 @@ version and the game.
 Controls and playing are covered in [playing.md](playing.md).
 
 `opengp-mkgp2` finds the image in `ISO/` or `private/` (or takes `--iso`), boots it and runs the
-game in a window (Vulkan, or Metal on macOS, through SDL3's GPU API). It prints:
-- the game's `OSReport` output;
-- a status line every `--status` seconds (default 5; 0 for none): retraces, frames and draws so
+game in a window (Vulkan, or Metal on macOS, through SDL3's GPU API). It prints a short summary at
+start-up, what happens (a card, a gamepad, a restart) and problems. With `--verbose` it also prints:
+- the game's `OSReport` output, the hardware's unhandled accesses and first register accesses, and
+  the DSP's microcode;
+- a status line every `--status` seconds (default 5 with `--verbose`, else none; 0 for none): retraces, frames and draws so
   far, guest threads, pending interrupts, the sound output's queue (its length, and how often it
   ran dry or overflowed), and each guest thread's call stack when call tracing is on.
 
@@ -112,6 +114,7 @@ options that change them do so for that run only.
 | `--volume PERCENT` | Sound volume, 0-100 (default 100) |
 | `--audio-dump PATH` | Also write the sound to a WAV file (works headless too) |
 | `--game-log` | Print the game's own debug messages (see [triforce.md](triforce.md#the-games-debug-messages-milestone-10)) |
+| `--verbose` | Print what is only for working on OpenGP: the SDK's messages, hardware accesses, a status line every 5 s |
 | `--camera SOURCE` | The camera's pictures: `off`, `webcam` or `test` (colour bars; see [playing.md](playing.md#the-camera)) |
 | `--cabinet N` | This cabinet's number for linking, 1-4 (see [playing.md](playing.md#linked-cabinets)) |
 | `--lan` | Link with cabinets on the local network too |

@@ -5,6 +5,7 @@
 - Gamepads without a Guide button (or where Steam takes it) open the menu with **Back** and **Start** held together
 - Key bindings now show the correct key labels on non-US keyboards
 - Fixed the default window size on high-DPI displays: the window's size now grows with the display's scale
+- Removed the debug spam from the console: the game's SDK messages, hardware logs and the status line every 5 seconds now need `--verbose`
 
 ## 1.0.1 (2/11/2026)
 

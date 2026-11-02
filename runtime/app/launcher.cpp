@@ -40,6 +40,7 @@
 #include "os/profiler.h"
 #include "os/reboot.h"
 #include "os/thread_priority.h"
+#include "os/verbose.h"
 #include "ppc/hooks.h"
 #include "ppc/trace.h"
 
@@ -67,7 +68,7 @@ constexpr const char* kUsage =
     "          [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]\n"
     "          [--input SCRIPT] [--input-file PATH] [--free-play] [--test-menu]\n"
     "          [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--game-log]\n"
-    "          [--camera off|webcam|test] [--cabinet 1-4] [--lan] [--version]\n";
+    "          [--camera off|webcam|test] [--cabinet 1-4] [--lan] [--verbose] [--version]\n";
 
 struct Options {
   std::vector<std::string> args;  // as given, for restarts (without --reboot and --frame-offset)
@@ -76,7 +77,7 @@ struct Options {
   bool test_menu = false;         // start in the game's test menu
   std::string image;
   std::string user_dir;  // UTF-8
-  int timeout_s = -1, status_s = 5;
+  int timeout_s = -1, status_s = -1;  // status: -1 is every 5 s with --verbose, else none
   bool headless = false, use_video = true, use_audio = true;
   bool game_log = false;  // print the game's debug messages
   std::set<u64> screenshots;
@@ -132,6 +133,7 @@ int parse_options(const std::vector<std::string>& args, Options& o) {
     else if (a == "--audio-dump" && has_value) o.audio_dump = argv[++i];
     else if (a == "--no-audio") o.use_audio = false;
     else if (a == "--game-log") o.game_log = true;
+    else if (a == "--verbose") os::g_verbose = true;
     else if (a == "--volume" && has_value) o.volume = std::clamp(std::atoi(argv[++i]), 0, 100);
     else if (a == "--lan") o.lan = true;
     else if (a == "--cabinet" && has_value) {
@@ -679,7 +681,7 @@ int run(const Game& game, int argc, char** argv) {
   };
   os::start_profiler_from_env();
 
-  std::thread([timeout_s = o.timeout_s, status_s = o.status_s, print_status] {
+  std::thread([timeout_s = o.timeout_s, status_s = o.status_s >= 0 ? o.status_s : os::verbose() ? 5 : 0, print_status] {
     using clock = std::chrono::steady_clock;
     const auto deadline = timeout_s > 0 ? clock::now() + std::chrono::seconds(timeout_s) : clock::time_point::max();
     for (;;) {

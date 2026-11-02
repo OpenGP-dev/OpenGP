@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include "os/verbose.h"
 #include "ppc/timebase.h"
 
 namespace ppc {
@@ -21,12 +22,12 @@ u64 host_ticks() {
 }
 
 u32 default_mmio_read(u32 addr, u32 size) {
-  std::fprintf(stderr, "[ppc] unhandled MMIO read%u @ %08X\n", size * 8, addr);
+  if (os::verbose()) std::fprintf(stderr, "[ppc] unhandled MMIO read%u @ %08X\n", size * 8, addr);
   return 0;
 }
 
 void default_mmio_write(u32 addr, u32 value, u32 size) {
-  std::fprintf(stderr, "[ppc] unhandled MMIO write%u @ %08X = %08X\n", size * 8, addr, value);
+  if (os::verbose()) std::fprintf(stderr, "[ppc] unhandled MMIO write%u @ %08X = %08X\n", size * 8, addr, value);
 }
 
 void default_gather_pipe_write(const u8* bytes, u32 size) {

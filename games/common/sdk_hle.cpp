@@ -17,6 +17,7 @@
 #include "os/printf.h"
 #include "os/reboot.h"
 #include "os/threads.h"
+#include "os/verbose.h"
 #include "ppc/memory.h"
 #include "ppc_recomp_shared.h"
 
@@ -42,8 +43,10 @@ gekko::u8* ram(gekko::u8* base, gekko::u32 address, gekko::u32 size) {
 
 namespace guest {
 
-// OSReport(const char* fmt, ...): print to the host console.
+// OSReport(const char* fmt, ...): print to the host console with --verbose
+// (the SDK's start-up banners and the like: nothing a player needs).
 PPC_FUNC(OSReport) {
+  if (!os::verbose()) return;
   std::string text = os::format_guest(ctx, base, ctx.gpr[3], 4);
   if (text.empty() || text.back() != '\n') text += '\n';
   std::fputs(("[OSReport] " + os::sjis_to_utf8(text)).c_str(), stdout);

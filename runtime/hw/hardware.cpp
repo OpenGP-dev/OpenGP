@@ -11,6 +11,7 @@
 #include <cstring>
 
 #include "os/thread_priority.h"
+#include "os/verbose.h"
 #include "ppc/hooks.h"
 #include "ppc/memory.h"
 #include "ppc/trace.h"
@@ -112,7 +113,7 @@ class PiDevice : public Device {
 // ---- RegisterFile ----------------------------------------------------------------------------
 
 void RegisterFile::log(const char* kind, u32 offset, u32 value, u32 size) {
-  if (logged_ >= log_limit_) return;
+  if (logged_ >= log_limit_ || !os::verbose()) return;
   ++logged_;
   // With call tracing enabled, name the guest function making the access.
   char caller[32] = "";
@@ -386,7 +387,7 @@ u32 Hardware::mmio_read(u32 addr, u32 size) {
   const u32 off = addr - kIoBase;
   for (const Mapping& m : mappings_)
     if (off >= m.base && off < m.base + m.size) return m.device->read(off - m.base, size);
-  std::fprintf(stderr, "[hw] unmapped read%u %08X\n", size * 8, addr);
+  if (os::verbose()) std::fprintf(stderr, "[hw] unmapped read%u %08X\n", size * 8, addr);
   return 0;
 }
 
@@ -403,7 +404,7 @@ void Hardware::mmio_write(u32 addr, u32 value, u32 size) {
       return;
     }
   }
-  std::fprintf(stderr, "[hw] unmapped write%u %08X = %08X\n", size * 8, addr, value);
+  if (os::verbose()) std::fprintf(stderr, "[hw] unmapped write%u %08X = %08X\n", size * 8, addr, value);
 }
 
 // The gather pipe is only ever written by the thread running guest code, and
