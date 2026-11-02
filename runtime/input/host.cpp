@@ -809,7 +809,8 @@ std::vector<std::string> HostInput::binding_labels(DeviceKind kind, std::size_t 
       // a French number row (SDL_HINT_KEYCODE_OPTIONS), which is what the key
       // caps of a game's controls are usually called by.
       const SDL_Keycode key = SDL_GetKeyFromScancode(static_cast<SDL_Scancode>(source.index), SDL_KMOD_NONE, true);
-      if (const char* n = SDL_GetKeyName(key)) name = n;
+      if (key == SDLK_RETURN) name = "Enter";  // as most keyboards print it (SDL says Return)
+      else if (const char* n = SDL_GetKeyName(key)) name = n;
     }
     names.push_back(name.empty() ? source_name(source) : name);
   }
