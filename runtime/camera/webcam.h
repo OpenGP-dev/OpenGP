@@ -6,8 +6,9 @@
 // seconds after the last. The game's start-up check asks once, and gets a grey
 // picture without the webcam. While it is on, a thread takes its frames as
 // they come and keeps the newest, cropped to 4:3 around its centre and scaled
-// down to 320x240. Until its exposure has settled (warmup.h; a fraction of a
-// second to two seconds) there is no picture, and the camera sends a grey one.
+// down to 320x240, brightened if the room is dim. Until its exposure has
+// settled (exposure.h; a fraction of a second to two seconds) there is no
+// picture, and the camera sends a grey one.
 //
 // Some systems ask the player first (macOS): until they allow it, and if they
 // don't, there are no pictures.

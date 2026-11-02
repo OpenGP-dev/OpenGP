@@ -17,7 +17,7 @@
 
 #include "camera/jpeg.h"
 #include "camera/namcam.h"
-#include "camera/warmup.h"
+#include "camera/exposure.h"
 #include "triforce/network.h"
 
 using namespace gekko;
@@ -216,40 +216,60 @@ TEST_CASE("InetAddr answers in network byte order") {
   CHECK(bytes[3] == 104);
 }
 
-// ---- A webcam's warm-up ----
+// ---- A webcam's warm-up and brightness ----
 
 TEST_CASE("a webcam's frames show once their brightness is steady") {
   using namespace std::chrono_literals;
   camera::Warmup w;
-  const auto t0 = camera::Warmup::Clock::now();
-  w.start(t0);
-  // Dark, then brightening: not yet.
-  CHECK_FALSE(w.frame(5, t0 + 33ms));
+  w.start();
+  const auto t0 = camera::Warmup::Clock::now();  // the first frame
+  // Bright, then dark while the exposure adjusts: not yet.
+  CHECK_FALSE(w.frame(34, t0));
+  CHECK_FALSE(w.frame(7, t0 + 33ms));
   CHECK_FALSE(w.frame(40, t0 + 66ms));
   CHECK_FALSE(w.frame(90, t0 + 100ms));
-  CHECK_FALSE(w.frame(120, t0 + 133ms));
-  // Steady, but too soon after switching on.
-  CHECK_FALSE(w.frame(121, t0 + 166ms));
-  CHECK_FALSE(w.frame(122, t0 + 200ms));
-  CHECK_FALSE(w.frame(121, t0 + 233ms));
+  // Steady, but too soon after the first frame.
+  CHECK_FALSE(w.frame(91, t0 + 133ms));
+  CHECK_FALSE(w.frame(92, t0 + 166ms));
+  CHECK_FALSE(w.frame(91, t0 + 200ms));
+  CHECK_FALSE(w.frame(92, t0 + 233ms));
   // Steady and old enough.
-  CHECK(w.frame(122, t0 + 266ms));
+  CHECK(w.frame(91, t0 + 266ms));
   CHECK(w.frame(10, t0 + 300ms));  // and from then on, whatever the picture
 }
 
-TEST_CASE("a webcam that never settles shows after two seconds") {
+TEST_CASE("a webcam that never settles shows two seconds after its first frame") {
   using namespace std::chrono_literals;
   camera::Warmup w;
-  const auto t0 = camera::Warmup::Clock::now();
-  w.start(t0);
-  CHECK_FALSE(w.frame(10, t0 + 1s));
+  w.start();
+  const auto t0 = camera::Warmup::Clock::now() + 5s;  // opening it took a while
+  CHECK_FALSE(w.frame(10, t0));
   CHECK_FALSE(w.frame(60, t0 + 1500ms));
   CHECK(w.frame(110, t0 + 2s));
 }
 
 TEST_CASE("mean brightness") {
   std::vector<u8> rgb(320 * 240 * 3, 200);
-  CHECK(camera::Warmup::mean_brightness(rgb.data(), 320 * 240) == doctest::Approx(200.0));
+  CHECK(camera::mean_brightness(rgb.data(), 320 * 240) == doctest::Approx(200.0));
   std::fill(rgb.begin(), rgb.end(), u8{0});
-  CHECK(camera::Warmup::mean_brightness(rgb.data(), 320 * 240) == doctest::Approx(0.0));
+  CHECK(camera::mean_brightness(rgb.data(), 320 * 240) == doctest::Approx(0.0));
+}
+
+TEST_CASE("a dim picture is brightened, gradually, and a bright one is left alone") {
+  constexpr std::size_t kPixels = 320 * 240;
+  camera::AutoGain gain;
+  std::vector<u8> rgb(kPixels * 3, 20);
+  // The first frame takes the gain it needs at once: 100 / 20 = 5.
+  CHECK(gain.apply(rgb.data(), kPixels, 20) == doctest::Approx(5.0));
+  CHECK(rgb[0] == 100);
+  // Very dark: at most 6 times, approached gradually.
+  std::fill(rgb.begin(), rgb.end(), u8{2});
+  const double g = gain.apply(rgb.data(), kPixels, 2);
+  CHECK(g > 5.0);
+  CHECK(g < 6.0);
+  // Bright enough: unchanged once the gain has come down.
+  camera::AutoGain fresh;
+  std::fill(rgb.begin(), rgb.end(), u8{150});
+  CHECK(fresh.apply(rgb.data(), kPixels, 150) == doctest::Approx(1.0));
+  CHECK(rgb[0] == 150);
 }

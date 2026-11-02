@@ -145,7 +145,8 @@ run.
 The webcam is on only while the game uses it: while your photo is taken and on the test menu's
 camera page (the game's camera check at start-up gets a grey picture, without the webcam). Its
 light goes off a few seconds later. Its first moment's pictures, dark while it adjusts to the
-room's light, are left out. If the webcam can't be opened then (another program is using it, say), the photo
+room's light, are left out, and in a dim room the picture is brightened (the cabinet had its own
+light). If the webcam can't be opened then (another program is using it, say), the photo
 is grey and the console says why.
 
 ## Linked cabinets

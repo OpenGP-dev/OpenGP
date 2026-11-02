@@ -10,7 +10,7 @@
 #include <cstring>
 #include <tuple>
 
-#include "camera/warmup.h"
+#include "camera/exposure.h"
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -178,7 +178,8 @@ void Webcam::run() {
     SDL_Camera* camera = denied ? nullptr : open();
     bool first = true;
     Warmup warmup;
-    warmup.start(Warmup::Clock::now());
+    warmup.start();
+    AutoGain gain;
     for (;;) {
       {
         std::lock_guard lock(mutex_);
@@ -208,8 +209,11 @@ void Webcam::run() {
       if (!converted) continue;
       crop_and_scale(converted, picture.data());
       SDL_DestroySurface(converted);
-      // Not while its exposure settles: those frames are dark (warmup.h).
-      if (!warmup.frame(Warmup::mean_brightness(picture.data(), kPictureSize / 3), Warmup::Clock::now())) continue;
+      // Not while its exposure settles, and brightened in a dim room
+      // (exposure.h).
+      const double mean = mean_brightness(picture.data(), kPictureSize / 3);
+      if (!warmup.frame(mean, Warmup::Clock::now())) continue;
+      gain.apply(picture.data(), kPictureSize / 3, mean);
       {
         std::lock_guard lock(mutex_);
         latest_ = picture;
