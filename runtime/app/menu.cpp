@@ -183,6 +183,9 @@ void Menu::set_open(bool open) {
     screen_ = Screen::Card;
     confirm_ = Confirm::None;
     open_t_ = 0.0f;
+    // Information (the first-run hint) would cover the menu: the player has
+    // found it. Problems stay up.
+    std::erase_if(notices_, [](const Notice& n) { return n.kind == NoticeKind::Info; });
     focus_window_ = focus_item_ = show_focus_ = true;
   } else {
     if (input_ && input_->capturing()) input_->cancel_capture();

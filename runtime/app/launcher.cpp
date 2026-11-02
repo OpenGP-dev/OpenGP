@@ -891,7 +891,7 @@ int run(const Game& game, int argc, char** argv) {
       if (use_menu) {
         for (const std::string& notice : os::take_player_notices()) menu.notify(notice, NoticeKind::Problem);
         // Once the game has started (about 10 s: its device checks).
-        if (settings.first_run_hint && machine.gpu().frames() >= 600) {
+        if (settings.first_run_hint && machine.gpu().frames() >= 600 && !menu.is_open()) {
           settings.first_run_hint = applied.first_run_hint = false;
           menu.notify(first_run_hint(use_input ? &host_input : nullptr, settings.free_play));
         }
