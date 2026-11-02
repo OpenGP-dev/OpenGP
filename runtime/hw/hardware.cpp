@@ -36,9 +36,8 @@ constexpr u32 kFlipperRevC = 0x246500B1;
 
 Hardware* g_hw = nullptr;
 
-// ticks <-> nanoseconds at 40.5 MHz (1e9 / 40.5e6 = 2000 / 81)
-u64 ns_to_ticks(u64 ns) { return (ns / 2000) * 81 + (ns % 2000) * 81 / 2000; }
-u64 ticks_to_ns(u64 ticks) { return (ticks / 81) * 2000 + (ticks % 81) * 2000 / 81; }
+using ppc::ns_to_ticks;
+using ppc::ticks_to_ns;
 
 }  // namespace
 
@@ -152,7 +151,12 @@ Hardware::Hardware(u8* base, u32 mem1_size) : base_(base), mem1_size_(mem1_size)
   map(0x3000, 0x100, std::make_unique<PiDevice>(*this));
 }
 
-Hardware::~Hardware() { stop(); }
+Hardware::~Hardware() {
+  stop();
+#ifdef _WIN32
+  if (timer_wake_) CloseHandle(timer_wake_);
+#endif
+}
 
 void Hardware::map(u32 block_base, u32 size, std::unique_ptr<Device> device) {
   mappings_.push_back({block_base, size, device.get()});
@@ -181,8 +185,7 @@ u64 Hardware::timebase_at(u64 steady_ns) const { return ns_to_ticks(steady_ns) -
 
 // Rounded up, so that timebase_at(steady_ns_at(tb)) == tb.
 u64 Hardware::steady_ns_at(u64 timebase) const {
-  const u64 ticks = timebase + tb_origin_;
-  return (ticks / 81) * 2000 + ((ticks % 81) * 2000 + 80) / 81;
+  return ppc::ticks_to_ns_up(timebase + tb_origin_);
 }
 
 void Hardware::set_timebase(u64 value) {
@@ -201,7 +204,14 @@ void Hardware::set_paused(bool paused) {
     pause_cv_.notify_all();
   }
   update_pending();  // while paused, guest code goes to its next safe point
+  wake_timer();
+}
+
+void Hardware::wake_timer() {
   timer_cv_.notify_all();
+#ifdef _WIN32
+  if (timer_wake_) SetEvent(timer_wake_);
+#endif
 }
 
 void Hardware::wait_while_paused() {
@@ -266,8 +276,10 @@ void Hardware::wait_for_interrupt(u32 timeout_ms) {
 Hardware::EventId Hardware::schedule_at(u64 when, std::function<void()> fn) {
   std::lock_guard lock(mutex_);
   const EventId id = next_event_id_++;
-  events_.emplace(when, std::make_pair(id, std::move(fn)));
-  timer_cv_.notify_all();
+  const auto it = events_.emplace(when, std::make_pair(id, std::move(fn)));
+  // The timer thread sleeps until the earliest event: only a new earliest one
+  // needs to wake it.
+  if (it == events_.begin()) wake_timer();
   return id;
 }
 
@@ -283,6 +295,15 @@ void Hardware::cancel(EventId id) {
 
 void Hardware::timer_loop() {
   os::set_interactive_thread();
+#ifdef _WIN32
+  // A condition variable's timeout is whole milliseconds on Windows (MSVC's
+  // library rounds it up, so events came 1-2 ms late; libc++'s rounds it down,
+  // so the last millisecond before each event spun, taking the lock each
+  // time). A high-resolution waitable timer sleeps to the event (Windows 10
+  // 1803 and later; a plain one before).
+  HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+  if (!timer) timer = CreateWaitableTimerExW(nullptr, nullptr, 0, TIMER_ALL_ACCESS);
+#endif
   std::unique_lock lock(mutex_);
   while (running_) {
     if (events_.empty() || paused()) {
@@ -292,13 +313,29 @@ void Hardware::timer_loop() {
     const u64 now = timebase();
     auto it = events_.begin();
     if (it->first > now) {
-      timer_cv_.wait_for(lock, std::chrono::nanoseconds(ticks_to_ns(it->first - now)));
+      const u64 ns = ppc::ticks_to_ns_up(it->first - now);  // never before the event
+#ifdef _WIN32
+      if (timer && timer_wake_) {
+        LARGE_INTEGER due;
+        due.QuadPart = -std::max<LONGLONG>(1, static_cast<LONGLONG>((ns + 99) / 100));  // relative, 100 ns units
+        SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE);
+        lock.unlock();
+        HANDLE handles[2] = {timer, static_cast<HANDLE>(timer_wake_)};
+        WaitForMultipleObjects(2, handles, FALSE, INFINITE);
+        lock.lock();
+        continue;
+      }
+#endif
+      timer_cv_.wait_for(lock, std::chrono::nanoseconds(ns));
       continue;
     }
     auto fn = std::move(it->second.second);
     events_.erase(it);
     fn();  // runs with the mutex held; may schedule more events
   }
+#ifdef _WIN32
+  if (timer) CloseHandle(timer);
+#endif
 }
 
 void Hardware::start() {
@@ -314,6 +351,9 @@ void Hardware::start() {
   timeBeginPeriod(1);  // 1 ms timer resolution for the event thread
 #endif
   running_ = true;
+#ifdef _WIN32
+  if (!timer_wake_) timer_wake_ = CreateEventW(nullptr, FALSE, FALSE, nullptr);  // auto-reset
+#endif
   timer_thread_ = std::thread([this] { timer_loop(); });
 }
 
@@ -322,7 +362,7 @@ void Hardware::stop() {
     std::lock_guard lock(mutex_);
     if (!running_) return;
     running_ = false;
-    timer_cv_.notify_all();
+    wake_timer();
   }
   if (timer_thread_.joinable()) timer_thread_.join();
 #ifdef _WIN32
@@ -332,13 +372,17 @@ void Hardware::stop() {
 }
 
 u32 Hardware::mmio_read(u32 addr, u32 size) {
-  std::lock_guard lock(mutex_);
+  // The CPU's window onto the EFB is served by the GPU front end, whose state
+  // only the thread running guest code touches, without the device lock: a
+  // peek may wait for the renderer (on the main thread), which itself needs
+  // the lock now and then (to pause, for the next retrace's time).
   if ((addr >> 24) == 0xC8) {
     const u32 v = on_efb_read ? on_efb_read(addr & ~3u) : 0;
     if (size == 4) return v;
     if (size == 2) return (v >> ((addr & 2) ? 0 : 16)) & 0xFFFF;
     return (v >> (8 * (3 - (addr & 3)))) & 0xFF;
   }
+  std::lock_guard lock(mutex_);
   const u32 off = addr - kIoBase;
   for (const Mapping& m : mappings_)
     if (off >= m.base && off < m.base + m.size) return m.device->read(off - m.base, size);
@@ -347,11 +391,11 @@ u32 Hardware::mmio_read(u32 addr, u32 size) {
 }
 
 void Hardware::mmio_write(u32 addr, u32 value, u32 size) {
-  std::lock_guard lock(mutex_);
-  if ((addr >> 24) == 0xC8) {
+  if ((addr >> 24) == 0xC8) {  // the EFB window: see mmio_read
     if (on_efb_write) on_efb_write(addr & ~3u, value);
     return;
   }
+  std::lock_guard lock(mutex_);
   const u32 off = addr - kIoBase;
   for (const Mapping& m : mappings_) {
     if (off >= m.base && off < m.base + m.size) {

@@ -47,6 +47,7 @@ class MediaBoard final : public hw::DiBackend {
 
   struct File {
     std::FILE* f = nullptr;
+    bool warned = false;  // a write failed (told the player)
     void open(const std::string& path);
     void close();
     void read(u32 offset, u8* dst, u32 length);

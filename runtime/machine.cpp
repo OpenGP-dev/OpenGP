@@ -41,7 +41,7 @@ bool Machine::boot(const std::string& image_path, os::BootResult* boot, std::str
   // the system call handler toggles HID0 and returns. Caches are not modelled.
   ppc::g_hooks.syscall = [](ppc::Context&, u8*, u32) {};
 
-  // The disc says how much memory the game expects (Triforce titles: 48 MiB);
+  // The disc says how much memory the game expects (GP 2: 48 MiB, GP: 24 MiB);
   // Dolphin clamps it to 24..64 MiB the same way.
   u32 mem1 = disc_.read_u32(kBi2Offset + 4);
   mem1 = mem1 ? std::clamp(mem1, kMem1Retail, kMem1Max) : kMem1Retail;
@@ -76,7 +76,7 @@ bool Machine::boot(const std::string& image_path, os::BootResult* boot, std::str
     if (fs::is_regular_file(legacy, ec) && cards_->list().empty()) {
       fs::create_directories(os::utf8_path(cards_->dir()), ec);
       fs::rename(legacy, os::utf8_path(cards_->path("Card 1")), ec);
-      if (!ec) std::fprintf(stderr, "[card] moved %s to %s\n", legacy.string().c_str(), cards_->path("Card 1").c_str());
+      if (!ec) std::fprintf(stderr, "[card] moved %s to %s\n", os::utf8(legacy).c_str(), cards_->path("Card 1").c_str());
     }
   }
   auto si = std::make_unique<hw::SiBus>(h);

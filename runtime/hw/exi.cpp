@@ -4,6 +4,9 @@
 // EXI_DeviceBaseboard.cpp (Copyright Dolphin Emulator Project, GPL-2.0-or-later).
 
 #include "hw/exi.h"
+#include "os/notice.h"
+#include "os/utf8.h"
+#include "ppc/timebase.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -58,21 +61,7 @@ enum : u8 {
   BB_WRITE_LANCNT = 0xFF,
 };
 
-u32 rtc_seconds_since_2000() {
-  const std::time_t now = std::time(nullptr);
-  std::tm local{}, utc{};
-#ifdef _WIN32
-  localtime_s(&local, &now);
-  gmtime_s(&utc, &now);
-#else
-  localtime_r(&now, &local);
-  gmtime_r(&now, &utc);
-#endif
-  local.tm_isdst = 0;
-  utc.tm_isdst = 0;
-  const auto offset = static_cast<long long>(std::difftime(std::mktime(&local), std::mktime(&utc)));
-  return static_cast<u32>(static_cast<long long>(now) + offset - 946684800LL);
-}
+u32 rtc_seconds_since_2000() { return static_cast<u32>(ppc::local_seconds_since_2000()); }
 
 }  // namespace
 
@@ -118,7 +107,7 @@ IplDevice::IplDevice(const std::string& user_dir) : rom_(ROM_SIZE, 0) {
   constexpr u32 kSjisOffset = 0x1AFF00, kSjisSize = 0x4A24D;
   constexpr u32 kAnsiOffset = 0x1FCF00, kAnsiSize = 0x2575;
   bool loaded = false;
-  if (std::FILE* f = std::fopen((user_dir + "/IPL.bin").c_str(), "rb")) {
+  if (std::FILE* f = os::fopen_utf8(user_dir + "/IPL.bin", "rb")) {
     loaded = std::fseek(f, kSjisOffset, SEEK_SET) == 0 && std::fread(&rom_[kSjisOffset], 1, kSjisSize, f) == kSjisSize &&
              std::fseek(f, kAnsiOffset, SEEK_SET) == 0 && std::fread(&rom_[kAnsiOffset], 1, kAnsiSize, f) == kAnsiSize;
     std::fclose(f);
@@ -194,10 +183,18 @@ void IplDevice::transfer_byte(u8& data) {
 
 // ---- Triforce baseboard ----------------------------------------------------------------------
 
-BaseboardDevice::BaseboardDevice(std::string backup_path) {
-  backup_ = std::fopen(backup_path.c_str(), "rb+");
-  if (!backup_) backup_ = std::fopen(backup_path.c_str(), "wb+");
-  if (!backup_) std::fprintf(stderr, "[exi] cannot open baseboard backup file %s\n", backup_path.c_str());
+BaseboardDevice::BaseboardDevice(std::string backup_path) : backup_path_(std::move(backup_path)) {
+  backup_ = os::fopen_utf8(backup_path_, "rb+");
+  if (!backup_) backup_ = os::fopen_utf8(backup_path_, "wb+");
+  if (!backup_) backup_failed();
+}
+
+// The game's settings and records are not being kept: say so once.
+void BaseboardDevice::backup_failed() {
+  if (backup_warned_) return;
+  backup_warned_ = true;
+  os::notify_player("The game's settings and records cannot be saved to " + backup_path_ +
+                    ": check that the user folder can be written to.");
 }
 
 BaseboardDevice::~BaseboardDevice() {
@@ -216,9 +213,9 @@ bool BaseboardDevice::interrupt() {
 
 void BaseboardDevice::dma_write(u8* src, u32 size) {
   if (!backup_) return;
-  std::fseek(backup_, static_cast<long>(backup_offset_), SEEK_SET);
-  std::fwrite(src, 1, size, backup_);
-  std::fflush(backup_);
+  if (std::fseek(backup_, static_cast<long>(backup_offset_), SEEK_SET) != 0 ||
+      std::fwrite(src, 1, size, backup_) != size || std::fflush(backup_) != 0)
+    backup_failed();
 }
 
 void BaseboardDevice::dma_read(u8* dst, u32 size) {
@@ -242,11 +239,9 @@ void BaseboardDevice::transfer_byte(u8& byte) {
         byte = 0x01;
         break;
       case BB_BACKUP_WRITE:
-        if (backup_) {
-          std::fseek(backup_, static_cast<long>(backup_offset_), SEEK_SET);
-          std::fwrite(&command_[1], 1, 1, backup_);
-          std::fflush(backup_);
-        }
+        if (backup_ && (std::fseek(backup_, static_cast<long>(backup_offset_), SEEK_SET) != 0 ||
+                        std::fwrite(&command_[1], 1, 1, backup_) != 1 || std::fflush(backup_) != 0))
+          backup_failed();
         byte = 0x01;
         break;
       case BB_BACKUP_READ:

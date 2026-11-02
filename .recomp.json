@@ -16,5 +16,5 @@
     "Linked cabinets over a real local network",
     "Steering wheels and force feedback"
   ],
-  "notes": "Also runs the first game, Mario Kart Arcade GP (2005), on the same runtime. Races at 60 fps in 4:3 or widescreen at up to 8x resolution, with keyboard, gamepad or wheel, Mario Cards, a webcam as the cabinet camera, up to four linked cabinets for Versus races, pause when playing solo, and Discord Rich Presence. The installer builds the games on the player's own computer. Feature-complete at 1.0: from here on, only bug fixes and design tweaks."
+  "notes": "Also runs the first game, Mario Kart Arcade GP (2005), on the same runtime. Races at 60 fps in 4:3 or widescreen at up to 8x resolution, with keyboard, gamepad or wheel, Mario Cards, a webcam as the cabinet camera, up to four linked cabinets for Versus races, pause when playing solo, and Discord Rich Presence. The installer builds the games on the player's own computer."
 }

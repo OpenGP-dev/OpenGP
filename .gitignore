@@ -31,12 +31,33 @@
 build/
 out/
 generated/
+cmake-build-*/
 .cache/
 compile_commands.json
 CMakeUserPresets.json
+*.o
+*.obj
+*.exe
+*.pdb
+*.ilk
 
-# Editors / OS
+# Dumps and captures the games can write (--audio-dump, screenshots, archives
+# of game files): they hold the games' sound and pictures.
+*.wav
+*.zip
+*.7z
+*.rar
+
+# Python
+__pycache__/
+*.pyc
+
+# Editors, tools and OS
 .vscode/
 .idea/
+.vs/
+.claude/
 *.swp
 .DS_Store
+Thumbs.db
+desktop.ini

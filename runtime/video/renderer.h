@@ -14,6 +14,7 @@
 // Frames are produced on the guest thread and handed over by FrameQueue.
 #pragma once
 
+#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <memory>
@@ -66,6 +67,9 @@ class FrameQueue final : public gx::FrameOutput {
   std::deque<std::unique_ptr<gx::Frame>> frames_;
   std::vector<std::unique_ptr<gx::Frame>> free_;
   std::size_t max_pending_;
+  // frames_.size(), readable without the lock: only the guest thread adds
+  // frames, so what it reads is never fewer than there are.
+  std::atomic<std::size_t> pending_{0};
 };
 
 // Something drawn over the presented picture (the menu).
@@ -149,8 +153,14 @@ class Renderer {
   // EFB peeks follow the design of Dolphin's FramebufferManager and
   // EFBInterface: depth is scaled by 2^24 and clamped to 24 bits.
   void read_efb(SDL_GPUCommandBuffer* cmd, std::shared_ptr<gx::EfbReadback> request);
+  u32 failed_frames_ = 0;  // frames in a row that could not be drawn
   void poll_reads(bool wait_all);
-  void grow_buffer(SDL_GPUBuffer*& buffer, u32& capacity, u32 needed, u32 usage);
+  bool grow_buffer(SDL_GPUBuffer*& buffer, u32& capacity, u32 needed, u32 usage);
+  void abandon(const gx::Frame& f, const char* why);
+  // New textures of frames that could not be drawn, made with the next one
+  // that can (offsets into carried_texels_).
+  std::vector<gx::TextureUpload> carried_uploads_;
+  std::vector<u8> carried_texels_;
 
   SDL_Window* window_ = nullptr;
   SDL_GPUDevice* device_ = nullptr;

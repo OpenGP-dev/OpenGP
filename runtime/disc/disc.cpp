@@ -14,6 +14,7 @@
 #include <string_view>
 
 #include "disc/sha1.h"
+#include "os/utf8.h"
 
 namespace disc {
 
@@ -27,18 +28,7 @@ int seek64(std::FILE* f, u64 offset) {
 #endif
 }
 
-std::FILE* open_utf8(const std::string& path) {
-#ifdef _WIN32
-  // fopen would read the name in the system's code page.
-  const int n = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, nullptr, 0);
-  if (n <= 0) return nullptr;
-  std::wstring wide(static_cast<std::size_t>(n), L'\0');
-  MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, wide.data(), n);
-  return _wfopen(wide.c_str(), L"rb");
-#else
-  return std::fopen(path.c_str(), "rb");
-#endif
-}
+std::FILE* open_utf8(const std::string& path) { return os::fopen_utf8(path, "rb"); }
 
 u64 tell64(std::FILE* f) {
 #ifdef _WIN32
@@ -100,16 +90,20 @@ bool Image::open(const std::string& path, std::string* error) {
 }
 
 bool Image::read(u64 offset, void* dst, u64 size) const {
-  std::memset(dst, 0, size);
-  if (!file_ || offset >= size_) return false;
+  if (!file_ || offset >= size_) {
+    std::memset(dst, 0, size);
+    return false;
+  }
   const u64 avail = size_ - offset;
   const u64 n = size < avail ? size : avail;
+  if (n < size) std::memset(static_cast<u8*>(dst) + n, 0, size - n);  // past the image's end
   bool ok = true;
   if (offset + n <= loaded_.load(std::memory_order_acquire)) {
     std::memcpy(dst, memory_.get() + offset, n);
   } else {
     std::lock_guard lock(mutex_);
     ok = seek64(file_, offset) == 0 && std::fread(dst, 1, n, file_) == n;
+    if (!ok) std::memset(dst, 0, n);
   }
   if (id_override_)
     for (u64 i = offset; i < game_id_.size() && i < offset + n; ++i)
@@ -133,13 +127,18 @@ bool Image::read_dol(std::vector<u8>* out) const {
   constexpr u32 kHeaderSize = 0x100, kSections = 18;
   const u64 dol = read_u32(kDolOffset);
   if (dol == 0 || dol >= size_) return false;
-  u32 end = kHeaderSize;
+  // The section table comes from the image: in 64 bits, inside the image,
+  // and no bigger than a GameCube executable can be.
+  constexpr u64 kMaxDol = 32u << 20;
+  u64 end = kHeaderSize;
   for (u32 i = 0; i < kSections; ++i) {
-    const u32 offset = read_u32(dol + 4 * i), size = read_u32(dol + 0x90 + 4 * i);
-    if (size && offset + size > end) end = offset + size;
+    const u64 offset = read_u32(dol + 4 * i), size = read_u32(dol + 0x90 + 4 * i);
+    if (!size) continue;
+    if (offset < kHeaderSize || offset + size > kMaxDol || dol + offset + size > size_) return false;
+    end = std::max(end, offset + size);
   }
-  out->resize(end);
-  return read(dol, out->data(), end);
+  out->resize(static_cast<std::size_t>(end));
+  return read(dol, out->data(), static_cast<u32>(end));
 }
 
 bool Image::find_file(const std::string& path, u64* offset, u32* size) const {

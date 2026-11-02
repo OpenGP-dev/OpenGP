@@ -7,19 +7,17 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include "ppc/timebase.h"
+
 namespace ppc {
 
 namespace {
-
-// 40.5 MHz: the Gekko time base ticks at bus clock / 4 (162 MHz / 4).
-constexpr u64 kTimebaseHz = 40500000;
 
 u64 g_timebase_offset = 0;
 
 u64 host_ticks() {
   const auto now = std::chrono::steady_clock::now().time_since_epoch();
-  const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now).count();
-  return static_cast<u64>(ns) * kTimebaseHz / 1000000000ULL;
+  return ns_to_ticks(static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now).count()));
 }
 
 u32 default_mmio_read(u32 addr, u32 size) {

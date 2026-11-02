@@ -102,6 +102,9 @@
       "configurePreset": "default",
       "output": {
         "outputOnFailure": true
+      },
+      "execution": {
+        "timeout": 300
       }
     },
     {
@@ -109,6 +112,9 @@
       "configurePreset": "debug",
       "output": {
         "outputOnFailure": true
+      },
+      "execution": {
+        "timeout": 300
       }
     },
     {
@@ -116,6 +122,9 @@
       "configurePreset": "clang-cl",
       "output": {
         "outputOnFailure": true
+      },
+      "execution": {
+        "timeout": 300
       }
     },
     {
@@ -123,6 +132,9 @@
       "configurePreset": "package-windows",
       "output": {
         "outputOnFailure": true
+      },
+      "execution": {
+        "timeout": 300
       }
     },
     {
@@ -130,6 +142,9 @@
       "configurePreset": "package-linux",
       "output": {
         "outputOnFailure": true
+      },
+      "execution": {
+        "timeout": 300
       }
     },
     {
@@ -137,6 +152,9 @@
       "configurePreset": "package-macos",
       "output": {
         "outputOnFailure": true
+      },
+      "execution": {
+        "timeout": 300
       }
     }
   ]

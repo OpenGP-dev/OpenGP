@@ -1,0 +1,11 @@
+# Text files are stored with LF line endings and checked out with LF on every
+# platform, whatever core.autocrlf says.
+* text=auto eol=lf
+
+# The free replacement IPL fonts are the only binary files in the repository
+# (tools/check_game_data.py enforces that).
+*.bin binary
+
+# The symbol maps are machine-written (decomp-toolkit, tools/*.py): collapse
+# their diffs in pull requests.
+games/*/config/symbols.txt linguist-generated=true

@@ -44,6 +44,14 @@ def main() -> int:
     sdk = args.package / "sdk"
     config = tomllib.loads((sdk / "package.toml").read_text())
     build = config["build"]
+    # The games' hand-written sources the installer compiles must all be there.
+    missing = [str(p) for game in config["games"]
+               for p in [sdk / "games" / "common" / s for s in build["common_sources"]] +
+                        [sdk / "games" / game / s for s in build["game_sources"]]
+               if not p.is_file()]
+    if missing:
+        print("the package lacks game sources it lists:", *missing, sep="\n  ")
+        return 1
     cxx = args.cxx
     if not cxx:
         toolchain = config.get("toolchain")

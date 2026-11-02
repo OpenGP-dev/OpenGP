@@ -70,6 +70,10 @@ class BaseboardDevice : public ExiDevice {
   }
 
  private:
+  void backup_failed();
+
+  std::string backup_path_;
+  bool backup_warned_ = false;
   std::FILE* backup_ = nullptr;
   std::array<u8, 4> command_{};
   u32 position_ = 0;

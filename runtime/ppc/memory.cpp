@@ -69,7 +69,7 @@ bool GuestMemory::init(u32 mem1_size, std::string* error) {
   base_ = static_cast<u8*>(reserved);
 
 #ifdef __linux__
-  mem1_fd_ = memfd_create("opengp-mem1", 0);
+  mem1_fd_ = memfd_create("opengp-mem1", MFD_CLOEXEC);
 #else
   // Other POSIX systems: an unlinked shared-memory object.
   char name[64];

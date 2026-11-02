@@ -13,6 +13,7 @@
 #include <cstring>
 
 #include "os/activity.h"
+#include "os/notice.h"
 
 // SPIR-V, compiled from shaders/ at build time.
 #include "blit_frag.h"
@@ -89,10 +90,12 @@ struct CopyUniforms {
 void FrameQueue::submit(std::unique_ptr<gx::Frame> frame) {
   std::lock_guard lock(mutex_);
   frames_.push_back(std::move(frame));
+  pending_.store(frames_.size(), std::memory_order_release);
   cv_.notify_all();
 }
 
 void FrameQueue::wait_for_room() {
+  if (pending_.load(std::memory_order_acquire) < max_pending_) return;
   std::unique_lock lock(mutex_);
   if (frames_.size() < max_pending_) return;
   os::g_guest_wait.set("waiting for the renderer to take a frame");
@@ -118,6 +121,7 @@ std::unique_ptr<gx::Frame> FrameQueue::pop(int timeout_ms) {
   if (!cv_.wait_for(lock, std::chrono::milliseconds(timeout_ms), [this] { return !frames_.empty(); })) return nullptr;
   auto frame = std::move(frames_.front());
   frames_.pop_front();
+  pending_.store(frames_.size(), std::memory_order_release);
   cv_.notify_all();
   return frame;
 }
@@ -431,37 +435,42 @@ SDL_GPUSampler* Renderer::sampler(u32 mode0, u32 mode1, bool native_lod) {
 
 // ---- Rendering -------------------------------------------------------------------------------
 
-void Renderer::grow_buffer(SDL_GPUBuffer*& buffer, u32& capacity, u32 needed, u32 usage) {
-  if (needed <= capacity) return;
+bool Renderer::grow_buffer(SDL_GPUBuffer*& buffer, u32& capacity, u32 needed, u32 usage) {
+  if (needed <= capacity && buffer) return true;
   if (buffer) SDL_ReleaseGPUBuffer(device_, buffer);
-  capacity = std::max(needed, capacity * 2);
-  SDL_GPUBufferCreateInfo info{usage, capacity, 0};
+  const u32 size = std::max(needed, capacity * 2);
+  SDL_GPUBufferCreateInfo info{usage, size, 0};
   buffer = SDL_CreateGPUBuffer(device_, &info);
+  capacity = buffer ? size : 0;  // tried again with the next frame
+  return buffer != nullptr;
 }
 
 bool Renderer::upload(SDL_GPUCommandBuffer* cmd, const gx::Frame& f) {
   const u32 vbytes = static_cast<u32>(f.vertices.size() * sizeof(gx::Vertex));
   const u32 ibytes = static_cast<u32>(f.indices.size() * sizeof(u32));
   const u32 tbytes = static_cast<u32>(f.texels.size());
-  const u32 total = vbytes + ibytes + tbytes;
+  const u32 cbytes = static_cast<u32>(carried_texels_.size());
+  const u32 total = vbytes + ibytes + tbytes + cbytes;
   if (total == 0) return true;
 
   if (total > transfer_capacity_) {
     if (transfer_) SDL_ReleaseGPUTransferBuffer(device_, transfer_);
   poll_reads(true);
-    transfer_capacity_ = std::max(total, transfer_capacity_ * 2);
-    SDL_GPUTransferBufferCreateInfo info{SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, transfer_capacity_, 0};
+    const u32 size = std::max(total, transfer_capacity_ * 2);
+    SDL_GPUTransferBufferCreateInfo info{SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, size, 0};
     transfer_ = SDL_CreateGPUTransferBuffer(device_, &info);
+    transfer_capacity_ = transfer_ ? size : 0;  // tried again with the next frame
     if (!transfer_) return false;
   }
-  if (vbytes) grow_buffer(vertex_buffer_, vertex_capacity_, vbytes, SDL_GPU_BUFFERUSAGE_VERTEX);
-  if (ibytes) grow_buffer(index_buffer_, index_capacity_, ibytes, SDL_GPU_BUFFERUSAGE_INDEX);
+  if (vbytes && !grow_buffer(vertex_buffer_, vertex_capacity_, vbytes, SDL_GPU_BUFFERUSAGE_VERTEX)) return false;
+  if (ibytes && !grow_buffer(index_buffer_, index_capacity_, ibytes, SDL_GPU_BUFFERUSAGE_INDEX)) return false;
 
   auto* dst = static_cast<u8*>(SDL_MapGPUTransferBuffer(device_, transfer_, true));
   if (!dst) return false;
   std::memcpy(dst, f.vertices.data(), vbytes);
   std::memcpy(dst + vbytes, f.indices.data(), ibytes);
   std::memcpy(dst + vbytes + ibytes, f.texels.data(), tbytes);
+  if (cbytes) std::memcpy(dst + vbytes + ibytes + tbytes, carried_texels_.data(), cbytes);
   SDL_UnmapGPUTransferBuffer(device_, transfer_);
 
   SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
@@ -475,7 +484,9 @@ bool Renderer::upload(SDL_GPUCommandBuffer* cmd, const gx::Frame& f) {
     SDL_GPUBufferRegion region{index_buffer_, 0, ibytes};
     SDL_UploadToGPUBuffer(copy, &src, &region, true);
   }
-  for (const gx::TextureUpload& up : f.uploads) {
+  // Textures carried from frames that could not be drawn first (their
+  // texels follow this frame's), then this frame's.
+  const auto make_texture = [&](const gx::TextureUpload& up, u32 texels_at) {
     SDL_GPUTexture* tex = pooled_texture(up.width, up.height, up.levels);
     const bool reused = tex != nullptr;
     if (!tex) {
@@ -489,8 +500,8 @@ bool Renderer::upload(SDL_GPUCommandBuffer* cmd, const gx::Frame& f) {
       t.num_levels = up.levels;
       tex = SDL_CreateGPUTexture(device_, &t);
     }
-    if (!tex) continue;
-    u32 offset = vbytes + ibytes + static_cast<u32>(up.offset);
+    if (!tex) return;
+    u32 offset = texels_at + static_cast<u32>(up.offset);
     for (u32 l = 0, w = up.width, h = up.height; l < up.levels; ++l) {
       SDL_GPUTextureTransferInfo src{transfer_, offset, w, h};
       SDL_GPUTextureRegion region{};
@@ -507,7 +518,11 @@ bool Renderer::upload(SDL_GPUCommandBuffer* cmd, const gx::Frame& f) {
       h = std::max(1u, h / 2);
     }
     textures_[up.handle] = {tex, up.width, up.height, up.levels, true};
-  }
+  };
+  for (const gx::TextureUpload& up : carried_uploads_) make_texture(up, vbytes + ibytes + tbytes);
+  for (const gx::TextureUpload& up : f.uploads) make_texture(up, vbytes + ibytes);
+  carried_uploads_.clear();
+  carried_texels_.clear();
   SDL_EndGPUCopyPass(copy);
   return true;
 }
@@ -568,8 +583,9 @@ void Renderer::draw(const gx::Frame& f, const gx::DrawCmd& d) {
   for (u32 i = 0; i < 8; ++i) {
     const gx::TextureBinding& t = s.textures[i];
     auto it = t.texture ? textures_.find(t.texture) : textures_.end();
-    bindings[i].texture = it != textures_.end() ? it->second.texture : white_;
+    bindings[i].texture = it != textures_.end() && it->second.texture ? it->second.texture : white_;
     bindings[i].sampler = sampler(t.mode0, t.mode1, t.native_lod);
+    if (!bindings[i].sampler) bindings[i].sampler = linear_;
   }
   SDL_BindGPUFragmentSamplers(pass_, 0, bindings, 8);
   if (s.uniforms != pushed_uniforms_) {
@@ -613,7 +629,10 @@ void Renderer::copy(SDL_GPUCommandBuffer* cmd, const gx::CopyCmd& c) {
     t.layer_count_or_depth = 1;
     t.num_levels = 1;
     dst = {SDL_CreateGPUTexture(device_, &t), w, h};
-    if (!dst.texture) return;
+    if (!dst.texture) {  // out of GPU memory: draws that read the copy get white
+      textures_.erase(c.dest);
+      return;
+    }
   }
 
   SDL_GPUColorTargetInfo target{};
@@ -849,15 +868,49 @@ void Renderer::poll_reads(bool wait_all) {
   }
 }
 
-void Renderer::render(const gx::Frame& f, Image* capture_image, bool present_xfb) {
-  if (!resize_efb(f.efb_width)) {
-    std::fprintf(stderr, "[video] could not resize the EFB: %s\n", SDL_GetError());
-    return;
+// A frame that cannot be drawn (the GPU is out of memory, or lost after a
+// driver crash or update): its readbacks are answered with nothing, so a
+// game waiting for one goes on, and its textures are still freed. After two
+// seconds of these, the player is told.
+void Renderer::abandon(const gx::Frame& f, const char* why) {
+  for (const auto& r : f.readbacks) r->complete();
+  // The front end has handed out the new textures' handles: they are made
+  // with the next frame that can be drawn (up to a limit), not left white.
+  constexpr std::size_t kMaxCarried = std::size_t{256} << 20;
+  for (const gx::TextureUpload& up : f.uploads) {
+    std::size_t bytes = 0;
+    for (u32 l = 0, w = up.width, h = up.height; l < up.levels; ++l, w = std::max(1u, w / 2), h = std::max(1u, h / 2))
+      bytes += std::size_t{w} * h * 4;
+    if (carried_texels_.size() + bytes > kMaxCarried || up.offset + bytes > f.texels.size()) break;
+    gx::TextureUpload carried = up;
+    carried.offset = carried_texels_.size();
+    carried_texels_.insert(carried_texels_.end(), f.texels.begin() + static_cast<std::ptrdiff_t>(up.offset),
+                           f.texels.begin() + static_cast<std::ptrdiff_t>(up.offset + bytes));
+    carried_uploads_.push_back(carried);
   }
+  for (u32 h : f.releases) {
+    if (auto it = textures_.find(h); it != textures_.end()) {
+      release_texture(it->second);
+      textures_.erase(it);
+    }
+    std::erase_if(carried_uploads_, [h](const gx::TextureUpload& up) { return up.handle == h; });
+  }
+  if (++failed_frames_ == 1) std::fprintf(stderr, "[video] %s: %s\n", why, SDL_GetError());
+  if (failed_frames_ == 120)
+    os::notify_player("The game's picture cannot be drawn (the graphics driver may have crashed or been updated). "
+                      "Restart OpenGP; lowering the internal resolution may help.");
+}
+
+void Renderer::render(const gx::Frame& f, Image* capture_image, bool present_xfb) {
+  if (!resize_efb(f.efb_width)) return abandon(f, "could not resize the EFB");
   SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device_);
-  if (!cmd) return;
+  if (!cmd) return abandon(f, "could not start a frame");
+  if (!upload(cmd, f)) {
+    SDL_CancelGPUCommandBuffer(cmd);
+    return abandon(f, "upload failed");
+  }
+  failed_frames_ = 0;
   cmd_ = cmd;
-  if (!upload(cmd, f)) std::fprintf(stderr, "[video] upload failed: %s\n", SDL_GetError());
 
   for (const gx::Command& c : f.commands) {
     switch (c.type) {

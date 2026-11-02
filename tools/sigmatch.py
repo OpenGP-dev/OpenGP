@@ -20,6 +20,7 @@ The database is downloaded from Dolphin's repository into build/tools/ if needed
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import re
 import shutil
@@ -31,18 +32,31 @@ from collections import defaultdict
 from pathlib import Path
 
 
-def download(url: str, dest) -> None:
-    """Downloads `url` to `dest`. Python from python.org on macOS comes without
-    CA certificates (until its "Install Certificates" script is run), so the
-    system's are loaded too."""
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from naming import handwritten_names  # noqa: E402
+
+
+def download(url: str, dest: Path) -> None:
+    """Downloads `url` to `dest`, through `dest`.part. Python from python.org
+    on macOS comes without CA certificates (until its "Install Certificates"
+    script is run), so the system's are loaded too."""
     context = ssl.create_default_context()
     if sys.platform == "darwin" and os.path.exists("/etc/ssl/cert.pem"):
         context.load_verify_locations("/etc/ssl/cert.pem")
-    with urllib.request.urlopen(url, context=context) as response, open(dest, "wb") as out:
-        shutil.copyfileobj(response, out)
+    part = dest.with_name(dest.name + ".part")
+    try:
+        with urllib.request.urlopen(url, context=context, timeout=60) as response, open(part, "wb") as out:
+            shutil.copyfileobj(response, out)
+        part.replace(dest)
+    finally:
+        part.unlink(missing_ok=True)
+
 
 ROOT = Path(__file__).resolve().parent.parent
-DSY_URL = "https://raw.githubusercontent.com/dolphin-emu/dolphin/master/Data/Sys/totaldb.dsy"
+# Dolphin's signature database, as of its last change (2017), and its SHA-256.
+DSY_URL = ("https://raw.githubusercontent.com/dolphin-emu/dolphin/"
+           "b4b80e1be97781ceb5f7581abd854588252e867c/Data/Sys/totaldb.dsy")
+DSY_SHA256 = "09fb4a167946dbdfee5890c0f027e40b3eacbb6cc5ee9184adeb9d1a81c2c0aa"
 GENERATED_NAME = re.compile(r"^fn_[0-9A-F]{8}$")
 # The Nintendo SDK, MSL and TRK are C. The database also holds C++ functions
 # from other games, whose short methods produce false matches; skip those.
@@ -53,6 +67,8 @@ SYMBOL_LINE = re.compile(r'^(?P<name>"[^"]*"|\S+) = (?P<sec>[^:;\s]+):0x(?P<addr
 def load_dsy(path: Path) -> dict[int, tuple[int, str]]:
     data = path.read_bytes()
     (count,) = struct.unpack_from("<I", data, 0)
+    if len(data) != 4 + count * 136:
+        raise ValueError(f"{path} is damaged ({len(data)} bytes for {count} signatures): delete it and run again")
     db: dict[int, tuple[int, str]] = {}
     for i in range(count):
         checksum, size, raw = struct.unpack_from("<II128s", data, 4 + i * 136)
@@ -123,12 +139,18 @@ def main() -> int:
         args.dsy.parent.mkdir(parents=True, exist_ok=True)
         print(f"Downloading {DSY_URL}")
         download(DSY_URL, args.dsy)
+        actual = hashlib.sha256(args.dsy.read_bytes()).hexdigest()
+        if actual != DSY_SHA256:
+            args.dsy.unlink()
+            print(f"the download has SHA-256 {actual}, expected {DSY_SHA256}")
+            return 1
     db = load_dsy(args.dsy)
     dol = Dol(args.dol)
 
     lines = args.symbols.read_text(encoding="utf-8").splitlines()
     functions = []  # (line index, name, address, size)
-    used_names = set()
+    reserved = handwritten_names()  # hand-written code uses them: never renamed, never given
+    used_names = set(reserved)
     for i, line in enumerate(lines):
         m = SYMBOL_LINE.match(line)
         if not m:
@@ -163,7 +185,7 @@ def main() -> int:
             ambiguous += len(fns)
             continue
         idx, name, addr, _ = fns[0]
-        if GENERATED_NAME.match(name):
+        if GENERATED_NAME.match(name) and name not in reserved:
             if sig_name in used_names:
                 continue
             renames[idx] = sig_name

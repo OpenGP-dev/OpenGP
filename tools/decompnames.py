@@ -41,6 +41,8 @@ from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from naming import handwritten_names  # noqa: E402
 SYMBOL_LINE = re.compile(r'^(?P<name>"[^"]*"|\S+) = (?P<sec>[^:;\s]+):0x(?P<addr>[0-9A-Fa-f]+);(?P<rest>.*)$')
 SIZE = re.compile(r"size:0x([0-9A-Fa-f]+)")
 DATA_KIND = re.compile(r"\bdata:\S+")
@@ -50,7 +52,6 @@ IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # A trailing address: 5 to 8 hex digits, at least one of them a digit (so
 # words such as "_Added" are left alone).
 ADDRESS_SUFFIX = re.compile(r"^(?P<base>\w+?)_(?P<hex>(?=[0-9A-Fa-f]*[0-9])[0-9A-Fa-f]{5,8})$")
-HANDWRITTEN = re.compile(r'PPC_(?:FUNC|HOOK|EXTERN_FUNC)\((\w+)\)|^\s*function\s*=\s*"(\w+)"', re.M)
 
 
 class Symbol:
@@ -81,16 +82,6 @@ class SymbolList:
         self.functions.sort(key=lambda s: s.address)
         for objects in self.objects.values():
             objects.sort(key=lambda s: s.address)
-
-
-def handwritten_names() -> set[str]:
-    names = set()
-    for top in ("games", "runtime"):
-        for path in (ROOT / top).rglob("*"):
-            if path.suffix in (".cpp", ".h", ".toml"):
-                for m in HANDWRITTEN.finditer(path.read_text(encoding="utf-8", errors="replace")):
-                    names.add(m[1] or m[2])
-    return names
 
 
 def align(other: list[Symbol], ours: list[Symbol]):
@@ -168,6 +159,8 @@ def main() -> int:
     counts = {"functions": [0, 0], "objects": [0, 0]}  # new names, already named the same
     differ, skipped = [], []
 
+    pinned: list[Symbol] = []  # hand-written code uses their names: not renamed
+
     def rename(kind: str, a: Symbol, b: Symbol) -> None:
         if not is_name(a.name):
             return
@@ -176,6 +169,9 @@ def main() -> int:
                 counts[kind][1] += 1
             else:
                 differ.append((b, a.name))
+            return
+        if b.name in reserved:
+            pinned.append(b)
             return
         name = new_name(a.name, b.address)
         if name is None:
@@ -190,7 +186,11 @@ def main() -> int:
     for a, b in object_pairs:
         rename("objects", a, b)
     split_names = 0
-    for pieces, target in splits:
+    for pieces, target in list(splits):
+        if target.name in reserved:
+            pinned.append(target)
+            splits.remove((pieces, target))
+            continue
         new_lines = []
         for p in pieces:
             address = p.address - pieces[0].address + target.address
@@ -211,7 +211,8 @@ def main() -> int:
     print(f"objects: {sum(map(len, other.objects.values()))} and {sum(map(len, ours.objects.values()))}; "
           f"{len(object_pairs)} paired ({object_by_position} by position); new names {counts['objects'][0]}, "
           f"already named the same {counts['objects'][1]}; {len(splits)} objects split for {split_names} more")
-    print(f"named differently (kept): {len(differ)}; name in use (skipped): {len(skipped)}")
+    print(f"named differently (kept): {len(differ)}; name in use (skipped): {len(skipped)}; "
+          f"used by hand-written code (not renamed): {len(pinned)}")
     if args.verbose:
         for b, name in differ:
             print(f"  note: {b.address:08X} is named {b.name}, the decomp says {name}")

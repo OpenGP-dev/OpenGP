@@ -1,3 +1,12 @@
+# Paths and arguments as UTF-8 (os/utf8.h), for the runtime, the recompiler
+# and the installer.
+add_library(opengp_utf8 STATIC os/utf8.cpp)
+target_include_directories(opengp_utf8 PUBLIC .)
+target_link_libraries(opengp_utf8 PRIVATE opengp_warnings)
+if(WIN32)
+  target_link_libraries(opengp_utf8 PRIVATE shell32)
+endif()
+
 # The CPU core: needed by everything that runs guest code (tests included).
 add_library(ppc_runtime STATIC
   ppc/dispatch.cpp
@@ -41,6 +50,7 @@ add_library(opengp_machine STATIC
   os/atomic_file.cpp
   os/boot.cpp
   os/crash.cpp
+  os/notice.cpp
   os/printf.cpp
   os/profiler.cpp
   os/reboot.cpp
@@ -71,7 +81,7 @@ foreach(font western japanese)
 endforeach()
 find_package(Threads REQUIRED)
 target_link_libraries(opengp_machine
-  PUBLIC ppc_runtime Threads::Threads
+  PUBLIC ppc_runtime opengp_utf8 Threads::Threads
   PRIVATE opengp_warnings)
 if(WIN32)
   target_link_libraries(opengp_machine PRIVATE winmm dbghelp ws2_32 iphlpapi)
@@ -126,6 +136,7 @@ if(OPENGP_BUILD_VIDEO)
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlgpu3.cpp)
   target_include_directories(imgui SYSTEM PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+  target_compile_definitions(imgui PUBLIC IMGUI_DEFINE_MATH_OPERATORS)  # ImVec2 arithmetic, for the menu's widgets
   target_link_libraries(imgui PUBLIC SDL3::SDL3)
 endif()
 
@@ -156,7 +167,19 @@ target_link_libraries(opengp_app
   PRIVATE opengp_warnings)
 target_compile_definitions(opengp_app PRIVATE OPENGP_VERSION="${PROJECT_VERSION}")
 if(OPENGP_BUILD_VIDEO)
-  target_sources(opengp_app PRIVATE app/menu.cpp)
+  target_sources(opengp_app PRIVATE app/menu.cpp app/menu_theme.cpp app/menu_widgets.cpp)
   target_link_libraries(opengp_app PUBLIC opengp_video opengp_input opengp_audio opengp_webcam imgui)
   target_compile_definitions(opengp_app PRIVATE OPENGP_VIDEO)
+  # The menu's typeface (thirdparty/fonts/mplus-rounded-1c), embedded.
+  set(menu_font_dir ${PROJECT_SOURCE_DIR}/thirdparty/fonts/mplus-rounded-1c)
+  foreach(weight Regular ExtraBold)
+    set(out ${CMAKE_CURRENT_BINARY_DIR}/menu_font_${weight}.cpp)
+    add_custom_command(
+      OUTPUT ${out}
+      COMMAND ${CMAKE_COMMAND} -DINPUT=${menu_font_dir}/MPLUSRounded1c-${weight}.ttf -DOUTPUT=${out}
+              -DNAME=kMenuFont${weight} -P ${PROJECT_SOURCE_DIR}/cmake/embed.cmake
+      DEPENDS ${menu_font_dir}/MPLUSRounded1c-${weight}.ttf ${PROJECT_SOURCE_DIR}/cmake/embed.cmake
+      VERBATIM)
+    target_sources(opengp_app PRIVATE ${out})
+  endforeach()
 endif()

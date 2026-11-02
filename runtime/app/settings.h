@@ -63,7 +63,8 @@ struct Settings {
 
 // Reads `path` over `settings` (what the file leaves out keeps its value).
 // Returns false with `error` set if the file cannot be parsed; a missing file
-// is not an error.
+// is not an error. A value it does not understand keeps the setting's value
+// and is described in `error`, with true returned.
 bool load_settings(const std::string& path, Settings* settings, std::string* error);
 
 // Writes `settings` to `path` (replacing it only once written in full).

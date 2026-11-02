@@ -2,37 +2,104 @@
 
 #include "app/menu.h"
 
-#include <utility>
 #include <SDL3/SDL.h>
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlgpu3.h>
+#include <imgui_internal.h>
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
-#include <cstdarg>
+#include <cstdio>
 #include <string_view>
+#include <utility>
+
+#include "app/menu_theme.h"
+#include "app/menu_widgets.h"
 
 namespace app {
 
+namespace w = widgets;
+using theme::px;
+
 namespace {
 
+// How long a notice stays: time to read it (about 16 characters a second),
+// within these bounds.
 constexpr auto kNoticeTime = std::chrono::milliseconds(2500);
+constexpr auto kNoticeTimeMax = std::chrono::seconds(15);
+constexpr auto kNoticeTimePerChar = std::chrono::milliseconds(60);
+constexpr float kNoticeIn = 0.15f, kNoticeOut = 0.2f;  // seconds
 
-// Width of the menu window at a UI scale of 1 (a 720-pixel-high window).
-constexpr float kMenuWidth = 640.0f;
-constexpr float kMenuHeight = 620.0f;
+constexpr float kFadeIn = 0.15f;  // the menu's, seconds
 
-// Greyed-out text, wrapped to the window.
-void hint(const char* format, ...) IM_FMTARGS(1);
-void hint(const char* format, ...) {
-  ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-  va_list args;
-  va_start(args, format);
-  ImGui::TextWrappedV(format, args);
-  va_end(args);
-  ImGui::PopStyleColor();
+const char* const kPageNames[] = {"Game", "Video", "Sound", "Controls", "Camera", "Linked cabinets"};
+
+// The keyboard keys bound to pause ("P / Pause"; with `first`, "P"), or ""
+// if none.
+std::string pause_keys(const MenuModel& m, bool first = false) {
+  if (!m.input) return "";
+  std::string keys;
+  for (std::size_t c = 0; c < input::HostInput::kControlCount; ++c) {
+    if (std::string_view(input::HostInput::control_name(c)) != "pause") continue;
+    for (const std::string& key : m.input->bindings(input::HostInput::DeviceKind::Keyboard, c))
+      if (keys.empty() || !first) keys += (keys.empty() ? "" : " / ") + key;
+  }
+  return keys;
 }
+
+// Whether the last navigation came from a gamepad (the hints show its buttons).
+bool using_gamepad() { return GImGui->NavInputSource == ImGuiInputSource_Gamepad; }
+
+// What the first gamepad calls its face buttons: "A" and "B", or "Cross" and "Circle".
+struct PadLabels {
+  const char* select = "A";
+  const char* back = "B";
+};
+
+PadLabels pad_labels() {
+  // Once a frame: the hints ask more than once.
+  static int frame = -1;
+  static PadLabels cached;
+  if (frame == ImGui::GetFrameCount()) return cached;
+  frame = ImGui::GetFrameCount();
+  PadLabels& labels = cached;
+  labels = PadLabels{};
+  int count = 0;
+  SDL_JoystickID* ids = SDL_GetGamepads(&count);
+  if (ids && count > 0) {
+    const SDL_GamepadType type = SDL_GetGamepadTypeForID(ids[0]);
+    auto name = [type](SDL_GamepadButton button, const char* fallback) {
+      switch (SDL_GetGamepadButtonLabelForType(type, button)) {
+        case SDL_GAMEPAD_BUTTON_LABEL_A: return "A";
+        case SDL_GAMEPAD_BUTTON_LABEL_B: return "B";
+        case SDL_GAMEPAD_BUTTON_LABEL_X: return "X";
+        case SDL_GAMEPAD_BUTTON_LABEL_Y: return "Y";
+        case SDL_GAMEPAD_BUTTON_LABEL_CROSS: return "Cross";
+        case SDL_GAMEPAD_BUTTON_LABEL_CIRCLE: return "Circle";
+        case SDL_GAMEPAD_BUTTON_LABEL_SQUARE: return "Square";
+        case SDL_GAMEPAD_BUTTON_LABEL_TRIANGLE: return "Triangle";
+        default: return fallback;
+      }
+    };
+    labels.select = name(SDL_GAMEPAD_BUTTON_SOUTH, "A");
+    labels.back = name(SDL_GAMEPAD_BUTTON_EAST, "B");
+  }
+  SDL_free(ids);
+  return labels;
+}
+
+// A rounded panel with a hairline border, behind the current window.
+void window_panel(ImU32 fill, float rounding) {
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  const ImVec2 p = ImGui::GetWindowPos(), s = ImGui::GetWindowSize();
+  dl->AddRectFilled(p, p + s, ImGui::GetColorU32(fill), rounding);
+  dl->AddRect(p, p + s, ImGui::GetColorU32(theme::kLine), rounding, 0, 1.0f);
+}
+
+constexpr ImGuiWindowFlags kScreenFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                                          ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground;
 
 }  // namespace
 
@@ -50,11 +117,13 @@ bool Menu::init(SDL_Window* window, SDL_GPUDevice* device, u32 format, std::stri
   io.IniFilename = nullptr;  // nothing to remember between runs
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad |
                     ImGuiConfigFlags_NoMouseCursorChange;
+  io.ConfigNavEscapeClearFocusItem = false;  // Esc goes back a level instead (update())
   if (!ImGui_ImplSDL3_InitForSDLGPU(window)) {
     *error = "could not start the menu (SDL3)";
     ImGui::DestroyContext();
     return false;
   }
+  ImGui_ImplSDL3_SetGamepadMode(ImGui_ImplSDL3_GamepadMode_AutoAll, nullptr, 0);  // every pad drives the menu
   ImGui_ImplSDLGPU3_InitInfo info;
   info.Device = device;
   info.ColorTargetFormat = static_cast<SDL_GPUTextureFormat>(format);
@@ -65,44 +134,37 @@ bool Menu::init(SDL_Window* window, SDL_GPUDevice* device, u32 format, std::stri
     ImGui::DestroyContext();
     return false;
   }
-  io.Fonts->AddFontDefaultVector();
+  theme::load_fonts(io);
   window_ = window;
   initialised_ = true;
   return true;
 }
 
-namespace {
-
-// The keyboard keys bound to pause ("P / Pause"; with `first`, "P"), or ""
-// if none.
-std::string pause_keys(const MenuModel& m, bool first = false) {
-  if (!m.input) return "";
-  std::string keys;
-  for (std::size_t c = 0; c < input::HostInput::kControlCount; ++c) {
-    if (std::string_view(input::HostInput::control_name(c)) != "pause") continue;
-    for (const std::string& key : m.input->bindings(input::HostInput::DeviceKind::Keyboard, c))
-      if (keys.empty() || !first) keys += (keys.empty() ? "" : " / ") + key;
-  }
-  return keys;
-}
-
-}  // namespace
-
 void Menu::set_open(bool open) {
   if (open == open_) return;
   open_ = open;
-  focus_ = open;
   // The mouse cursor is ImGui's while the menu is open.
   ImGuiIO& io = ImGui::GetIO();
   if (open) io.ConfigFlags &= ~ImGuiConfigFlags_NoMouseCursorChange;
   else io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+  if (open) {
+    screen_ = Screen::Card;
+    confirm_ = Confirm::None;
+    open_t_ = 0.0f;
+    focus_window_ = focus_item_ = show_focus_ = true;
+  } else {
+    if (input_ && input_->capturing()) input_->cancel_capture();
+    confirm_ = Confirm::None;
+  }
 }
 
 bool Menu::handle_event(const SDL_Event& e) {
   if (!initialised_) return false;
-  const bool toggle = (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE && !e.key.repeat) ||
-                      (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_GUIDE);
-  if (toggle) {
+  // Esc opens the menu; once it is open it goes back a level (update()).
+  // The guide button always opens or closes it.
+  const bool esc = e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE && !e.key.repeat;
+  const bool guide = e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_GUIDE;
+  if (guide || (esc && !open_)) {
     set_open(!open_);
     return true;
   }
@@ -123,359 +185,743 @@ bool Menu::handle_event(const SDL_Event& e) {
   }
 }
 
-void Menu::notify(std::string message) {
-  notices_.push_back({std::move(message), Clock::now() + kNoticeTime});
+void Menu::notify(std::string message, NoticeKind kind) {
+  const auto reading = kNoticeTimePerChar * static_cast<int>(std::min<std::size_t>(message.size(), 1000));
+  const Clock::time_point now = Clock::now();
+  const Clock::time_point until = now + std::clamp<Clock::duration>(reading, kNoticeTime, kNoticeTimeMax);
+  // The same message again (a save that keeps failing) stays up once.
+  for (Notice& n : notices_) {
+    if (n.text == message) {
+      n.until = until;
+      n.kind = kind;
+      return;
+    }
+  }
+  notices_.push_back({std::move(message), kind, now, until});
   if (notices_.size() > 4) notices_.erase(notices_.begin());
 }
 
 bool Menu::visible() const { return open_ || paused_ || !notices_.empty(); }
 
 void Menu::apply_scale(float scale) {
-  // Sizes are scaled from the defaults each time (ScaleAllSizes multiplies).
-  ImGuiStyle style;
-  ImGui::StyleColorsDark(&style);
-  style.WindowRounding = 8.0f;
-  style.FrameRounding = 4.0f;
-  style.GrabRounding = 4.0f;
-  style.WindowPadding = ImVec2(16, 14);
-  style.FramePadding = ImVec2(8, 5);
-  style.ItemSpacing = ImVec2(10, 8);
-  style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
-  style.Colors[ImGuiCol_WindowBg].w = 0.94f;
-  style.ScaleAllSizes(scale);
-  style.FontScaleMain = 1.35f;  // 13-pixel default font, about 18 pixels at 720p
-  style.FontScaleDpi = scale;
-  ImGui::GetStyle() = style;
+  theme::apply_style(ImGui::GetStyle(), scale);
+  theme::set_scale(scale);
   scale_ = scale;
+}
+
+void Menu::block_gamepad_while_capturing(const MenuModel& m) {
+  // While an input is being chosen for a control, and until every button is
+  // up again afterwards, the gamepad does not navigate: binding B must not
+  // also go back, nor binding A add another binding.
+  // (The frame the capture ends on, the bound button is still down but
+  // ImGui has not polled it yet: stay blocked until it has.)
+  const bool capturing = m.input && m.input->capturing();
+  if (capturing || was_capturing_) {
+    pad_block_ = true;
+  } else if (pad_block_) {
+    bool down = false;
+    for (int k = ImGuiKey_GamepadStart; k <= ImGuiKey_GamepadRStickDown; ++k) down = down || ImGui::IsKeyDown(static_cast<ImGuiKey>(k));
+    if (!down) pad_block_ = false;
+  }
+  was_capturing_ = capturing;
+  ImGuiIO& io = ImGui::GetIO();
+  if (pad_block_) io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
+  else io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+}
+
+bool Menu::back_pressed() const {
+  if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) return true;
+  if (pad_block_) return false;
+  const ImGuiIO& io = ImGui::GetIO();
+  const ImGuiKey cancel = io.ConfigNavSwapGamepadButtons ? ImGuiKey_GamepadFaceDown : ImGuiKey_GamepadFaceRight;
+  return ImGui::IsKeyPressed(cancel, false);
+}
+
+void Menu::go_back(MenuModel& m) {
+  if (confirm_ != Confirm::None) {
+    confirm_ = Confirm::None;
+    return;
+  }
+  if (screen_ == Screen::Settings) {
+    if (m.input && m.input->capturing()) m.input->cancel_capture();
+    screen_ = Screen::Card;
+    focus_window_ = focus_item_ = show_focus_ = true;
+    return;
+  }
+  set_open(false);
+}
+
+void Menu::set_page(Page page, MenuModel& m, bool show_focus) {
+  if (page == page_) return;
+  if (page_ == Page::Controls && m.input && m.input->capturing()) m.input->cancel_capture();
+  page_ = page;
+  focus_item_ = scroll_top_ = true;
+  show_focus_ = show_focus;
+}
+
+void Menu::take_focus() {
+  if (!focus_item_) return;
+  w::focus(w::last_item(), show_focus_);
+  focus_item_ = false;
 }
 
 void Menu::update(MenuModel& m) {
   if (!initialised_) return;
+  input_ = m.input;
+  block_gamepad_while_capturing(m);
   ImGui_ImplSDLGPU3_NewFrame();
   ImGui_ImplSDL3_NewFrame();
   const ImGuiIO& io = ImGui::GetIO();
   // The menu grows with the window, like the game's own picture.
   const float scale = std::clamp(io.DisplaySize.y / 720.0f, 0.75f, 4.0f);
   if (std::abs(scale - scale_) > 0.01f) apply_scale(scale);
+  theme::set_scale(scale_);
   ImGui::NewFrame();
 
+  // A list left open when the menu closed (the guide button) must not come
+  // back with it.
+  if (!open_ && ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+    ImGui::ClosePopupToLevel(0, false);
   if (open_) {
-    ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), io.DisplaySize, IM_COL32(0, 0, 0, 110));
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always,
-                            ImVec2(0.5f, 0.5f));
-    // A fixed size (the tabs' contents scroll), within the window.
-    ImGui::SetNextWindowSize(ImVec2(std::min(kMenuWidth * scale_, io.DisplaySize.x * 0.96f),
-                                    std::min(kMenuHeight * scale_, io.DisplaySize.y * 0.94f)),
-                             ImGuiCond_Always);
-    if (focus_) {
-      ImGui::SetNextWindowFocus();
-      focus_ = false;
-    }
-    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-                                   ImGuiWindowFlags_NoSavedSettings;
-    if (ImGui::Begin("OpenGP", nullptr, flags)) {
-      ImGui::TextDisabled("%s", m.title);
-      if (ImGui::BeginTabBar("tabs")) {
-        // Room for the buttons and the line of keys below the tab.
-        const ImGuiStyle& style = ImGui::GetStyle();
-        const float footer = ImGui::GetFrameHeightWithSpacing() + ImGui::GetTextLineHeightWithSpacing() +
-                             style.ItemSpacing.y * 2 + style.SeparatorTextBorderSize;
-        auto tab = [&](const char* name, auto&& contents) {
-          if (!ImGui::BeginTabItem(name)) return false;
-          ImGui::BeginChild("page", ImVec2(0, -footer));
-          contents();
-          ImGui::EndChild();
-          ImGui::EndTabItem();
-          return true;
-        };
-        tab("Game", [&] { game_tab(m); });
-        tab("Video", [&] { video_tab(m); });
-        tab("Sound", [&] { sound_tab(m); });
-        if (m.input && !tab("Controls", [&] { controls_tab(m); }) && m.input->capturing()) {
-          m.input->cancel_capture();  // left the tab
-        }
-        ImGui::EndTabBar();
-      }
-      ImGui::Spacing();
-      ImGui::Separator();
-      if (ImGui::Button("Resume")) set_open(false);
-      ImGui::SameLine();
-      if (ImGui::Button("Quit") && m.quit) m.quit();
-      const std::string pause = pause_keys(m, true);
-      hint("Esc: menu    %s%sF11: fullscreen    F12: screenshot", pause.c_str(), pause.empty() ? "" : ": pause    ");
-    }
-    ImGui::End();
-  } else if (paused_) {
-    draw_paused(m);
+    open_t_ = std::min(1.0f, open_t_ + io.DeltaTime / kFadeIn);
+    // Esc or B: one level up, unless ImGui just used it to close a list.
+    if (back_pressed() && !popup_was_open_) go_back(m);
+  }
+  if (open_) {
+    draw_scrims(open_t_);
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, open_t_);
+    if (screen_ == Screen::Card) draw_card(m);
+    else draw_settings(m);
+    draw_confirm(m);
+    ImGui::PopStyleVar();
+    popup_was_open_ = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel) &&
+                      confirm_ == Confirm::None;
+  } else {
+    popup_was_open_ = false;
+    if (paused_) draw_paused(m);
   }
   draw_notices();
   ImGui::Render();
   rendered_ = true;
 }
 
-void Menu::game_tab(MenuModel& m) {
+// ---- The screens ------------------------------------------------------------------------------
+
+void Menu::draw_scrims(float alpha) {
+  const ImVec2 size = ImGui::GetIO().DisplaySize;
+  ImDrawList* bg = ImGui::GetBackgroundDrawList();
+  bg->AddRectFilled(ImVec2(0, 0), size, theme::alpha(theme::kAsphalt, 0.45f * alpha));
+  // Darker towards the bottom, like the launcher's hero pane.
+  const ImU32 clear = theme::alpha(theme::kAsphaltDeep, 0.0f), deep = theme::alpha(theme::kAsphaltDeep, 0.85f * alpha);
+  bg->AddRectFilledMultiColor(ImVec2(0, size.y * 0.55f), size, clear, clear, deep, deep);
+  if (screen_ == Screen::Settings) bg->AddRectFilled(ImVec2(0, 0), size, theme::alpha(theme::kBlack, 0.35f * alpha));
+}
+
+void Menu::draw_card(MenuModel& m) {
+  const ImGuiIO& io = ImGui::GetIO();
+  const float width = std::min(px(400), io.DisplaySize.x - px(48));
+  ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+  ImGui::SetNextWindowSizeConstraints(ImVec2(width, 0), ImVec2(width, FLT_MAX));
+  if (focus_window_) {
+    ImGui::SetNextWindowFocus();
+    focus_window_ = false;
+  }
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(px(24), px(24)));
+  if (ImGui::Begin("##card", nullptr, kScreenFlags | ImGuiWindowFlags_AlwaysAutoResize)) {
+    window_panel(theme::alpha(theme::kAsphaltDeep, 0.94f), px(16));
+    w::text(m.title, 22, theme::kChalk, theme::Weight::Bold);
+    w::text(m.linked ? "Running: a linked game can't pause" : paused_ ? "Paused" : "Running", theme::kBody, theme::kDim);
+    w::gap(10);
+    if (w::big_button("Resume", w::Kind::Primary)) set_open(false);
+    take_focus();
+    if (w::big_button("Settings")) {
+      screen_ = Screen::Settings;
+      focus_window_ = focus_item_ = scroll_top_ = true;
+      show_focus_ = GImGui->NavCursorVisible;
+    }
+    if (m.test_menu && w::big_button("Test menu")) confirm_ = Confirm::TestMenu;
+    if (w::big_button("Quit")) confirm_ = Confirm::Quit;
+    w::gap(6);
+    draw_hints(false);
+  }
+  ImGui::End();
+  ImGui::PopStyleVar();
+}
+
+void Menu::draw_hints(bool pages) {
+  const bool pad = using_gamepad();
+  const PadLabels labels = pad ? pad_labels() : PadLabels{};
+  w::key_hint(pad ? labels.select : "Enter", "Select");
+  ImGui::SameLine(0, px(14));
+  w::key_hint(pad ? labels.back : "Esc", "Back");
+  if (pages) {
+    ImGui::SameLine(0, px(14));
+    w::key_hint(pad ? "LB" : "PgUp", "");
+    ImGui::SameLine(0, px(2));
+    w::key_hint(pad ? "RB" : "PgDn", "Page");
+  }
+}
+
+void Menu::draw_settings(MenuModel& m) {
+  const ImGuiIO& io = ImGui::GetIO();
+  const ImVec2 size(std::min(px(940), io.DisplaySize.x - px(48)), std::min(px(640), io.DisplaySize.y - px(48)));
+  ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+  ImGui::SetNextWindowSize(size);
+  if (focus_window_) {
+    ImGui::SetNextWindowFocus();
+    focus_window_ = false;
+  }
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+  const ImGuiWindowFlags flags = kScreenFlags | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+  if (ImGui::Begin("##settings", nullptr, flags)) {
+    window_panel(theme::kAsphalt, px(16));
+    // LB and RB, PageUp and PageDown: the previous and next page.
+    {
+      ImGuiContext& g = *GImGui;
+      const ImGuiID id = g.CurrentWindow->ID;
+      const bool pad = (io.ConfigFlags & ImGuiConfigFlags_NavEnableGamepad) != 0;
+      const ImGuiInputFlags repeat = static_cast<int>(ImGuiInputFlags_Repeat) | static_cast<int>(ImGuiInputFlags_RepeatRateDefault);
+      ImGui::SetKeyOwner(ImGuiKey_PageUp, id);
+      ImGui::SetKeyOwner(ImGuiKey_PageDown, id);
+      ImGui::SetKeyOwner(ImGuiKey_GamepadL1, id);
+      ImGui::SetKeyOwner(ImGuiKey_GamepadR1, id);
+      int step = 0;
+      if (ImGui::IsKeyPressed(ImGuiKey_PageUp, repeat, id) || (pad && ImGui::IsKeyPressed(ImGuiKey_GamepadL1, repeat, id))) step = -1;
+      if (ImGui::IsKeyPressed(ImGuiKey_PageDown, repeat, id) || (pad && ImGui::IsKeyPressed(ImGuiKey_GamepadR1, repeat, id))) step = 1;
+      if (step != 0 && confirm_ == Confirm::None) {
+        int page = (static_cast<int>(page_) + step + kPageCount) % kPageCount;
+        if (!m.input && page == static_cast<int>(Page::Controls)) page = (page + step + kPageCount) % kPageCount;
+        set_page(static_cast<Page>(page), m, true);
+      }
+    }
+    const ImVec2 origin = ImGui::GetWindowPos();
+    const float nav_w = px(220);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(origin, origin + ImVec2(nav_w, size.y), ImGui::GetColorU32(theme::kAsphaltDeep), px(16), ImDrawFlags_RoundCornersLeft);
+
+    // The page list.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(px(18), px(18)));
+    ImGui::BeginChild("##pages", ImVec2(nav_w, size.y), ImGuiChildFlags_AlwaysUseWindowPadding,
+                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::Indent(px(10));
+    w::text("Settings", theme::kHeading, theme::kChalk, theme::Weight::Bold);
+    ImGui::Unindent(px(10));
+    w::gap(8);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(px(10), px(4)));
+    for (int i = 0; i < kPageCount; ++i) {
+      if (i == static_cast<int>(Page::Controls) && !m.input) continue;
+      if (w::nav_item(kPageNames[i], static_cast<int>(page_) == i)) set_page(static_cast<Page>(i), m, GImGui->NavCursorVisible);
+    }
+    ImGui::PopStyleVar();
+    // The hints and the note sit at the bottom.
+    {
+      ImGui::Indent(px(10));
+      const char* note = "Settings are shared with the launcher.";
+      float note_h;
+      {
+        theme::push_font(theme::Weight::Regular, theme::kSmall);
+        note_h = ImGui::CalcTextSize(note, nullptr, false, ImGui::GetContentRegionAvail().x).y;
+        theme::pop_font();
+      }
+      const float hints_h = px(22) * 2 + px(8);
+      const float bottom = ImGui::GetWindowContentRegionMax().y;
+      ImGui::SetCursorPosY(std::max(ImGui::GetCursorPosY(), bottom - note_h - px(14) - hints_h));
+      const bool pad = using_gamepad();
+      const PadLabels labels = pad ? pad_labels() : PadLabels{};
+      w::key_hint(pad ? labels.select : "Enter", "Select");
+      ImGui::SameLine(0, px(12));
+      w::key_hint(pad ? labels.back : "Esc", "Back");
+      w::key_hint(pad ? "LB" : "PgUp", "");
+      ImGui::SameLine(0, px(2));
+      w::key_hint(pad ? "RB" : "PgDn", "Page");
+      w::gap(4);
+      w::text_wrapped(note, theme::kSmall, theme::kDim);
+      ImGui::Unindent(px(10));
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleVar();
+
+    // The page: its name and the way out, then its settings.
+    ImGui::SameLine(0, 0);
+    ImGui::BeginChild("##right", ImVec2(size.x - nav_w, size.y), ImGuiChildFlags_None,
+                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    {
+      ImGui::SetCursorPos(ImVec2(px(36), px(16)));
+      w::text(kPageNames[static_cast<int>(page_)], theme::kHeading, theme::kChalk, theme::Weight::Bold);
+      // Back and Resume, right-aligned on the same line.
+      float back_w, resume_w;
+      {
+        theme::push_font(theme::Weight::Regular, theme::kBody);
+        back_w = std::round(ImGui::CalcTextSize("Back").x + px(32));
+        theme::pop_font();
+        theme::push_font(theme::Weight::Bold, theme::kBody);
+        resume_w = std::round(ImGui::CalcTextSize("Resume").x + px(32));
+        theme::pop_font();
+      }
+      ImGui::SameLine(size.x - nav_w - px(16) - back_w - px(10) - resume_w, 0);
+      ImGui::SetCursorPosY(px(16) + (px(26) * 1.3f - px(34)) * 0.5f);
+      if (w::pill_button("Back")) go_back(m);
+      ImGui::SameLine(0, px(10));
+      if (w::pill_button("Resume", w::Kind::Primary)) set_open(false);
+    }
+    ImGui::SetCursorPos(ImVec2(0, px(16) + px(26) * 1.3f + px(10)));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(px(24), px(8)));
+    ImGui::BeginChild("##page", ImVec2(size.x - nav_w - px(8), ImGui::GetContentRegionAvail().y - px(12)), ImGuiChildFlags_AlwaysUseWindowPadding);
+    if (scroll_top_) {
+      ImGui::SetScrollY(0.0f);
+      scroll_top_ = false;
+    }
+    draw_page(m);
+    w::gap(8);
+    ImGui::EndChild();
+    ImGui::PopStyleVar();
+    ImGui::EndChild();
+  }
+  ImGui::End();
+  ImGui::PopStyleVar();
+}
+
+void Menu::draw_page(MenuModel& m) {
+  switch (page_) {
+    case Page::Game: page_game(m); break;
+    case Page::Video: page_video(m); break;
+    case Page::Sound: page_sound(m); break;
+    case Page::Controls:
+      if (m.input) page_controls(m);
+      break;
+    case Page::Camera: page_camera(m); break;
+    case Page::Link: page_link(m); break;
+  }
+}
+
+// ---- The pages --------------------------------------------------------------------------------
+
+void Menu::page_game(MenuModel& m) {
   Settings& s = *m.settings;
   triforce::CardFolder& cards = *m.cards;
 
-  ImGui::SeparatorText("Mario Card");
+  w::section("Mario Card");
   const std::string held = cards.held();
   const bool held_exists = cards.exists(held);
   auto label = [&](const std::string& name) {
     if (name.empty()) return std::string("No card");
     return cards.exists(name) ? name : name + " (blank)";
   };
-  ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
-  if (ImGui::BeginCombo("##card", label(held).c_str())) {
-    auto option = [&](const std::string& name) {
-      if (ImGui::Selectable(label(name).c_str(), name == held)) {
-        cards.hold(name);
-        s.card = name;
-      }
-    };
-    option("");
-    for (const std::string& name : cards.list()) option(name);
-    if (!held.empty() && !held_exists) option(held);
-    ImGui::EndCombo();
+  std::vector<std::string> names, labels;
+  names.push_back("");
+  for (const std::string& name : cards.list()) names.push_back(name);
+  if (!held.empty() && !held_exists) names.push_back(held);
+  int index = 0;
+  for (std::size_t i = 0; i < names.size(); ++i) {
+    labels.push_back(label(names[i]));
+    if (names[i] == held) index = static_cast<int>(i);
   }
-  ImGui::SameLine();
-  if (ImGui::Button("New card")) {
+  std::string status;
+  if (cards.inserted()) status = "The card is in the virtual card reader.";
+  else if (held_exists) status = "You insert it when the game asks for your card.";
+  else if (!held.empty()) status = "A blank card: when the game asks \"Do you have Mario Card?\", answer No, then create one when it offers. It is saved as \"" + held + "\".";
+  else status = "Playing without a card. You can still create one after the game ends.";
+  if (w::row_choice({"Card", status.c_str()}, &index, labels)) {
+    cards.hold(names[static_cast<std::size_t>(index)]);
+    s.card = names[static_cast<std::size_t>(index)];
+  }
+  take_focus();
+  if (w::row_button({"New card", "A blank card, for a new player: the game fills it in."}, "New card")) {
     const std::string name = cards.unused_name();
     cards.hold(name);
     s.card = name;
   }
-  if (cards.inserted()) {
-    ImGui::TextWrapped("The card is loaded in the virtual card reader.");
-  } else if (held_exists) {
-    ImGui::TextWrapped("You insert it when the game asks for your card.");
-  } else if (!held.empty()) {
-    ImGui::TextWrapped(
-        "A blank card: when the game asks on startup \"Do you have Mario Card?\", answer No, Then create one in the following prompt. It is saved as "
-        "\"%s\".",
-        held.c_str());
-  } else {
-    ImGui::TextWrapped("Playing without a card. (You can still create one after the game ends.)");
-  }
-  hint("Cards are saved in %s", cards.dir().c_str());
+  const std::string where = "Cards are saved in " + cards.dir();
+  ImGui::Indent(px(12));
+  w::text_wrapped(where.c_str(), theme::kHelp, theme::kDim);
+  ImGui::Unindent(px(12));
 
-  ImGui::SeparatorText("Camera");
-  ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
-  static constexpr std::pair<CameraSource, const char*> kSources[] = {
-      {CameraSource::Off, "Off"}, {CameraSource::Webcam, "Webcam"}, {CameraSource::TestPattern, "Test pattern"}};
-  const char* source_label = "Off";
-  for (const auto& [source, text] : kSources)
-    if (source == s.camera) source_label = text;
-  if (ImGui::BeginCombo("Photos from", source_label)) {
-    for (const auto& [source, text] : kSources)
-      if (ImGui::Selectable(text, source == s.camera)) s.camera = source;
-    ImGui::EndCombo();
-  }
-  if (s.camera == CameraSource::Webcam) {
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
-    const std::string current = s.webcam.empty() ? std::string("Default") : s.webcam;
-    if (ImGui::BeginCombo("Webcam", current.c_str())) {
-      if (ImGui::IsWindowAppearing()) webcams_ = m.webcams ? m.webcams() : std::vector<std::string>{};
-      if (ImGui::Selectable("Default", s.webcam.empty())) s.webcam.clear();
-      for (const std::string& name : webcams_)
-        if (ImGui::Selectable(name.c_str(), name == s.webcam)) s.webcam = name;
-      ImGui::EndCombo();
-    }
-  }
-  ImGui::TextWrapped("The game takes your photo for your character. Now: %s.", m.camera_info.c_str());
-  hint("Changes take effect when the game restarts.");
+  w::section("Pause");
+  const std::string keys = pause_keys(m);
+  const std::string pause_help = m.linked ? "A linked game can't pause." : keys.empty() ? "" : keys + " pauses and resumes the game.";
+  w::row_toggle({"Pause while this menu is open", m.linked ? "A linked game can't pause." : "", !m.linked}, &s.pause_in_menu);
+  w::row_toggle({"Pause when the window is in the background", pause_help.c_str(), !m.linked}, &s.pause_in_background);
 
-  link_section(m);
+  w::section("Discord");
+  const char* discord_help = !s.rich_presence ? "" : m.discord ? "On your Discord profile: the game, character, cup, course and place."
+                                                              : "Discord isn't running on this computer.";
+  w::row_toggle({"Show what you're playing", discord_help}, &s.rich_presence);
 
-  ImGui::SeparatorText("Pause");
-  ImGui::Checkbox("Pause while this menu is open", &s.pause_in_menu);
-  ImGui::Checkbox("Pause when the window is unfocused", &s.pause_in_background);
-  if (m.linked) hint("When linked to another cabinet, Pausing is disabled.");
-  else if (const std::string keys = pause_keys(m); !keys.empty()) hint("%s pauses and resumes the game.", keys.c_str());
-
-  ImGui::SeparatorText("Discord");
-  ImGui::Checkbox("Show what you're playing", &s.rich_presence);
-  if (s.rich_presence)
-    hint("%s", m.discord ? "On your Discord profile: the game, character, cup, course and place."
-                         : "Discord isn't running on this computer.");
-
-  ImGui::SeparatorText("Arcade");
-  ImGui::Checkbox("Free play", &s.free_play);
-  if (m.test_menu) {
-    if (ImGui::Button("Test menu")) m.test_menu();
-    ImGui::SameLine();
-    ImGui::AlignTextToFramePadding();
-    hint("Open the Operator's Menu (Will restart the game)");
-  }
+  w::section("Arcade");
+  w::row_toggle({"Free play", "Play without coins."}, &s.free_play);
 }
 
-// Linked cabinets: this one's number, the local network, and who it sees.
-void Menu::link_section(MenuModel& m) {
+void Menu::page_video(MenuModel& m) {
+  Settings& s = *m.settings;
+  if (w::row_toggle({"Full screen", "F11 or Alt+Enter switches too."}, &s.fullscreen)) {}
+  take_focus();
+
+  static const std::vector<std::string> kAspects = {"Fit the window", "4:3 (original)", "16:9", "16:10", "21:9"};
+  static constexpr AspectRatio kAspectValues[] = {AspectRatio::Auto, AspectRatio::Original, AspectRatio::Wide16x9,
+                                                  AspectRatio::Wide16x10, AspectRatio::Wide21x9};
+  int aspect = 0;
+  for (int i = 0; i < 5; ++i)
+    if (kAspectValues[i] == s.aspect) aspect = i;
+  if (w::row_choice({"Aspect ratio", "Widescreen expands the view; some 2D elements keep their shape, some stretch to fit."}, &aspect, kAspects))
+    s.aspect = kAspectValues[aspect];
+
+  std::vector<std::string> resolutions;
+  resolutions.push_back("Match the window");
+  for (u32 scale = 1; scale <= video::Renderer::kMaxScale; ++scale)
+    resolutions.push_back(std::to_string(scale) + "x (" + std::to_string(640 * scale) + "x" + std::to_string(480 * scale) + ")");
+  int resolution = static_cast<int>(std::min<u32>(s.internal_resolution, video::Renderer::kMaxScale));
+  if (w::row_choice({"Resolution", "How sharply the game draws, as a multiple of the cabinet's own."}, &resolution, resolutions))
+    s.internal_resolution = static_cast<u32>(resolution);
+
+  w::row_toggle({"VSync", "Waits for the display's refresh: no tearing."}, &s.vsync);
+  w::row_toggle({"Even frame pacing", "Shows each frame on the game's own 60 Hz tick, as the cabinet's display does: evenly spaced, so smoother with FreeSync or G-Sync, and about half a frame later."}, &s.even_pacing);
+  w::row_text({"Renderer", ""}, m.video_info.c_str());
+}
+
+void Menu::page_sound(MenuModel& m) {
+  Settings& s = *m.settings;
+  float volume = static_cast<float>(s.volume);
+  if (w::row_slider({"Volume", ""}, &volume, 0, 100, 1, "%.0f%%")) s.volume = static_cast<int>(std::lround(volume));
+  take_focus();
+}
+
+void Menu::page_controls(MenuModel& m) {
+  using Kind = input::HostInput::DeviceKind;
+  input::HostInput& in = *m.input;
+  static constexpr std::pair<Kind, const char*> kKinds[] = {
+      {Kind::Keyboard, "Keyboard"}, {Kind::Gamepad, "Gamepad"}, {Kind::Joystick, "Wheel and other controllers"}};
+  ImGui::Indent(px(12));
+  for (const auto& [kind, name] : kKinds) {
+    if (kind != Kind::Keyboard) ImGui::SameLine(0, px(6));
+    if (w::device_pill(name, controls_kind_ == kind) && controls_kind_ != kind) {
+      controls_kind_ = kind;
+      in.cancel_capture();
+    }
+    if (kind == Kind::Keyboard) take_focus();
+  }
+  ImGui::Unindent(px(12));
+  w::gap(6);
+  const Kind kind = controls_kind_;
+
+  // The cabinet's controls and what drives each.
+  const float label_w = px(150), chip_h = px(30);
+  for (std::size_t control = 0; control < input::HostInput::kControlCount; ++control) {
+    // Keys cannot hold the wheel half-way: they steer with "steer left/right".
+    if (kind == Kind::Keyboard && input::HostInput::control_is_axis(control)) continue;
+    ImGui::PushID(static_cast<int>(control));
+    const ImVec2 start = ImGui::GetCursorPos();
+    {
+      theme::push_font(theme::Weight::Regular, theme::kLead);
+      const float text_h = ImGui::GetTextLineHeight();
+      ImGui::SetCursorPos(ImVec2(start.x + px(12), start.y + std::round((chip_h - text_h) * 0.5f)));
+      w::text(input::HostInput::control_label(control), theme::kLead);
+      theme::pop_font();
+    }
+    const float chips_x = start.x + px(12) + label_w;
+    ImGui::SetCursorPos(ImVec2(chips_x, start.y));
+    const std::vector<std::string> names = in.bindings(kind, control);
+    bool first = true;
+    auto place = [&](float width) {
+      if (!first) {
+        ImGui::SameLine(0, px(6));
+        if (ImGui::GetContentRegionAvail().x < width) {
+          ImGui::NewLine();
+          ImGui::SetCursorPosX(chips_x);
+        }
+      }
+      first = false;
+    };
+    for (std::size_t i = 0; i < names.size(); ++i) {
+      ImGui::PushID(static_cast<int>(i));
+      place(w::binding_chip_width(names[i].c_str()));
+      if (w::binding_chip(names[i].c_str())) in.remove_binding(kind, control, i);
+      ImGui::PopID();
+    }
+    if (in.capturing() && capture_control_ == control) {
+      place(px(200));
+      w::waiting_chip(kind == Kind::Keyboard                        ? "Press a key"
+                      : input::HostInput::control_is_axis(control) ? "Move a stick or wheel"
+                                                                   : "Press a button or move a stick");
+      ImGui::SameLine(0, px(6));
+      if (w::pill_button("Cancel")) in.cancel_capture();
+    } else {
+      place(px(80));
+      if (w::add_chip()) {
+        in.start_capture(kind, control);
+        capture_control_ = control;
+      }
+    }
+    ImGui::PopID();
+  }
+
+  w::divider();
+  if (kind == Kind::Keyboard) {
+    float speed = in.steer_speed();
+    if (w::row_slider({"Turn speed", "How fast keys turn the wheel, in full turns a second."}, &speed, 0.5f, 10.0f, 0.5f, "%.1f"))
+      in.set_steer_speed(speed);
+  } else {
+    float deadzone = in.deadzone(kind) * 100.0f;
+    if (w::row_slider({"Stick dead zone", "How far a stick or wheel moves before the game reads it."}, &deadzone, 0, 50, 1, "%.0f%%"))
+      in.set_deadzone(kind, deadzone / 100.0f);
+    float strength = in.force_feedback() * 100.0f;
+    if (w::row_slider({"Force feedback", "Wheels get the road's forces; gamepads rumble when they are strong."}, &strength, 0, 200, 5, "%.0f%%"))
+      in.set_force_feedback(strength / 100.0f);
+  }
+  bool background = in.background_input();
+  if (w::row_toggle({"Use the controls in the background too",
+                     input::HostInput::background_keyboard()
+                         ? "Every OpenGP window reacts, active or not: for driving several copies at once."
+                         : "Gamepads reach every OpenGP window, active or not (the keyboard only the active one)."},
+                    &background))
+    in.set_background_input(background);
+  if (w::row_button({"Bindings", "Every device goes back to OpenGP's defaults."}, "Restore defaults")) confirm_ = Confirm::RestoreDefaults;
+  const std::string where = "Saved in " + in.path();
+  ImGui::Indent(px(12));
+  w::text_wrapped(where.c_str(), theme::kHelp, theme::kDim);
+  ImGui::Unindent(px(12));
+}
+
+void Menu::page_camera(MenuModel& m) {
+  Settings& s = *m.settings;
+  if (m.restart_needed) {
+    w::info_box("Changes take effect when the game restarts.");
+    w::gap(4);
+  }
+  static const std::vector<std::string> kSources = {"Off", "Webcam", "Test pattern"};
+  static constexpr CameraSource kSourceValues[] = {CameraSource::Off, CameraSource::Webcam, CameraSource::TestPattern};
+  int source = 0;
+  for (int i = 0; i < 3; ++i)
+    if (kSourceValues[i] == s.camera) source = i;
+  if (w::row_choice({"Photos from", "The game takes your photo for your character."}, &source, kSources)) s.camera = kSourceValues[source];
+  take_focus();
+  if (s.camera == CameraSource::Webcam) {
+    std::vector<std::string> names;
+    names.push_back("Default");
+    for (const std::string& name : webcams_) names.push_back(name);
+    int index = 0;
+    for (std::size_t i = 0; i < webcams_.size(); ++i)
+      if (webcams_[i] == s.webcam) index = static_cast<int>(i) + 1;
+    if (!s.webcam.empty() && index == 0) {
+      names.push_back(s.webcam);
+      index = static_cast<int>(names.size()) - 1;
+    }
+    if (w::row_choice({"Webcam", ""}, &index, names, [&] { webcams_ = m.webcams ? m.webcams() : std::vector<std::string>{}; }))
+      s.webcam = index == 0 ? std::string() : names[static_cast<std::size_t>(index)];
+  }
+  w::row_text({"This run's camera", ""}, m.camera_info.c_str());
+}
+
+void Menu::page_link(MenuModel& m) {
   Settings& s = *m.settings;
   const triforce::LinkStatus& link = m.link;
-  ImGui::SeparatorText("Linked cabinets");
-  static constexpr const char* kNumbers[] = {"The game's setting", "1", "2", "3", "4"};
-  ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
-  if (ImGui::BeginCombo("Cabinet number", kNumbers[std::clamp(s.cabinet, 0, 4)])) {
-    for (int n = 0; n <= 4; ++n)
-      if (ImGui::Selectable(kNumbers[n], n == s.cabinet)) s.cabinet = n;
-    ImGui::EndCombo();
+  if (m.restart_needed) {
+    w::info_box("Changes take effect when the game restarts.");
+    w::gap(4);
   }
-  ImGui::Checkbox("Link over the local network", &s.lan);
+  static const std::vector<std::string> kNumbers = {"The game's setting", "1", "2", "3", "4"};
+  int cabinet = std::clamp(s.cabinet, 0, 4);
+  if (w::row_choice({"Cabinet number", "Give each OpenGP its own number, 1 to 4."}, &cabinet, kNumbers)) s.cabinet = cabinet;
+  take_focus();
+  w::row_toggle({"Link over the local network", "With copies of OpenGP on other computers, not just this one."}, &s.lan);
 
+  // Who it sees, with a dot: green linked, blue looking, red trouble.
   std::string linked, found;
   for (int n = 1; n <= 4; ++n) {
     if (link.connected[n]) linked += (linked.empty() ? "" : ", ") + std::to_string(n);
     else if (link.found[n]) found += (found.empty() ? "" : ", ") + std::to_string(n);
   }
+  std::string status;
+  ImU32 dot = theme::kFaint;
   if (!link.on || link.cabinet == 0) {
-    ImGui::TextWrapped("Not linked yet.");
+    status = "Not linked.";
   } else if (!link.error.empty()) {
-    ImGui::TextWrapped("%s", link.error.c_str());
+    status = link.error;
+    dot = theme::kRed;
   } else if (link.clash) {
-    ImGui::TextWrapped("Another cabinet is also number %d: give each one its own number.", link.cabinet);
+    status = "Another cabinet is also number " + std::to_string(link.cabinet) + ": give each one its own number.";
+    dot = theme::kRed;
   } else if (!linked.empty()) {
-    ImGui::TextWrapped("This is cabinet %d, linked with %s.", link.cabinet, linked.c_str());
+    status = "This is cabinet " + std::to_string(link.cabinet) + ", linked with " + linked + ".";
+    dot = theme::kGreen;
   } else if (!found.empty()) {
-    ImGui::TextWrapped("This is cabinet %d. Found %s, linking...", link.cabinet, found.c_str());
+    status = "This is cabinet " + std::to_string(link.cabinet) + ". Found " + found + ", linking...";
+    dot = theme::kBlue;
   } else {
-    ImGui::TextWrapped("This is cabinet %d, looking for other cabinets %s.", link.cabinet,
-                       s.lan ? "on this computer and the local network" : "on this computer");
+    status = "This is cabinet " + std::to_string(link.cabinet) + ", looking for other cabinets " +
+             (s.lan ? "on this computer and the local network." : "on this computer.");
+    dot = theme::kBlue;
   }
-  hint("Give each OpenGP its own number. Changes take effect when the game restarts.");
+  w::gap(6);
+  ImGui::Indent(px(12));
+  {
+    const ImVec2 p = ImGui::GetCursorScreenPos();
+    const float dot_r = px(5);
+    theme::push_font(theme::Weight::Regular, theme::kBody);
+    const float line_h = ImGui::GetTextLineHeight();
+    theme::pop_font();
+    ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(p.x + dot_r, p.y + line_h * 0.5f), dot_r, ImGui::GetColorU32(dot));
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + dot_r * 2 + px(8));
+    w::text_wrapped(status.c_str(), theme::kBody, theme::kChalk);
+  }
+  for (const std::string& other : link.incompatible) {
+    const std::string line = "OpenGP at " + other + " can't link with this one: run the same version on every cabinet.";
+    w::text_wrapped(line.c_str(), theme::kBody, theme::kDim);
+  }
+  ImGui::Unindent(px(12));
 }
 
-void Menu::video_tab(MenuModel& m) {
-  Settings& s = *m.settings;
-  ImGui::Checkbox("Fullscreen (F11)", &s.fullscreen);
+// ---- Confirmations ----------------------------------------------------------------------------
 
-  static constexpr std::pair<AspectRatio, const char*> kAspects[] = {
-      {AspectRatio::Auto, "Scale to fit"}, {AspectRatio::Original, "4:3 (original)"}, {AspectRatio::Wide16x9, "16:9"},
-      {AspectRatio::Wide16x10, "16:10"},     {AspectRatio::Wide21x9, "21:9"},
-  };
-  const char* current = "";
-  for (const auto& [aspect, name] : kAspects)
-    if (aspect == s.aspect) current = name;
-  ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
-  if (ImGui::BeginCombo("Aspect ratio", current)) {
-    for (const auto& [aspect, name] : kAspects)
-      if (ImGui::Selectable(name, aspect == s.aspect)) s.aspect = aspect;
-    ImGui::EndCombo();
-  }
-
-  auto resolution = [](u32 scale) {
-    if (scale == 0) return std::string("Scale to fit");
-    return std::to_string(scale) + "x (" + std::to_string(640 * scale) + "x" + std::to_string(480 * scale) + ")";
-  };
-  ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
-  if (ImGui::BeginCombo("Resolution", resolution(s.internal_resolution).c_str())) {
-    for (u32 scale = 0; scale <= video::Renderer::kMaxScale; ++scale)
-      if (ImGui::Selectable(resolution(scale).c_str(), scale == s.internal_resolution)) s.internal_resolution = scale;
-    ImGui::EndCombo();
-  }
-  ImGui::Checkbox("VSync", &s.vsync);
-  ImGui::Checkbox("Even frame pacing", &s.even_pacing);
-  hint("Shows each frame on the game's own 60 Hz tick, as the cabinet's display does: evenly spaced, so smoother "
-       "with FreeSync or G-Sync, and about half a frame later.");
-  hint("%s", m.video_info.c_str());
-  ImGui::TextWrapped(
-      "Widescreen expands the viewport, some 2D elements are at their original aspect ratio and some are stretched to fit.");
-}
-
-void Menu::sound_tab(MenuModel& m) {
-  Settings& s = *m.settings;
-  ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
-  ImGui::SliderInt("Volume", &s.volume, 0, 100, "%d%%");
-}
-
-void Menu::controls_tab(MenuModel& m) {
-  using Kind = input::HostInput::DeviceKind;
-  input::HostInput& in = *m.input;
-  static constexpr std::pair<Kind, const char*> kKinds[] = {
-      {Kind::Keyboard, "Keyboard"}, {Kind::Gamepad, "Gamepad"}, {Kind::Joystick, "Wheel / joystick"}};
-  for (const auto& [kind, name] : kKinds) {
-    if (kind != Kind::Keyboard) ImGui::SameLine();
-    if (ImGui::RadioButton(name, controls_kind_ == kind)) {
-      controls_kind_ = kind;
-      in.cancel_capture();
-    }
-  }
-  const Kind kind = controls_kind_;
-  const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp;
-  if (ImGui::BeginTable("bindings", 2, flags)) {
-    ImGui::TableSetupColumn("Control", ImGuiTableColumnFlags_WidthFixed, 130.0f * scale_);
-    ImGui::TableSetupColumn("Inputs", ImGuiTableColumnFlags_WidthStretch);
-    for (std::size_t control = 0; control < input::HostInput::kControlCount; ++control) {
-      // Keys cannot hold the wheel half-way: they steer with "steer left/right".
-      if (kind == Kind::Keyboard && input::HostInput::control_is_axis(control)) continue;
-      ImGui::PushID(static_cast<int>(control));
-      ImGui::TableNextRow();
-      ImGui::TableNextColumn();
-      ImGui::AlignTextToFramePadding();
-      ImGui::TextUnformatted(input::HostInput::control_label(control));
-      ImGui::TableNextColumn();
-      const std::vector<std::string> names = in.bindings(kind, control);
-      for (std::size_t i = 0; i < names.size(); ++i) {
-        ImGui::PushID(static_cast<int>(i));
-        if (ImGui::SmallButton((names[i] + "  x").c_str())) in.remove_binding(kind, control, i);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove");
-        ImGui::PopID();
-        ImGui::SameLine();
+void Menu::draw_confirm(MenuModel& m) {
+  const char* const kId = "##confirm";
+  if (confirm_ == Confirm::None) {
+    if (ImGui::IsPopupOpen(kId)) {
+      // Closed by Esc or B: the popup follows.
+      ImGui::SetNextWindowPos(ImVec2(-1000, -1000));
+      if (ImGui::BeginPopupModal(kId, nullptr, kScreenFlags | ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
       }
-      if (in.capturing() && capture_control_ == control) {
-        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "%s",
-                           kind == Kind::Keyboard   ? "Press a key..."
-                           : input::HostInput::control_is_axis(control) ? "Move a joystick..."
-                                                                        : "Press a button or move a joystick...");
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Cancel")) in.cancel_capture();
-      } else if (ImGui::SmallButton("+")) {
-        in.start_capture(kind, control);
-        capture_control_ = control;
-      }
-      ImGui::PopID();
     }
-    ImGui::EndTable();
+    return;
   }
-  hint("Click an input to remove it; + adds one (Esc to cancel).");
-
-  ImGui::Spacing();
-  ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.45f);
-  float strength = in.force_feedback() * 100.0f;
-  if (ImGui::SliderFloat("Vibration strength", &strength, 0.0f, 200.0f, "%.0f%%")) in.set_force_feedback(strength / 100.0f);
-  if (kind == Kind::Keyboard) {
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.45f);
-    float speed = in.steer_speed();
-    if (ImGui::SliderFloat("Turn speed", &speed, 0.5f, 10.0f, "%.1f turns/s")) in.set_steer_speed(speed);
-  } else {
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.45f);
-    float deadzone = in.deadzone(kind) * 100.0f;
-    if (ImGui::SliderFloat("Stick Deadzone", &deadzone, 0.0f, 50.0f, "%.0f%%")) in.set_deadzone(kind, deadzone / 100.0f);
+  if (!ImGui::IsPopupOpen(kId)) ImGui::OpenPopup(kId);
+  const ImGuiIO& io = ImGui::GetIO();
+  const float width = std::min(px(460), io.DisplaySize.x - px(64));
+  ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+  ImGui::SetNextWindowSizeConstraints(ImVec2(width, 0), ImVec2(width, FLT_MAX));
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(px(24), px(24)));
+  if (ImGui::BeginPopupModal(kId, nullptr, kScreenFlags | ImGuiWindowFlags_AlwaysAutoResize)) {
+    window_panel(theme::kPanel, px(14));
+    const char* heading = "";
+    std::string text;
+    const char* action = "";
+    w::Kind kind = w::Kind::Primary;
+    std::string title = m.title;
+    switch (confirm_) {
+      case Confirm::Quit:
+        title = "Quit " + std::string(m.title) + "?";
+        heading = title.c_str();
+        text = "Your settings are saved. A race in progress ends, and the game closes.";
+        action = "Quit";
+        kind = w::Kind::Danger;
+        break;
+      case Confirm::TestMenu:
+        heading = "Open the test menu?";
+        text = "The game restarts into the operator's menu.";
+        if (m.linked) text += " Linked cabinets lose the link.";
+        action = "Test menu";
+        break;
+      case Confirm::RestoreDefaults:
+        heading = "Restore the default controls?";
+        text = "Every device's bindings go back to OpenGP's defaults.";
+        action = "Restore";
+        kind = w::Kind::Danger;
+        break;
+      case Confirm::None: break;
+    }
+    w::text_wrapped(heading, theme::kTitle, theme::kChalk, theme::Weight::Bold);
+    w::gap(4);
+    w::text_wrapped(text.c_str(), theme::kBody, theme::kDim);
+    w::gap(10);
+    float cancel_w, action_w;
+    {
+      theme::push_font(theme::Weight::Regular, theme::kBody);
+      cancel_w = std::round(ImGui::CalcTextSize("Cancel").x + px(32));
+      theme::pop_font();
+      theme::push_font(theme::Weight::Bold, theme::kBody);
+      action_w = std::round(ImGui::CalcTextSize(action).x + px(32));
+      theme::pop_font();
+    }
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - cancel_w - px(10) - action_w);
+    if (w::pill_button("Cancel")) confirm_ = Confirm::None;
+    ImGui::SetItemDefaultFocus();
+    ImGui::SameLine(0, px(10));
+    if (w::pill_button(action, kind)) {
+      const Confirm what = confirm_;
+      confirm_ = Confirm::None;
+      switch (what) {
+        case Confirm::Quit:
+          if (m.quit) m.quit();
+          break;
+        case Confirm::TestMenu:
+          if (m.test_menu) m.test_menu();
+          break;
+        case Confirm::RestoreDefaults:
+          if (m.input) m.input->restore_defaults();
+          break;
+        case Confirm::None: break;
+      }
+    }
+    if (confirm_ == Confirm::None) ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
   }
-  bool background = in.background_input();
-  if (ImGui::Checkbox("Use the controls in the background too", &background)) in.set_background_input(background);
-  hint("%s", input::HostInput::background_keyboard()
-                 ? "Every OpenGP window reacts, active or not: for driving several copies at once."
-                 : "Gamepads reach every OpenGP window, active or not (the keyboard only the active one).");
-  if (ImGui::Button("Restore defaults")) in.restore_defaults();
-  hint("Saved in %s", in.path().c_str());
+  ImGui::PopStyleVar();
 }
+
+// ---- Over the game ----------------------------------------------------------------------------
 
 void Menu::draw_paused(MenuModel& m) {
   const ImGuiIO& io = ImGui::GetIO();
-  ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), io.DisplaySize, IM_COL32(0, 0, 0, 80));
-  ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always,
-                          ImVec2(0.5f, 0.5f));
-  ImGui::SetNextWindowBgAlpha(0.75f);
-  const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
-                                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
-                                 ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs;
-  if (ImGui::Begin("##paused", nullptr, flags)) {
-    ImGui::SetWindowFontScale(1.6f);
-    ImGui::TextUnformatted("Paused");
-    ImGui::SetWindowFontScale(1.0f);
-    const std::string keys = pause_keys(m);
-    if (!keys.empty()) ImGui::TextDisabled("%s: resume", keys.c_str());
+  ImDrawList* dl = ImGui::GetForegroundDrawList();
+  dl->AddRectFilled(ImVec2(0, 0), io.DisplaySize, theme::alpha(theme::kAsphalt, 0.3f));
+  // A pill: "Paused", then the keys that resume.
+  const std::string keys = pause_keys(m);
+  std::vector<std::string> caps;
+  for (std::size_t start = 0; start < keys.size();) {
+    const std::size_t sep = keys.find(" / ", start);
+    caps.push_back(keys.substr(start, sep == std::string::npos ? std::string::npos : sep - start));
+    if (sep == std::string::npos) break;
+    start = sep + 3;
   }
-  ImGui::End();
+  const float h = px(56), pad = px(28), gap = px(18);
+  theme::push_font(theme::Weight::Bold, 24);
+  const ImVec2 title = ImGui::CalcTextSize("Paused");
+  theme::pop_font();
+  float keys_w = 0;
+  std::vector<ImVec2> cap_sizes;
+  theme::push_font(theme::Weight::Bold, theme::kSmall);
+  for (const std::string& cap : caps) {
+    cap_sizes.push_back(ImGui::CalcTextSize(cap.c_str()) + ImVec2(px(14), px(6)));
+    keys_w += cap_sizes.back().x + px(6);
+  }
+  theme::pop_font();
+  theme::push_font(theme::Weight::Regular, theme::kHelp);
+  const ImVec2 resume = ImGui::CalcTextSize("resumes");
+  const ImVec2 orw = ImGui::CalcTextSize("or");
+  theme::pop_font();
+  if (!caps.empty()) keys_w += (caps.size() - 1) * (orw.x + px(6)) + resume.x;
+  const float width = pad * 2 + title.x + (caps.empty() ? 0 : gap * 2 + 1 + keys_w);
+  const ImVec2 min(std::round((io.DisplaySize.x - width) * 0.5f), std::round((io.DisplaySize.y - h) * 0.5f));
+  const ImVec2 max = min + ImVec2(width, h);
+  dl->AddRectFilled(min, max, theme::alpha(theme::kAsphaltDeep, 0.92f), h * 0.5f);
+  dl->AddRect(min, max, theme::kLine, h * 0.5f, 0, 1.0f);
+  float x = min.x + pad;
+  theme::push_font(theme::Weight::Bold, 24);
+  dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(x, std::round(min.y + (h - title.y) * 0.5f)), theme::kChalk, "Paused");
+  theme::pop_font();
+  x += title.x;
+  if (!caps.empty()) {
+    x += gap;
+    dl->AddLine(ImVec2(x, min.y + px(16)), ImVec2(x, max.y - px(16)), theme::kLine);
+    x += gap;
+    for (std::size_t i = 0; i < caps.size(); ++i) {
+      const ImVec2 cmin(x, std::round(min.y + (h - cap_sizes[i].y) * 0.5f));
+      dl->AddRectFilled(cmin, cmin + cap_sizes[i], theme::kPanel, px(6));
+      dl->AddRect(cmin, cmin + cap_sizes[i], theme::kLine, px(6), 0, 1.0f);
+      theme::push_font(theme::Weight::Bold, theme::kSmall);
+      const ImVec2 ts = ImGui::CalcTextSize(caps[i].c_str());
+      dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(), cmin + ImVec2(std::round((cap_sizes[i].x - ts.x) * 0.5f), std::round((cap_sizes[i].y - ts.y) * 0.5f)),
+                  theme::kChalk, caps[i].c_str());
+      theme::pop_font();
+      x += cap_sizes[i].x + px(6);
+      theme::push_font(theme::Weight::Regular, theme::kHelp);
+      const char* word = i + 1 < caps.size() ? "or" : "resumes";
+      dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(x, std::round(min.y + (h - resume.y) * 0.5f)), theme::kDim, word);
+      x += (i + 1 < caps.size() ? orw.x : resume.x) + px(6);
+      theme::pop_font();
+    }
+  }
 }
 
 void Menu::draw_notices() {
@@ -483,16 +929,32 @@ void Menu::draw_notices() {
   std::erase_if(notices_, [&](const Notice& n) { return n.until <= now; });
   if (notices_.empty()) return;
   const ImGuiIO& io = ImGui::GetIO();
-  const float pad = 12.0f * scale_;
-  ImGui::SetNextWindowPos(ImVec2(pad, io.DisplaySize.y - pad), ImGuiCond_Always, ImVec2(0.0f, 1.0f));
-  ImGui::SetNextWindowBgAlpha(0.6f);
-  const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
-                                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
-                                 ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs;
-  if (ImGui::Begin("##notices", nullptr, flags)) {
-    for (const Notice& n : notices_) ImGui::TextUnformatted(n.text.c_str());
+  ImDrawList* dl = ImGui::GetForegroundDrawList();
+  const float margin = px(16), pad_y = px(14), pad_x = px(18), icon = px(20), gap = px(8);
+  const float width = std::min(px(440), io.DisplaySize.x - 2 * margin);
+  const float text_w = width - 2 * pad_x - icon - px(12);
+  theme::push_font(theme::Weight::Regular, 15);
+  // Newest at the bottom, the older ones stacked above it.
+  float bottom = io.DisplaySize.y - margin;
+  for (auto it = notices_.rbegin(); it != notices_.rend(); ++it) {
+    const Notice& n = *it;
+    const float in = std::min(1.0f, std::chrono::duration<float>(now - n.shown).count() / kNoticeIn);
+    const float out = std::min(1.0f, std::chrono::duration<float>(n.until - now).count() / kNoticeOut);
+    const float a = std::min(in, out);
+    const ImVec2 ts = ImGui::CalcTextSize(n.text.c_str(), nullptr, false, text_w);
+    const float h = std::max(ts.y, icon) + 2 * pad_y;
+    const ImVec2 min(margin, std::round(bottom - h)), max(margin + width, bottom);
+    const bool problem = n.kind == NoticeKind::Problem;
+    dl->AddRectFilled(min, max, theme::alpha(theme::kPanel, 0.94f * a), px(12));
+    dl->AddRect(min, max, theme::alpha(problem ? theme::kRed : theme::kLine, (problem ? 0.5f : 1.0f) * a), px(12), 0, 1.0f);
+    theme::draw_icon(dl, problem ? theme::Icon::Warning : theme::Icon::Info,
+                     ImVec2(min.x + pad_x + icon * 0.5f, min.y + pad_y + icon * 0.5f), icon,
+                     theme::alpha(problem ? theme::kRed : theme::kBlue, a));
+    dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(min.x + pad_x + icon + px(12), min.y + pad_y),
+                theme::alpha(theme::kChalk, a), n.text.c_str(), nullptr, text_w);
+    bottom = min.y - gap;
   }
-  ImGui::End();
+  theme::pop_font();
 }
 
 void Menu::prepare(SDL_GPUCommandBuffer* cmd) {

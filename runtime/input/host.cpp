@@ -272,27 +272,26 @@ bool parse_bindings(const toml::table* table, Source::Kind device, const char* s
     const toml::node* node = table->get(kControlNames[c]);
     if (!node) continue;
     std::vector<Source> sources;
+    // An input it does not know is left out, with a warning: the rest of the
+    // file still counts.
     auto add = [&](const toml::node& item) {
       const auto name = item.value<std::string>();
       Source s;
       if (!name || !parse_source(*name, device, &s)) {
-        *error = std::string("[") + section + "] " + kControlNames[c] + ": unknown input \"" +
-                 (name ? *name : std::string("?")) + "\"";
-        return false;
+        *error += std::string(error->empty() ? "" : "; ") + "[" + section + "] " + kControlNames[c] +
+                  ": unknown input \"" + (name ? *name : std::string("?")) + "\" (left out)";
+        return;
       }
       sources.push_back(s);
-      return true;
     };
     if (const toml::array* list = node->as_array()) {
-      for (const toml::node& item : *list) {
-        if (!add(item)) return false;
-      }
-    } else if (!add(*node)) {
-      return false;
+      for (const toml::node& item : *list) add(item);
+    } else {
+      add(*node);
     }
     out->sources[c] = std::move(sources);
   }
-  if (const auto deadzone = (*table)["deadzone"].value<double>()) {
+  if (const auto deadzone = (*table)["deadzone"].value<double>(); deadzone && std::isfinite(*deadzone)) {
     out->deadzone = std::clamp(static_cast<float>(*deadzone), 0.0f, 0.9f);
   }
   return true;
@@ -313,9 +312,11 @@ bool parse_config(std::string_view text, Config* config, std::string* error) {
       !parse_bindings(root["joystick"].as_table(), Source::Kind::JoyButton, "joystick", &c.joystick, error)) {
     return false;
   }
-  c.steer_speed = std::max(0.1f, static_cast<float>(root["steering"]["speed"].value_or(double{c.steer_speed})));
-  c.ffb_strength =
-      std::clamp(static_cast<float>(root["force_feedback"]["strength"].value_or(double{c.ffb_strength})), 0.0f, 2.0f);
+  // nan and inf are TOML numbers too: they would pass the clamps.
+  if (const double v = root["steering"]["speed"].value_or(double{c.steer_speed}); std::isfinite(v))
+    c.steer_speed = std::max(0.1f, static_cast<float>(v));
+  if (const double v = root["force_feedback"]["strength"].value_or(double{c.ffb_strength}); std::isfinite(v))
+    c.ffb_strength = std::clamp(static_cast<float>(v), 0.0f, 2.0f);
   c.rumble = root["force_feedback"]["rumble"].value_or(c.rumble);
   c.background = root["background"]["input"].value_or(c.background);
   *config = std::move(c);
@@ -370,14 +371,17 @@ std::string config_text(const Config& c) {
     for (std::size_t control = 0; control < kControlCount; ++control) {
       if (control == kSteer && !axes) continue;
       out += std::string(kControlNames[control]) + " = [";
+      bool first = true;
       for (std::size_t i = 0; i < b.sources[control].size(); ++i) {
         std::string name = source_name(b.sources[control][i]);
+        if (name.empty()) continue;  // an input with no name could not be read back
         std::string quoted = "\"";
         for (const char ch : name) {
           if (ch == '"' || ch == '\\') quoted += '\\';
           quoted += ch;
         }
-        out += (i ? ", " : "") + quoted + "\"";
+        out += (first ? "" : ", ") + quoted + "\"";
+        first = false;
       }
       out += "]\n";
     }
@@ -411,11 +415,15 @@ struct HostInput::Impl {
     SDL_Haptic* haptic = nullptr;
     // Wheel effects (-1: not supported).
     int spring = -1, friction = -1, torque = -1;
+    bool wheel = false;  // SDL says it is a steering wheel
+    float sent[3] = {-2.0f, -2.0f, -2.0f};  // the spring, friction and roll last sent
+    int axes = 0, buttons = 0, hats = 0;
   };
 
   Config config;
   std::string path;
-  bool dirty = false;  // bindings changed since load() or save()
+  bool dirty = false;      // bindings changed since load() or save()
+  bool keep_file = false;  // the file could not be read nor set aside: never overwritten
 
   // Gamepads' events come to a window in the background only if SDL is told.
   void apply_background() {
@@ -472,6 +480,17 @@ struct HostInput::Impl {
     return 0.0f;
   }
   static bool is_axis(const Source& s) { return s.kind == Source::Kind::PadAxis || s.kind == Source::Kind::JoyAxis; }
+  // Whether the device has the input at all: SDL reads one it lacks as 0,
+  // which a whole-axis pedal would take as half pressed.
+  static bool present(const Source& s, const Device* d) {
+    if (!d) return true;
+    switch (s.kind) {
+      case Source::Kind::JoyAxis: return s.index < d->axes;
+      case Source::Kind::JoyButton: return s.index < d->buttons;
+      case Source::Kind::JoyHat: return s.index < d->hats;
+      default: return true;
+    }
+  }
   // As a whole axis (steering): -1..1.
   static float axis_value(const Source& s, const Device* d, float deadzone) {
     float v = raw(s, d);
@@ -492,6 +511,14 @@ struct HostInput::Impl {
 
 HostInput::HostInput() : impl_(std::make_unique<Impl>()) {}
 
+void HostInput::stop_outputs() {
+  for (auto& [id, d] : impl_->devices) {
+    if (d.haptic) SDL_StopHapticEffects(d.haptic);
+    for (float& s : d.sent) s = -2.0f;
+    if (d.gamepad) SDL_RumbleGamepad(d.gamepad, 0, 0, 0);
+  }
+}
+
 HostInput::~HostInput() {
   if (!impl_) return;
   std::vector<SDL_JoystickID> ids;
@@ -504,19 +531,34 @@ bool HostInput::load(const std::string& path, std::string* error) {
   impl_->path = path;
   impl_->dirty = false;
   std::error_code ec;
-  if (!fs::exists(path, ec)) {
-    fs::create_directories(fs::path(path).parent_path(), ec);
-    std::ofstream(path, std::ios::binary) << kDefaultConfig;
+  const fs::path file = os::utf8_path(path);
+  if (!fs::exists(file, ec)) {
+    fs::create_directories(file.parent_path(), ec);
+    std::ofstream(file, std::ios::binary) << kDefaultConfig;
   }
   std::string text = kDefaultConfig;
-  if (std::ifstream f(path, std::ios::binary); f) {
+  if (std::ifstream f(file, std::ios::binary); f) {
     text.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
   }
   std::string why;
   impl_->config = Config{};
   parse_config(kDefaultConfig, &impl_->config, &why);
+  why.clear();
   const bool ok = parse_config(text, &impl_->config, &why);
-  if (!ok && error) *error = path + ": " + why + " (using the default controls)";
+  if (!ok) {
+    // Kept aside, not overwritten by the next save: the player can fix it.
+    fs::rename(file, os::utf8_path(path + ".bad"), ec);
+    if (ec) {
+      impl_->keep_file = true;  // never overwrite it
+      if (error)
+        *error = path + ": " + why + ". The default controls are used, and changes are not saved until it is fixed.";
+    } else {
+      impl_->dirty = true;
+      if (error) *error = path + ": " + why + ". It was kept as controls.toml.bad; the default controls are used.";
+    }
+  } else if (!why.empty() && error) {
+    *error = path + ": " + why;
+  }
   impl_->apply_background();
   return ok;
 }
@@ -551,6 +593,10 @@ void HostInput::Impl::open(SDL_JoystickID id) {
     d.joystick = SDL_OpenJoystick(id);
   }
   if (!d.joystick) return;
+  d.wheel = SDL_GetJoystickType(d.joystick) == SDL_JOYSTICK_TYPE_WHEEL;
+  d.axes = SDL_GetNumJoystickAxes(d.joystick);
+  d.buttons = SDL_GetNumJoystickButtons(d.joystick);
+  d.hats = SDL_GetNumJoystickHats(d.joystick);
   const char* name = d.gamepad ? SDL_GetGamepadName(d.gamepad) : SDL_GetJoystickName(d.joystick);
   std::fprintf(stderr, "[input] %s connected: %s\n", d.gamepad ? "gamepad" : "joystick", name ? name : "?");
   d.haptic = SDL_OpenHapticFromJoystick(d.joystick);
@@ -619,10 +665,21 @@ void HostInput::Impl::play(Device& d) {
   const float friction = std::clamp(outputs.friction / 32767.0f * strength, 0.0f, 1.0f);
   const float roll = outputs.roll ? std::clamp((outputs.roll - 0x8000) / 32767.0f * strength, -1.0f, 1.0f) : 0.0f;
   if (d.haptic && (d.spring >= 0 || d.friction >= 0 || d.torque >= 0)) {
+    // Only what changed: the road's roll changes most frames, the spring and
+    // friction seldom, and each update is a report to the wheel.
     SDL_HapticEffect e;
-    if (d.spring >= 0) SDL_UpdateHapticEffect(d.haptic, d.spring, &(e = condition_effect(SDL_HAPTIC_SPRING, centering)));
-    if (d.friction >= 0) SDL_UpdateHapticEffect(d.haptic, d.friction, &(e = condition_effect(SDL_HAPTIC_FRICTION, friction)));
-    if (d.torque >= 0) SDL_UpdateHapticEffect(d.haptic, d.torque, &(e = constant_effect(roll)));
+    if (d.spring >= 0 && centering != d.sent[0]) {
+      SDL_UpdateHapticEffect(d.haptic, d.spring, &(e = condition_effect(SDL_HAPTIC_SPRING, centering)));
+      d.sent[0] = centering;
+    }
+    if (d.friction >= 0 && friction != d.sent[1]) {
+      SDL_UpdateHapticEffect(d.haptic, d.friction, &(e = condition_effect(SDL_HAPTIC_FRICTION, friction)));
+      d.sent[1] = friction;
+    }
+    if (d.torque >= 0 && roll != d.sent[2]) {
+      SDL_UpdateHapticEffect(d.haptic, d.torque, &(e = constant_effect(roll)));
+      d.sent[2] = roll;
+    }
     return;
   }
   if (d.gamepad && config.rumble) {
@@ -656,12 +713,20 @@ triforce::Controls HostInput::poll() {
 
   std::array<float, kControlCount> amount{};  // strongest input for each control
   float steer_axis = 0.0f;
+  // With a steering wheel connected, the joysticks' steering comes from
+  // wheels only: the same [joystick] bindings apply to every joystick, and a
+  // separate set of pedals, a handbrake or a throttle could otherwise turn
+  // the wheel by its own axis 0.
+  bool have_wheel = false;
+  for (const auto& [id, d] : m.devices) have_wheel |= !d.gamepad && d.wheel;
   auto gather = [&](const Bindings& b, const Impl::Device* d) {
     for (std::size_t c = 0; c < kControlCount; ++c) {
       if (c == kPause && !d) continue;  // pause keys: see handle_event()
       for (const Source& s : b.sources[c]) {
+        if (!Impl::present(s, d)) continue;
         if (c == kSteer) {
           if (!Impl::is_axis(s)) continue;
+          if (d && !d->gamepad && have_wheel && !d->wheel) continue;
           const float v = Impl::axis_value(s, d, b.deadzone);
           if (std::fabs(v) > std::fabs(steer_axis)) steer_axis = v;
         } else {
@@ -781,6 +846,8 @@ bool HostInput::capture_event(const SDL_Event& e) {
         return true;
       }
       if (kind != DeviceKind::Keyboard || steering || e.key.repeat) return true;
+      // A key SDL has no name for could not be saved: keep waiting.
+      if (e.key.scancode == SDL_SCANCODE_UNKNOWN || !*SDL_GetScancodeName(e.key.scancode)) return true;
       s.kind = Source::Kind::Key;
       s.index = e.key.scancode;
       return m.finish_capture(s);
@@ -838,6 +905,7 @@ bool HostInput::capture_event(const SDL_Event& e) {
 
 float HostInput::force_feedback() const { return impl_->config.ffb_strength; }
 void HostInput::set_force_feedback(float strength) {
+  if (!std::isfinite(strength)) return;
   strength = std::clamp(strength, 0.0f, 2.0f);
   if (strength == impl_->config.ffb_strength) return;
   impl_->config.ffb_strength = strength;
@@ -847,6 +915,7 @@ void HostInput::set_force_feedback(float strength) {
 
 float HostInput::steer_speed() const { return impl_->config.steer_speed; }
 void HostInput::set_steer_speed(float speed) {
+  if (!std::isfinite(speed)) return;
   speed = std::max(0.1f, speed);
   if (speed == impl_->config.steer_speed) return;
   impl_->config.steer_speed = speed;
@@ -871,6 +940,7 @@ bool HostInput::background_keyboard() {
 
 float HostInput::deadzone(DeviceKind kind) const { return impl_->bindings(kind).deadzone; }
 void HostInput::set_deadzone(DeviceKind kind, float deadzone) {
+  if (!std::isfinite(deadzone)) return;
   deadzone = std::clamp(deadzone, 0.0f, 0.9f);
   if (deadzone == impl_->bindings(kind).deadzone) return;
   impl_->bindings(kind).deadzone = deadzone;
@@ -888,12 +958,9 @@ void HostInput::restore_defaults() {
 
 bool HostInput::save(std::string* error) {
   Impl& m = *impl_;
-  if (!m.dirty || m.path.empty()) return true;
+  if (!m.dirty || m.path.empty() || m.keep_file) return true;
   const std::string text = config_text(m.config);
-  if (!os::write_file_atomically(m.path, text.data(), text.size())) {
-    if (error) *error = "cannot write " + m.path;
-    return false;
-  }
+  if (!os::write_file_atomically(m.path, text.data(), text.size(), error)) return false;
   m.dirty = false;
   return true;
 }

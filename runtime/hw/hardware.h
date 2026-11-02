@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "ppc/context.h"
+#include "ppc/timebase.h"
 
 namespace hw {
 
@@ -51,7 +52,7 @@ enum InterruptCause : u32 {
 // PowerPC exceptions the hardware can raise at the CPU.
 enum class Exception : u32 { None = 0, External = 4, Decrementer = 8 };
 
-inline constexpr u64 kTimebaseHz = 40500000;  // bus clock (162 MHz) / 4
+inline constexpr u64 kTimebaseHz = ppc::kTimebaseHz;  // bus clock (162 MHz) / 4
 inline constexpr u32 kBusClockHz = 162000000;
 
 class Hardware;
@@ -188,6 +189,10 @@ class Hardware {
   // Timer thread
   std::thread timer_thread_;
   std::condition_variable_any timer_cv_;
+  void wake_timer();  // after the earliest event, the pause or running_ changed
+#ifdef _WIN32
+  void* timer_wake_ = nullptr;  // an event: the timer thread waits on it and a high-resolution timer
+#endif
   std::condition_variable_any idle_cv_;
   bool running_ = false;
   EventId next_event_id_ = 1;

@@ -10,29 +10,35 @@ them stays on your machine.
 | Mario Kart Arcade GP (USA) | `GGPE01` | `0e84df7cac27eab7d6dbb1892933ae3bf762f742` |
 | Mario Kart Arcade GP 2 (USA) | `GGPE02` | `2969c177219dda71ad36b41575bede7ad4637f96` |
 
-## Setting up
+## Preparing an image
+
+OpenGP reads plain disc images, `.iso` or `.gcm`, the kind Dolphin runs.
+
+- A compressed image (`.rvz`, `.gcz`, `.wia`, `.ciso`) must be converted first: in Dolphin,
+  right-click the game, choose **Convert File** and pick the ISO format.
+- Raw NAND dumps must be converted first with
+  [triforce-nand-iso-extract](https://github.com/FIX94/triforce-nand-iso-extract).
+- [triforce-header-patcher](https://github.com/FIX94/triforce-header-patcher) checks images and
+  fixes known bad headers.
+- Some converted dumps have a placeholder header (ID `RELSAB`, "Sample Game Name"). OpenGP
+  recognises them by their `main.dol` and treats them as the right game, so they need no fixing.
 
 In an installer package, OpenGP builds the games from your images: add them in OpenGP, or put them
-in the package's `ISO` folder (see [packaging.md](packaging.md)). Prepare them as step 1 says. The
-other steps are for building from source.
+in the package's `ISO` folder (see [packaging.md](packaging.md)). The rest of this page is for
+source builds.
 
-1. Put your Dolphin-ready images (`.iso` / `.gcm`) in `ISO/` or `private/` at the repository root.
-   Both folders are gitignored.
-   - Raw NAND dumps must be converted first with
-     [triforce-nand-iso-extract](https://github.com/FIX94/triforce-nand-iso-extract).
-   - [triforce-header-patcher](https://github.com/FIX94/triforce-header-patcher) checks images and
-     fixes known bad headers.
+## Setting up a source build
+
+1. Put your images in `ISO/` or `private/` at the repository root. Both folders are gitignored.
 2. Run:
    ```sh
    python tools/setup.py
    ```
    This extracts each game's executable to `orig/<ID>/sys/main.dol` (gitignored) and checks it
-   against the table above. It also downloads the pinned
-   [decomp-toolkit](https://github.com/encounter/decomp-toolkit) into `build/tools/`, for
-   regenerating the symbol lists.
-   - Some converted dumps have a placeholder header (ID `RELSAB`, "Sample Game Name"). OpenGP
-     recognises them by their `main.dol` and treats them as the right game, so they need no
-     fixing.
+   against the table above; an executable of another revision is reported and not written. Then it
+   downloads the pinned [decomp-toolkit](https://github.com/encounter/decomp-toolkit) into
+   `build/tools/` and checks its SHA-256, for regenerating the symbol lists. `--no-dtk` skips the
+   download, and the games build without it.
 3. Configure and build as usual (see [building.md](building.md)). CMake builds each game whose
    `main.dol` is present and has the expected hash, and skips the others.
 4. Run the game (`opengp-mkgp2` or `opengp-mkgp1`). It finds the image in `ISO/` or `private/` (or
@@ -97,8 +103,9 @@ python tools/crossmatch.py orig/GGPE02/sys/main.dol games/mkgp2/config/symbols.t
 ```
 
 Both only rename generated names (`fn_XXXXXXXX`, `dtor_XXXXXXXX`, `lbl_XXXXXXXX`), and keep
-names that are already taken; run them again as the decomp names more. Object names do not change
-the generated code (the recompiler uses objects only for their sizes, which stay the same). The decomp's names are its authors'
+names that are already taken; run them again as the decomp names more. Renaming objects does not
+change the generated code. Splitting one does: the recompiler bounds jump tables by their
+objects' sizes, so rebuild and play after a split. The decomp's names are its authors'
 reading of the code, so they are a guide rather than a fact. Where it names an SDK function
 differently, the name from `sigmatch.py` is kept.
 

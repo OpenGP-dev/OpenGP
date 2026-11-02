@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "symbols.h"
+#include "os/utf8.h"
 
 #include <cctype>
 #include <charconv>
@@ -52,7 +53,7 @@ bool needs_quotes(const std::string& name) {
 }  // namespace
 
 bool SymbolFile::load(const std::string& path, std::string* error) {
-  std::ifstream f(path);
+  std::ifstream f(os::utf8_path(path));
   if (!f) {
     if (error) *error = "cannot open " + path;
     return false;

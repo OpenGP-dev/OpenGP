@@ -37,8 +37,9 @@ Arcade GP 2 asks for 48 MiB, Mario Kart Arcade GP for 24 MiB (the GameCube's).
 
 ## Media board (DI interface)
 
-The game talks to the media board through DI commands; the command byte is the top byte of the
-first command word.
+The game talks to the media board through DI commands. It writes the command words obfuscated:
+after they are XORed with the evolving keys, the command is the low byte of the first word (the
+plain drive fallback moves it back to the top byte).
 
 | Command | Use |
 |---------|-----|
@@ -82,7 +83,7 @@ addresses):
   ID is byte `0x21` of the settings block (`0x805986C0`). The other cabinets are at the same
   addresses for their IDs.
 - A cabinet's camera is at `192.168.29.104` + (PCB ID - 1) (`PcbIdToIpString`, `0x80073B24`;
-  both lists are at `0x8040D910`).
+  both lists are `g_pcbIpTable`, at `0x803FD910`; GP `0x8036B790`).
 - The link between cabinets is `TCPConn_*`, `PcbConn_*`, `PCBComm_*`, `PcbSync_*` and
   `CommBroadcast_*` (each kart's lap and position); the test menu's network pages are
   `NetDiag_*`.
@@ -258,10 +259,9 @@ The game's `main` is at `0x800AC27C`.
 ### Libraries
 
 - **Nintendo Dolphin SDK**, release build of 17 April 2003 (`0x2301`), per its own banners.
-- **MusyX** (Factor 5) for audio: `synth*`, `snd*`, `sal*` and `mcmd*` functions. MusyX may upload
-  its own DSP microcode rather than Nintendo's AX, which decides between DSP HLE and LLE in
-  milestone 6.
-- **MetroTRK** debugger stub (`TRK*`); needs to be stubbed out.
+- **MusyX** (Factor 5) for audio: `synth*`, `snd*`, `sal*` and `mcmd*` functions. It uploads
+  Nintendo's stock AX microcode, which OpenGP emulates at a high level (milestone 6).
+- **MetroTRK** debugger stub (`TRK*`): present, but never reached, so nothing replaces it.
 - Possibly **ODE** (Open Dynamics Engine) for physics: one signature matched `dBodyGetMass`.
 
 ### How far it runs (milestone 3)

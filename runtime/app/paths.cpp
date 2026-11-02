@@ -2,8 +2,10 @@
 
 #include "app/paths.h"
 
+#include <chrono>
 #include <fstream>
 #include <sstream>
+#include <thread>
 #include <vector>
 
 #include "os/atomic_file.h"
@@ -15,7 +17,13 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
-#elif defined(__APPLE__)
+#else
+#include <cerrno>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
+#endif
+#if defined(__APPLE__)
 #include <mach-o/dyld.h>
 #endif
 
@@ -61,11 +69,44 @@ fs::path executable_dir() {
 #endif
 }
 
+bool lock_user_dir(const fs::path& user_dir, const std::string& game_id) {
+  std::error_code ec;
+  fs::create_directories(user_dir, ec);
+  const fs::path path = user_dir / (".lock-" + game_id);
+#ifdef _WIN32
+  // Shared, so that a virus scanner or backup tool opening it does not look
+  // like another copy; the lock is a byte-range lock on it.
+  const HANDLE h = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE |
+                               FILE_SHARE_DELETE, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_HIDDEN, nullptr);
+  if (h == INVALID_HANDLE_VALUE) return true;  // cannot tell: carry on
+#else
+  const int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+  if (fd < 0) return true;  // cannot tell: carry on
+#endif
+  for (int attempt = 0; attempt < 30; ++attempt) {
+#ifdef _WIN32
+    OVERLAPPED at{};
+    if (LockFileEx(h, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, &at)) return true;  // held until exit
+    if (GetLastError() != ERROR_LOCK_VIOLATION) return true;  // cannot tell: carry on
+#else
+    if (::flock(fd, LOCK_EX | LOCK_NB) == 0) return true;  // held until exit
+    if (errno != EWOULDBLOCK) return true;  // a file system without locks: carry on
+#endif
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+#ifdef _WIN32
+  CloseHandle(h);
+#else
+  ::close(fd);
+#endif
+  return false;
+}
+
 fs::path home_dir() {
 #ifdef OPENGP_PACKAGE
   return executable_dir();
 #else
-  return fs::path(OPENGP_SOURCE_DIR);
+  return os::utf8_path(OPENGP_SOURCE_DIR);
 #endif
 }
 
@@ -81,8 +122,7 @@ bool remember_image(const fs::path& user_dir, const std::string& game_id, const 
   std::ostringstream out;
   out << "# The disc image each game was installed from (written by the installer).\n" << images << "\n";
   const std::string text = out.str();
-  const std::u8string u8 = images_file(user_dir).u8string();
-  const std::string path(u8.begin(), u8.end());
+  const std::string path = os::utf8(images_file(user_dir));
   if (!os::write_file_atomically(path, text.data(), text.size())) {
     if (error) *error = "cannot write " + path;
     return false;

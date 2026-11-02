@@ -25,7 +25,7 @@ package.
 | [xxHash](https://github.com/Cyan4973/xxHash)'s XXH64 algorithm | BSD-2-Clause | `runtime/gx/frontend.cpp` (texture hashing) |
 | [doctest](https://github.com/doctest/doctest) | MIT | `thirdparty/doctest`, the test suite only (not in packages) |
 | [Qt 6](https://www.qt.io/), 6.10.3, and the third-party code in it | LGPL-3.0; their own, in `licenses/Qt-third-party.txt` | installer packages: the launcher's interface, as shared libraries |
-| M PLUS Rounded 1c | OFL-1.1 | installer packages: the launcher's typeface, built into it |
+| M PLUS Rounded 1c | OFL-1.1 | `thirdparty/fonts/mplus-rounded-1c`, embedded in every game for its menu; installer packages: the launcher's typeface too, built into it |
 | SDL's scancode tables | zlib | installer packages: built into the launcher, for the keys pressed in its window |
 | [xcb-util](https://xcb.freedesktop.org/) and [ICU](https://icu.unicode.org/), which Qt needs | MIT/X11 and HPND; Unicode licence | Linux packages only: `qt/lib/` |
 | Microsoft's Visual C++ runtime and Direct3D shader compilers | Microsoft's terms for redistributable files | Windows packages only: next to `OpenGP.exe` |
@@ -501,11 +501,12 @@ and `licenses/ICU-LICENSE.txt`.
 
 ## M PLUS Rounded 1c
 
-The launcher's typeface, M PLUS Rounded 1c (Regular and ExtraBold), is Copyright 2016 The Rounded
-M+ Project Authors, and is licensed under the SIL Open Font License, version 1.1. The launcher's
-copies are cut down to Latin letters and built into it. The licence is in
-`licenses/MPLUSRounded1c-OFL.txt` in an installer package (`src/fonts/OFL.txt` in the launcher's
-source).
+The typeface of the games' menu and of the launcher, M PLUS Rounded 1c (Regular and ExtraBold), is
+Copyright 2016 The Rounded M+ Project Authors, and is licensed under the SIL Open Font License,
+version 1.1. The copies in `thirdparty/fonts/mplus-rounded-1c` are cut down to Latin letters; they
+are embedded in every game (`runtime/app/menu_theme.cpp`) and built into the launcher. The licence
+is `thirdparty/fonts/mplus-rounded-1c/OFL.txt`, and `licenses/MPLUSRounded1c-OFL.txt` in an
+installer package.
 
 ## SDL's scancode tables
 

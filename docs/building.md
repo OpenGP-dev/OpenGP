@@ -33,12 +33,15 @@ ctest --preset clang-cl
 ```
 
 `tools/devshell.ps1` looks for LLVM in `$env:OPENGP_LLVM`, then `%LOCALAPPDATA%\Programs\LLVM`,
-then `C:\Program Files\LLVM`, then Visual Studio's bundled Clang.
+then `C:\Program Files\LLVM`, then the Clang of a Visual Studio installation that has the Clang
+component. Without a standalone LLVM it uses that installation's environment, even when a newer
+Visual Studio without Clang is installed too. It stops if clang-cl is older than 16.
 
-MinGW-w64 GCC also works (`$env:CC='gcc'; $env:CXX='g++'; cmake --preset default`), but clang-cl
-is the supported configuration and what CI uses.
+MinGW-w64 GCC may work (`$env:CC='gcc'; $env:CXX='g++'; cmake --preset default`), but it is not
+tested: clang-cl is the supported configuration and what CI uses.
 
-The first configure downloads SDL3 and glslang (see `OPENGP_BUILD_VIDEO` below). CMake builds
+The first configure downloads SDL3, glslang and Dear ImGui at pinned versions, and on macOS
+SPIRV-Cross too (see `OPENGP_BUILD_VIDEO` below). CMake builds
 that use GnuTLS without a certificate store (the WinLibs/MinGW CMake, for one) fail those
 downloads with "certificate signer not trusted": use Kitware's CMake
 (`winget install Kitware.CMake`), or point CMake at a CA bundle, e.g.
@@ -81,8 +84,8 @@ version and the game.
 
 Controls and playing are covered in [playing.md](playing.md).
 
-The launcher finds the image in `ISO/` or `private/` (or takes `--iso`), boots it and runs the
-game in a window (Vulkan, through SDL3's GPU API). It prints:
+`opengp-mkgp2` finds the image in `ISO/` or `private/` (or takes `--iso`), boots it and runs the
+game in a window (Vulkan, or Metal on macOS, through SDL3's GPU API). It prints:
 - the game's `OSReport` output;
 - a status line every `--status` seconds (default 5; 0 for none): retraces, frames and draws so
   far, guest threads, pending interrupts, the sound output's queue (its length, and how often it
@@ -133,11 +136,14 @@ Environment variables for debugging:
 | `OPENGP_FRAME_LOG=1` | each frame's duration, time in draws and vertex count |
 | `OPENGP_LOG_INTERP=1` | each guest address where code falls back to the interpreter (code the recompiler missed), once |
 | `OPENGP_PROFILE=START,SECONDS` | (Windows) samples every thread for SECONDS seconds, starting START seconds in, then prints each busy thread's hottest functions, self and inclusive |
+| `OPENGP_CHECK_HLE=1` | (not a log) runs the game's own version of each SDK function OpenGP replaces too, and prints any difference |
+| `OPENGP_NO_CRASH_DIALOG=1` | (not a log) no message box after a crash on Windows: the report is still written (for tests and scripts) |
+| `OPENGP_LAUNCHER=1` | (not a log) set by the OpenGP launcher for the games it starts: start-up messages point at the launcher instead of command-line options and go only to the log, with no message box (and on Windows, no "OpenGP has crashed" box after a crash): the launcher shows them itself. Messages the window could no longer show (a save that failed as the game closed or restarted) go to the log as `[unseen]` lines, which the launcher shows too |
 
 The status line also shows where time goes: the guest thread's time in draws (pipeline state,
 textures, vertex transform) and EFB readbacks, and the render thread's time rendering and idle.
 
-After a crash, the launcher prints the faulting address (and the guest address, if the access
+After a crash, the game prints the faulting address (and the guest address, if the access
 was into guest memory) and a backtrace of `module+offset` entries. Resolve them with
 `llvm-symbolizer --obj=build/<preset>/games/mkgp2/opengp-mkgp2.exe --relative-address <offset>...`.
 
@@ -149,4 +155,7 @@ was into guest memory) and a backtrace of `module+offset` entries. Resolve them 
 | `OPENGP_BUILD_GAMES` | `ON` | Build the games whose `main.dol` is present in `orig/` |
 | `OPENGP_GENERATED_DEBUG_INFO` | `OFF` | Emit debug info for recompiled game code (large and slow) |
 | `OPENGP_BUILD_VIDEO` | `ON` | Build the renderer. Needs SDL3 and glslang: installed copies are used if CMake finds them (`SDL3` package, `glslangValidator`), otherwise the pinned releases are downloaded and built |
-| `OPENGP_TRACE_CALLS` | `OFF` | Track each guest thread's call stack in recompiled code, for the launcher's status output (slower) |
+| `OPENGP_TRACE_CALLS` | `OFF` | Track each guest thread's call stack in recompiled code, for the game's status output (slower) |
+| `OPENGP_METAL_SHADERS` | `ON` on macOS | Also convert the shaders to the Metal Shading Language, with SPIRV-Cross (for SDL's Metal backend) |
+| `OPENGP_BUILD_INPUT` | `OFF` | Build the controller and webcam libraries without the renderer (for the launcher project, which builds OpenGP's libraries as part of itself) |
+| `OPENGP_PACKAGE` | `OFF` | Build the installer package instead of the games (see [packaging.md](packaging.md)) |

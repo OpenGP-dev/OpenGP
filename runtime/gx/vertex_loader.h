@@ -101,6 +101,7 @@ class VertexLoader {
       src += bytes;
       return p;
     }
+    if (a.type == NOT_PRESENT) return nullptr;  // (a format without a position)
     const u32 index = a.type == INDEX8 ? *src : be16(src);
     src += index_size(a.type);
     const u32 addr = (array_base_[array] + index * array_stride_[array]) & 0x1FFFFFFF;

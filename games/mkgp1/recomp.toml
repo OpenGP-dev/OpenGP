@@ -28,17 +28,18 @@ exception_return = ["OSLoadContext"]
 address = 0x8021327C
 function = "OSIdleWait"
 
-# The NamCam2 camera is an IP camera on the media board's network, which is
-# not emulated, so the start-up device check never finishes. As in GP 2, the
-# game can run without it: default its "camera use" setting (byte 0x25 of the
-# settings block at 804B3B40) to off.
+# The "camera use" setting (byte 0x25 of the settings block at 804B3B40)
+# defaults to off, so a new backup's start-up device check doesn't wait for a
+# camera (it never finishes without one). games/common/camera_use.cpp then
+# sets the byte at start-up from the player's camera setting.
 [[patch]]
 address = 0x800790A0
 value = 0x98650025  # stb r3, 0x25(r5); was stb r6 (r6 = 1, r3 = 0)
 
 # At start-up the LINK screen looks for linked cabinets for 60 seconds (a
-# 3600-frame timer set when the link starts; the same code as GP 2's).
-# Linking is not emulated, so don't wait.
+# 3600-frame timer set when the link starts; the same code as GP 2's). It
+# waits 1 frame instead, and games/common/cabinet.cpp makes the wait up to 15
+# seconds while another cabinet is found but not yet linked.
 [[patch]]
 address = 0x801B0E28
 value = 0x38000001  # li r0, 1; was li r0, 3600

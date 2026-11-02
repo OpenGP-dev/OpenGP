@@ -14,7 +14,7 @@ set(OPENGP_LLVM_MINGW_SHA256 e3ad77d117a4bea19a7a3b333341824d79a5a371004a10e25b8
 
 # The runtime's libraries, in link order.
 set(package_libs opengp_app opengp_settings opengp_discord opengp_video opengp_input opengp_audio opengp_webcam imgui
-                 opengp_machine ppc_runtime gekko_isa SDL3-static)
+                 opengp_machine ppc_runtime gekko_isa opengp_utf8 SDL3-static)
 install(TARGETS ${package_libs} ARCHIVE DESTINATION sdk/lib)
 install(TARGETS opengp_installer RUNTIME DESTINATION .)
 
@@ -56,7 +56,10 @@ elseif(APPLE)
   set(link_group false)  # Apple's linker finds symbols in any library order
 else()
   set(toolchain_section "")
-  set(cxx_candidates c++ g++ clang++)
+  # The usual names, then versioned ones (Ubuntu 22.04's g++ is GCC 11).
+  set(cxx_candidates c++ g++ clang++ g++-20 g++-19 g++-18 g++-17 g++-16 g++-15 g++-14 g++-13 g++-12
+                     clang++-25 clang++-24 clang++-23 clang++-22 clang++-21 clang++-20 clang++-19 clang++-18
+                     clang++-17 clang++-16)
   set(link_flags -pthread)
   set(system_libs -ldl -lm -lrt)
   set(executable_suffix "")
@@ -82,6 +85,9 @@ toml_array(cxx_flags_toml ${cxx_flags})
 toml_array(link_flags_toml ${link_flags})
 toml_array(system_libs_toml ${system_libs})
 toml_array(games_toml mkgp2 mkgp1)  # the main game first
+include(${PROJECT_SOURCE_DIR}/cmake/game_sources.cmake)
+toml_array(common_sources_toml ${OPENGP_GAME_COMMON_SOURCES})
+toml_array(own_sources_toml ${OPENGP_GAME_OWN_SOURCES})
 
 file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/package/package.toml CONTENT "\
 # OpenGP ${PROJECT_VERSION}: how the installer builds the games here.
@@ -96,6 +102,10 @@ libs = ${libs_toml}
 system_libs = ${system_libs_toml}
 executable_suffix = \"${executable_suffix}\"
 link_group = ${link_group}
+# The hand-written sources of each game: these in sdk/games/common/, then
+# these in the game's own folder.
+common_sources = ${common_sources_toml}
+game_sources = ${own_sources_toml}
 ")
 install(FILES ${CMAKE_BINARY_DIR}/package/package.toml DESTINATION sdk)
 
@@ -108,7 +118,11 @@ install(DIRECTORY ${PROJECT_SOURCE_DIR}/common/gekko/include/ DESTINATION sdk/in
 # The games' own files (addresses, names and hand-written code only).
 foreach(game mkgp2 mkgp1)
   set(dir ${PROJECT_SOURCE_DIR}/games/${game})
-  install(FILES ${dir}/game.toml ${dir}/recomp.toml ${dir}/patches.cpp ${dir}/status.cpp DESTINATION sdk/games/${game})
+  set(own)
+  foreach(source ${OPENGP_GAME_OWN_SOURCES})
+    list(APPEND own ${dir}/${source})
+  endforeach()
+  install(FILES ${dir}/game.toml ${dir}/recomp.toml ${own} DESTINATION sdk/games/${game})
   install(FILES ${dir}/config/symbols.txt DESTINATION sdk/games/${game}/config)
 endforeach()
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/games/common/ DESTINATION sdk/games/common)
@@ -131,6 +145,9 @@ install(FILES ${sdl3_SOURCE_DIR}/src/video/yuv2rgb/LICENSE DESTINATION licenses 
 install(FILES ${PROJECT_SOURCE_DIR}/thirdparty/tomlplusplus/LICENSE DESTINATION licenses RENAME tomlplusplus-LICENSE.txt)
 install(FILES ${PROJECT_SOURCE_DIR}/thirdparty/gc-fonts/LICENSE DESTINATION licenses RENAME gc-fonts-LICENSE.txt)
 install(FILES ${PROJECT_SOURCE_DIR}/thirdparty/gc-fonts/README.md DESTINATION licenses RENAME gc-fonts-README.md)
+# The menu's typeface (the launcher's too: its install puts the same text in
+# the same place).
+install(FILES ${PROJECT_SOURCE_DIR}/thirdparty/fonts/mplus-rounded-1c/OFL.txt DESTINATION licenses RENAME MPLUSRounded1c-OFL.txt)
 # The launcher the package workflow adds (OpenGP-dev/opengp-launcher) links Qt,
 # under the LGPL. Its install puts the same text in the same place. With it,
 # the notices of the code Qt contains (tools/qt_notices.py makes them).
