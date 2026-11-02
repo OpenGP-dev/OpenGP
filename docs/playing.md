@@ -113,6 +113,14 @@ even_pacing` in `user/settings.toml`), OpenGP holds each frame until the game's 
 cabinet's display does, so the frames come evenly spaced. It costs about half a frame (8 ms) of
 delay, and matters most in fullscreen with FreeSync or G-Sync.
 
+### 60 Hz and 120 Hz displays
+
+The game's clock is NTSC's 59.94 Hz, a little slower than a 60 Hz display: at real speed one
+frame in a thousand would be shown twice, a small hitch every 17 seconds. With vsync on, on a
+display within half a percent of 60 Hz or a multiple of it, OpenGP runs the game 0.1% faster to
+match it (the console says so); the sound speeds up the same, which no one hears. Linked races
+run at real speed.
+
 ## Mario Cards
 
 Cards are saved in `user/cards/GGPE01/` (GP) and `user/cards/GGPE02/` (GP 2), one file per card

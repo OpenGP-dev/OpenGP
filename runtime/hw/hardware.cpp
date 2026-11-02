@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -170,9 +171,66 @@ u8* Hardware::ram(u32 addr, u32 size) const {
   return base_ + (ppc::MEM1_CACHED | phys);
 }
 
-u64 Hardware::host_ticks() const {
+namespace {
+
+u64 steady_now_ns() {
   const auto now = std::chrono::steady_clock::now().time_since_epoch();
-  return ns_to_ticks(static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now).count()));
+  return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
+}
+
+}  // namespace
+
+Hardware::ClockMap Hardware::clock() const {
+  for (;;) {
+    const u32 seq = clock_seq_.load(std::memory_order_acquire);
+    if (seq & 1) continue;
+    ClockMap c;
+    c.anchor_ns = clock_anchor_ns_.load(std::memory_order_relaxed);
+    c.anchor_ticks = clock_anchor_ticks_.load(std::memory_order_relaxed);
+    c.rate = clock_rate_.load(std::memory_order_relaxed);
+    std::atomic_thread_fence(std::memory_order_acquire);
+    if (clock_seq_.load(std::memory_order_relaxed) == seq) return c;
+  }
+}
+
+u64 Hardware::ticks_at(u64 steady_ns) const {
+  const ClockMap c = clock();
+  if (c.rate == 1.0) return ns_to_ticks(steady_ns) - ns_to_ticks(c.anchor_ns) + c.anchor_ticks;
+  if (steady_ns >= c.anchor_ns)
+    return c.anchor_ticks + ns_to_ticks(static_cast<u64>(std::llround(static_cast<double>(steady_ns - c.anchor_ns) * c.rate)));
+  return c.anchor_ticks - ns_to_ticks(static_cast<u64>(std::llround(static_cast<double>(c.anchor_ns - steady_ns) * c.rate)));
+}
+
+u64 Hardware::ns_at_ticks(u64 ticks) const {
+  const ClockMap c = clock();
+  u64 ns;
+  if (c.rate == 1.0) {
+    ns = ppc::ticks_to_ns_up(ticks - c.anchor_ticks + ns_to_ticks(c.anchor_ns));
+  } else if (ticks >= c.anchor_ticks) {
+    ns = c.anchor_ns + static_cast<u64>(std::ceil(static_cast<double>(ppc::ticks_to_ns_up(ticks - c.anchor_ticks)) / c.rate));
+  } else {
+    ns = c.anchor_ns - static_cast<u64>(static_cast<double>(ppc::ticks_to_ns(c.anchor_ticks - ticks)) / c.rate);
+  }
+  // Rounding: the first nanosecond whose ticks reach `ticks`.
+  while (ticks_at(ns) < ticks) ++ns;
+  while (ns > 0 && ticks_at(ns - 1) >= ticks) --ns;
+  return ns;
+}
+
+u64 Hardware::host_ticks() const { return ticks_at(steady_now_ns()); }
+
+void Hardware::set_clock_rate(double rate) {
+  if (!(rate > 0.9 && rate < 1.1)) rate = 1.0;
+  std::lock_guard lock(mutex_);
+  const u64 now = steady_now_ns();
+  const u64 ticks = ticks_at(now);
+  clock_seq_.fetch_add(1, std::memory_order_relaxed);
+  std::atomic_thread_fence(std::memory_order_release);
+  clock_anchor_ns_.store(now, std::memory_order_relaxed);
+  clock_anchor_ticks_.store(ticks, std::memory_order_relaxed);
+  clock_rate_.store(rate, std::memory_order_relaxed);
+  clock_seq_.fetch_add(1, std::memory_order_release);
+  wake_timer();  // timed events are due at other host times now
 }
 
 u64 Hardware::clock_ticks() const {
@@ -182,11 +240,11 @@ u64 Hardware::clock_ticks() const {
 
 u64 Hardware::timebase() const { return clock_ticks() - tb_origin_; }
 
-u64 Hardware::timebase_at(u64 steady_ns) const { return ns_to_ticks(steady_ns) - tb_origin_; }
+u64 Hardware::timebase_at(u64 steady_ns) const { return ticks_at(steady_ns) - tb_origin_; }
 
 // Rounded up, so that timebase_at(steady_ns_at(tb)) == tb.
 u64 Hardware::steady_ns_at(u64 timebase) const {
-  return ppc::ticks_to_ns_up(timebase + tb_origin_);
+  return ns_at_ticks(timebase + tb_origin_);
 }
 
 void Hardware::set_timebase(u64 value) {

@@ -221,6 +221,29 @@ void size_window(SDL_Window* window, int width, int height) {
   SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 }
 
+// The machine's clock rate for the window's display (Hardware::set_clock_rate):
+// the game's retraces come at 59.94 Hz, NTSC's rate. On a display whose
+// refresh is within half a percent of a multiple of it (60 Hz, 120 Hz), with
+// vsync on, the machine runs that much faster so that each of its frames
+// gets the same number of refreshes: at real time, one frame in 1000 is shown
+// twice on a 60 Hz display (a hitch every 16.7 seconds). The sound speeds up
+// the same 0.1%, which no one hears. Otherwise (other rates, variable
+// refresh, no vsync), and in a linked race, real time.
+double display_clock_rate(SDL_Window* window, bool vsync) {
+  if (!window || !vsync) return 1.0;
+  const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
+  if (!mode) return 1.0;
+  const double hz = mode->refresh_rate_numerator > 0 && mode->refresh_rate_denominator > 0
+                        ? static_cast<double>(mode->refresh_rate_numerator) / mode->refresh_rate_denominator
+                        : static_cast<double>(mode->refresh_rate);
+  constexpr double kGameHz = 2.0 * static_cast<double>(hw::kTimebaseHz) / static_cast<double>(hw::ViDevice::kTicksPerFrame);
+  for (int k = 1; k <= 4; ++k) {
+    const double rate = hz / (k * kGameHz);
+    if (std::fabs(rate - 1.0) <= 0.005) return rate;
+  }
+  return 1.0;
+}
+
 // The hint a new player gets once, a few seconds after the game starts: how
 // to put in a coin and start (by their own bindings), and how to open the
 // menu.
@@ -847,6 +870,22 @@ int run(const Game& game, int argc, char** argv) {
       applied_width = pw, applied_height = ph;
     };
     apply_settings();
+    // The machine's clock follows the display (display_clock_rate), looked at
+    // again every second: the window may move to another display, vsync may
+    // be turned off, a link may start.
+    auto next_clock_check = std::chrono::steady_clock::now();
+    auto match_display = [&] {
+      const auto now = std::chrono::steady_clock::now();
+      if (now < next_clock_check) return;
+      next_clock_check = now + std::chrono::seconds(1);
+      const double rate = machine.network().linked() ? 1.0 : display_clock_rate(window, settings.vsync);
+      if (std::fabs(rate - machine.hardware().clock_rate()) < 1e-7) return;
+      machine.hardware().set_clock_rate(rate);
+      const SDL_DisplayMode* mode = window ? SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window)) : nullptr;
+      std::fprintf(stderr, "[video] the game's clock runs at %.3f%% to match the display (%d/%d, %.3f Hz)\n",
+                   rate * 100.0, mode ? mode->refresh_rate_numerator : 0, mode ? mode->refresh_rate_denominator : 0,
+                   mode ? static_cast<double>(mode->refresh_rate) : 0.0);
+    };
 
     const fs::path shot_dir = user_dir / "screenshots";
     bool shot_requested = false;
@@ -970,6 +1009,7 @@ int run(const Game& game, int argc, char** argv) {
       }
       settings.card = applied.card = machine.cards().held();  // the game may have given the player a new card
       apply_settings();
+      match_display();
       if (!settings.rich_presence || !game.status || !(window || log_discord)) {
         rich_presence.reset();
       } else if (const auto now = std::chrono::steady_clock::now(); now >= next_status) {

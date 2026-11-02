@@ -14,6 +14,7 @@
 - Fixed the first photo coming out dark: the webcam's first moment, while it adjusts to the light, is left out, and in a dim room the picture is brightened
 - Fixed audio drifting out of sync after changing the audio device: the sound catches up at once
 - Fixed occasional audio stutter: the sound's buffer suits the device, and grows a little if it ever runs dry
+- Fixed a small periodic stutter on 60 and 120 Hz displays: the game runs 0.1% faster to match the display
 
 ## 1.0.1 (2/11/2026)
 
