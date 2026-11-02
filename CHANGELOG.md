@@ -1,49 +1,42 @@
 ## 1.0.1 (2/11/2026)
 
+- A new in-game menu in the OpenGP launcher's look: a pause card, with the settings in a dialog
 - GP 1: fixed objects popping in at the sides of the screen in widescreen
-- Fixed flickering surfaces in Yoshi Park’s Trick House
-- Fixed some HUD elements and banners looking stretched in widescreen
-- Fixed odd gradient bars at the sides of menus in widescreen
-- Fixed some screen effects looking squeezed in widescreen
-- macOS: fixed the rainbow fade effect in GP 2
-- Fixed some highlight effects showing as solid white
-- Fixed a small periodic stutter on 60 and 120 Hz displays
-- Improved stability of linked play
-- Fixed audio drifting out of sync after changing the audio device
-- Fixed occasional audio stutter
+- Fewer dropped frames on Windows: the game's timed events now arrive on time
+- Less GPU work at high internal resolutions, for the same picture
+- Fixed the picture staying blank or white after the GPU briefly ran out of memory
+- Fixed a possible freeze in effects that read the picture back
+- Fixed crashes and freezes caused by damaged disc images or bad game data
+- Linked play: less lag between computers, and cabinets are harder to disrupt by mistake
+- Linked cabinets only connect over the local network (virtual LANs such as Radmin VPN and Hamachi still work)
 - Fixed a brief freeze when a link connection was refused
-- Linked cabinets on mismatched versions now tell you why they can’t connect
+- Linked cabinets on mismatched versions now tell you why they can't connect
 - Fixed steering stuck at full lock when extra USB devices (pedals, handbrakes) were connected
-- Fixed pedals reading as half-pressed
-- Fixed pedals binding to the wrong axis half
-- Improved wheel and pedal precision
+- Fixed inputs a device doesn't have reading as half-pressed
+- Steering wheels get fewer force-feedback updates: only forces that change are sent
 - Fixed menu keys carrying over into the game
 - Fixed a bug where binding certain keys broke the controls file
-- Key bindings now show the correct key labels on non-US keyboards
-- Added an alternative gamepad button for opening the menu
 - Menu sliders now stay within their range
-- “Restore defaults” now asks for confirmation
+- "Restore defaults" now asks for confirmation
 - Fixed Mario Card progress being lost when saving failed, and the game now tells you
 - Fixed card and settings saves failing on Windows with OneDrive or antivirus running
 - A bad value in the settings file no longer resets everything
 - Settings and controls are now saved when you close the menu
+- A second copy of a game can no longer share a user folder with one that is running
 - Fixed the second-cabinet command not finding the game
 - Fixed the game not finding its image when launched from another folder
 - Fixed crashes and install failures when the folder path contains accented or non-Latin characters
 - Fixed the game ignoring or crashing on ISO files with non-ASCII names
 - Start-up errors are now shown in a message box
-- Fixed the default window size on high-DPI displays
-- Removed the debug spam from the console
-- The webcam no longer switches on at start-up
-- Fixed the first photo coming out grey or dark
+- Crashes now write a crash report (on Windows, the game tells you where it is)
 - Linux: fixed the webcam staying on after a game restart
-- Added a first-run hint for inserting a coin and opening the menu
+- Linux: the installer finds GCC 12 and newer Clang versions, so Ubuntu 22.04 works
 - Improved compiler download feedback and recovery from interrupted installs
 - Clearer messages for unsupported or compressed disc images
 - Clearer errors for unwritable or zipped folders
-- The menu no longer shows your full folder path
 
 ### Known issues
 
 - Races need most of a CPU core: a PC busy with something else (another game) can drop below
   60 fps.
+- 1.0.1 cabinets can't link with 1.0.0 or 0.4.0 ones: run the same version on every cabinet.
