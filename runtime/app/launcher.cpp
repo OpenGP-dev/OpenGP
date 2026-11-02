@@ -3,9 +3,9 @@
 #include "app/launcher.h"
 
 #include <algorithm>
-#include <cmath>
 #include <atomic>
 #include <cctype>
+#include <cmath>
 #include <exception>
 #include <chrono>
 #include <cstdio>
@@ -18,6 +18,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -220,6 +221,34 @@ void size_window(SDL_Window* window, int width, int height) {
   SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 }
 
+// The hint a new player gets once, a few seconds after the game starts: how
+// to put in a coin and start (by their own bindings), and how to open the
+// menu.
+std::string first_run_hint(const input::HostInput* in, bool free_play) {
+  using Kind = input::HostInput::DeviceKind;
+  auto first = [in](Kind kind, std::string_view control) -> std::string {
+    if (!in) return "";
+    for (std::size_t c = 0; c < input::HostInput::kControlCount; ++c) {
+      if (control != input::HostInput::control_name(c)) continue;
+      const std::vector<std::string> labels = in->binding_labels(kind, c);
+      return labels.empty() ? "" : labels.front();
+    }
+    return "";
+  };
+  const std::string coin = free_play ? "" : first(Kind::Keyboard, "coin");
+  const std::string start = first(Kind::Keyboard, "start");
+  std::string text;
+  if (!coin.empty()) text = "Press " + coin + " to insert a coin";
+  if (!start.empty()) text += (text.empty() ? "Press " : ", then ") + start + " to start";
+  // The gamepad's buttons, when they are still the defaults.
+  const bool pad_defaults = (free_play || first(Kind::Gamepad, "coin") == "back") && first(Kind::Gamepad, "start") == "start";
+  if (!text.empty() && pad_defaults) text += free_play ? " (Start on a gamepad)" : " (Back and Start on a gamepad)";
+  if (!text.empty()) text += ". ";
+  text += pad_defaults ? "Esc (or Back + Start) opens the menu, with the settings and controls."
+                       : "Esc opens the menu, with the settings and controls.";
+  return text;
+}
+
 // What to save: the settings file's values, except those changed (in the
 // menu, or by resizing the window) since start-up. Command-line options stay
 // out of the file.
@@ -239,6 +268,7 @@ Settings settings_to_save(const Settings& file, const Settings& start, const Set
   OPENGP_KEEP_CHANGE(pause_in_menu);
   OPENGP_KEEP_CHANGE(pause_in_background);
   OPENGP_KEEP_CHANGE(card);
+  OPENGP_KEEP_CHANGE(first_run_hint);
   OPENGP_KEEP_CHANGE(camera);
   OPENGP_KEEP_CHANGE(webcam);
   OPENGP_KEEP_CHANGE(rich_presence);
@@ -858,6 +888,11 @@ int run(const Game& game, int argc, char** argv) {
       }
       if (use_menu) {
         for (const std::string& notice : os::take_player_notices()) menu.notify(notice, NoticeKind::Problem);
+        // Once the game has started (about 10 s: its device checks).
+        if (settings.first_run_hint && machine.gpu().frames() >= 600) {
+          settings.first_run_hint = applied.first_run_hint = false;
+          menu.notify(first_run_hint(use_input ? &host_input : nullptr, settings.free_play));
+        }
         // The settings are saved when the menu closes, whatever closed it
         // (Esc, the Guide button, or its Resume button).
         if (menu_was_open && !menu.is_open()) save();

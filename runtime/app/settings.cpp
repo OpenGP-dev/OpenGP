@@ -126,6 +126,7 @@ bool load_settings(const std::string& path, Settings* settings, std::string* err
   s.pause_in_menu = game["pause_in_menu"].value_or(s.pause_in_menu);
   s.pause_in_background = game["pause_in_background"].value_or(s.pause_in_background);
   s.card = game["card"].value_or(s.card);
+  s.first_run_hint = game["first_run_hint"].value_or(s.first_run_hint);
   const auto camera = root["camera"];
   if (const auto source = camera["source"].value<std::string>(); source && !parse_camera(*source, &s.camera))
     warn("unknown camera source \"" + *source + "\" (kept " + camera_name(s.camera) + ")");
@@ -183,6 +184,10 @@ bool save_settings(const std::string& path, const Settings& s, std::string* erro
          "# The Mario Card you hold (user/cards/<game>/<name>.bin), or \"\" for none.\n"
          "card = "
       << quoted(s.card)
+      << "\n"
+         "# Show the hint about coins and the menu the next time the game starts.\n"
+         "first_run_hint = "
+      << (s.first_run_hint ? "true" : "false")
       << "\n"
          "\n"
          "[camera]\n"

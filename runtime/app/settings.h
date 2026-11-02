@@ -45,6 +45,7 @@ struct Settings {
   bool pause_in_menu = true;         // the game pauses while the menu is open
   bool pause_in_background = false;  // ... and while its window is not the active one
   std::string card = "Card 1";  // the Mario Card the player holds (a file in user/cards/); "" for none
+  bool first_run_hint = true;   // show the hint about coins and the menu (once, then false)
 
   // [camera] (read at start-up: changes take effect when the game restarts)
   CameraSource camera = CameraSource::Off;

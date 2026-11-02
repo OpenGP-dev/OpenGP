@@ -6,6 +6,7 @@
 - Key bindings now show the correct key labels on non-US keyboards
 - Fixed the default window size on high-DPI displays: the window's size now grows with the display's scale
 - Removed the debug spam from the console: the game's SDK messages, hardware logs and the status line every 5 seconds now need `--verbose`
+- Added a first-run hint for inserting a coin and opening the menu
 
 ## 1.0.1 (2/11/2026)
 

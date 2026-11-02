@@ -20,7 +20,8 @@ way, and everything on this page applies to both.
 
 The games behave like the arcade cabinet: insert a coin and press start; in the menus, steer to
 choose and step on the gas pedal to decide. Turn on free play in the menu (Esc), or start the
-game with `--free-play`, to play without coins ("Step on gas pedal to start").
+game with `--free-play`, to play without coins ("Step on gas pedal to start"). The first time a
+game starts, a hint says which keys put in a coin, start and open the menu.
 
 ```sh
 opengp-mkgp2 --free-play                                # in the installer package's folder
