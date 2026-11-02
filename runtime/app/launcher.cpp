@@ -3,6 +3,7 @@
 #include "app/launcher.h"
 
 #include <algorithm>
+#include <cmath>
 #include <atomic>
 #include <cctype>
 #include <exception>
@@ -186,6 +187,35 @@ void apply_options(const Options& o, Settings& s) {
   if (o.camera) s.camera = *o.camera;
   if (o.cabinet) s.cabinet = *o.cabinet;
   if (o.lan) s.lan = *o.lan;
+}
+
+// The window's size in settings.toml is in units of the display's scale (as
+// Windows' display settings count it), so the default 1280 x 720 is the same
+// size on a 4K display at 200% as on a 1080p one at 100%. This is how many of
+// SDL's window units one of them is: the display's scale where SDL's window
+// sizes are pixels (Windows, X11), 1 where they are already scaled (macOS,
+// Wayland).
+float window_units(SDL_Window* window) {
+  const float display = SDL_GetWindowDisplayScale(window);
+  const float density = SDL_GetWindowPixelDensity(window);
+  if (!(display > 0.0f) || !(density > 0.0f)) return 1.0f;
+  return display / density;
+}
+
+// Sizes a new (hidden) window from the settings for its display, no larger
+// than the display's usable area, and centres it.
+void size_window(SDL_Window* window, int width, int height) {
+  const float units = window_units(window);
+  float w = std::round(static_cast<float>(width) * units), h = std::round(static_cast<float>(height) * units);
+  SDL_Rect usable;
+  if (SDL_GetDisplayUsableBounds(SDL_GetDisplayForWindow(window), &usable) && usable.w > 0 && usable.h > 0) {
+    // Room for the title bar and borders.
+    const float fit = std::min({1.0f, usable.w * 0.95f / w, usable.h * 0.9f / h});
+    w = std::round(w * fit);
+    h = std::round(h * fit);
+  }
+  SDL_SetWindowSize(window, static_cast<int>(w), static_cast<int>(h));
+  SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 }
 
 // What to save: the settings file's values, except those changed (in the
@@ -682,9 +712,11 @@ int run(const Game& game, int argc, char** argv) {
     if (!o.headless) {
       const std::string title = std::string("OpenGP - ") + game.title;
       window = SDL_CreateWindow(title.c_str(), settings.window_width, settings.window_height,
-                                SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY |
+                                SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_HIDDEN |
                                     (settings.fullscreen ? SDL_WINDOW_FULLSCREEN : 0));
       if (!window) return start_failed(std::string("Could not create a window: ") + SDL_GetError());
+      size_window(window, settings.window_width, settings.window_height);
+      SDL_ShowWindow(window);
     }
     static video::Renderer renderer;
     if (!renderer.init(window, internal_scale(settings.internal_resolution, 0), &error)) {
@@ -837,10 +869,9 @@ int run(const Game& game, int argc, char** argv) {
           case SDL_EVENT_WINDOW_RESIZED:
             // Remember the window's size (not the fullscreen or maximised one).
             if (window && !(SDL_GetWindowFlags(window) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_MAXIMIZED))) {
-              settings.window_width = e.window.data1;
-              settings.window_height = e.window.data2;
-              applied.window_width = e.window.data1;
-              applied.window_height = e.window.data2;
+              const float units = window_units(window);
+              settings.window_width = applied.window_width = static_cast<int>(std::lround(e.window.data1 / units));
+              settings.window_height = applied.window_height = static_cast<int>(std::lround(e.window.data2 / units));
             }
             break;
           case SDL_EVENT_WINDOW_ENTER_FULLSCREEN: settings.fullscreen = applied.fullscreen = true; break;

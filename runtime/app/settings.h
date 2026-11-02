@@ -31,7 +31,7 @@ enum class CameraSource : u8 {
 struct Settings {
   // [video]
   bool fullscreen = false;
-  int window_width = 1280, window_height = 720;  // the window's size when not fullscreen
+  int window_width = 1280, window_height = 720;  // the window's size when not fullscreen, at 100% display scale
   AspectRatio aspect = AspectRatio::Auto;
   u32 internal_resolution = 0;  // 0: from the window's size, else 1 to 8 times 640x528
   bool vsync = true;

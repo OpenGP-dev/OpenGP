@@ -4,6 +4,7 @@
 - The menu no longer shows your full folder path: an **Open folder** button opens the card or controls folder instead
 - Gamepads without a Guide button (or where Steam takes it) open the menu with **Back** and **Start** held together
 - Key bindings now show the correct key labels on non-US keyboards
+- Fixed the default window size on high-DPI displays: the window's size now grows with the display's scale
 
 ## 1.0.1 (2/11/2026)
 

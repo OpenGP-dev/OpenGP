@@ -148,7 +148,7 @@ bool save_settings(const std::string& path, const Settings& s, std::string* erro
          "fullscreen = "
       << (s.fullscreen ? "true" : "false")
       << "\n"
-         "# The window's size when not fullscreen.\n"
+         "# The window's size when not fullscreen, at 100% display scale (it grows with the scale).\n"
          "window_width = "
       << s.window_width << "\nwindow_height = " << s.window_height
       << "\n"
