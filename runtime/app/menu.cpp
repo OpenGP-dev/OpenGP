@@ -193,9 +193,19 @@ void Menu::set_open(bool open) {
 bool Menu::handle_event(const SDL_Event& e) {
   if (!initialised_) return false;
   // Esc opens the menu; once it is open it goes back a level (update()).
-  // The guide button always opens or closes it.
+  // The guide button, or Back + Start held together (input/menu_chord.h),
+  // always opens or closes it.
   const bool esc = e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE && !e.key.repeat;
-  const bool guide = e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_GUIDE;
+  bool guide = false;
+  if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+    const auto button = static_cast<SDL_GamepadButton>(e.gbutton.button);
+    guide = button == SDL_GAMEPAD_BUTTON_GUIDE;
+    if (button == SDL_GAMEPAD_BUTTON_BACK || button == SDL_GAMEPAD_BUTTON_START) {
+      SDL_Gamepad* pad = SDL_GetGamepadFromID(e.gbutton.which);
+      const auto other = button == SDL_GAMEPAD_BUTTON_BACK ? SDL_GAMEPAD_BUTTON_START : SDL_GAMEPAD_BUTTON_BACK;
+      guide |= pad && SDL_GetGamepadButton(pad, other);
+    }
+  }
   if (guide || (esc && !open_)) {
     set_open(!open_);
     return true;

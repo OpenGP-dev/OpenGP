@@ -14,6 +14,7 @@
 #include <map>
 #include <vector>
 
+#include "input/menu_chord.h"
 #include "os/atomic_file.h"
 
 #ifdef _WIN32
@@ -422,6 +423,7 @@ struct HostInput::Impl {
 
   Config config;
   std::string path;
+  MenuChord menu_chord;
   bool dirty = false;      // bindings changed since load() or save()
   bool keep_file = false;  // the file could not be read nor set aside: never overwritten
 
@@ -756,6 +758,18 @@ triforce::Controls HostInput::poll() {
   c.test = amount[kTest] > 0.5f;
   c.service = amount[kService] > 0.5f;
 
+  // Back + Start opens the menu (see menu_chord.h): the first of the two is
+  // held back from the game for a moment.
+  bool half = false, both = false;
+  for (const auto& [id, d] : m.devices) {
+    if (!d.gamepad) continue;
+    const bool back = SDL_GetGamepadButton(d.gamepad, SDL_GAMEPAD_BUTTON_BACK);
+    const bool start = SDL_GetGamepadButton(d.gamepad, SDL_GAMEPAD_BUTTON_START);
+    both |= back && start;
+    half |= back != start;
+  }
+  m.menu_chord.filter(half, both, now, &c);
+
   const bool pause = amount[kPause] > 0.5f;
   if (pause && !m.pause_held) m.pause_pressed = true;
   m.pause_held = pause;
@@ -784,6 +798,7 @@ std::vector<std::string> HostInput::bindings(DeviceKind kind, std::size_t contro
   for (const Source& source : impl_->bindings(kind).sources[control]) names.push_back(source_name(source));
   return names;
 }
+
 
 void HostInput::remove_binding(DeviceKind kind, std::size_t control, std::size_t index) {
   if (control >= kControlCount) return;

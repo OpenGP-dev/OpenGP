@@ -32,14 +32,14 @@ the card keeps your progress (Mario Coins, titles, unlocked characters). See [Ma
 
 ## The menu
 
-**Esc** (or a gamepad's guide button) opens the menu over the game: **Resume**, **Settings**,
+**Esc** (or a gamepad's guide button, or **Back** and **Start** held together) opens the menu over the game: **Resume**, **Settings**,
 **Test menu** (the game's own, for operators: it restarts the game) and **Quit**. The game pauses
 while the menu is open and gets no controls (turn off **Pause while this menu is open** in
 Settings, on the Game page, to keep it running).
 
 The menu works with the keyboard, a gamepad or the mouse: the arrows (or the d-pad and left stick)
 move, **Enter** (or **A**) selects, and **Esc** (or **B**) goes back one step, out to the game
-from the first one; the guide button closes the menu from anywhere. In Settings, **Page Up** and
+from the first one; the guide button (or Back + Start) closes the menu from anywhere. In Settings, **Page Up** and
 **Page Down** (or **LB** and **RB**) change pages, and **Left** and **Right** change the chosen
 row's value without opening a list. Quitting, the test menu and restoring the default controls
 ask first.
@@ -223,7 +223,7 @@ it as well.
 | Start | Enter, 1 | Start |
 | Coin | 5, C | Back |
 | Service / test | F1 / F2 | |
-| Menu | Esc | Guide |
+| Menu | Esc | Guide, Back + Start |
 | Pause | P, Pause | |
 | Fullscreen | F11, Alt+Enter | |
 | Screenshot | F12 | |

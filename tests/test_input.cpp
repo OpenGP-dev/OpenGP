@@ -5,6 +5,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
+#include "input/menu_chord.h"
 #include "input/script.h"
 
 using input::Script;
@@ -81,4 +82,65 @@ TEST_CASE("errors leave the script unchanged") {
   CHECK_FALSE(s.parse("50 gas=256", &error));
   CHECK_FALSE(at(s, 20).start);
   CHECK(s.end() == 10 + Script::kDefaultDuration);
+}
+
+// ---- Back + Start opens the menu ----
+
+namespace {
+
+using input::MenuChord;
+using namespace std::chrono_literals;
+
+struct ChordRun {
+  MenuChord chord;
+  MenuChord::Clock::time_point now{};
+  Controls poll(bool back, bool start, bool coin, bool start_control) {
+    Controls c;
+    c.coin = coin;
+    c.start = start_control;
+    chord.filter(back != start, back && start, now, &c);
+    now += 16ms;
+    return c;
+  }
+};
+
+}  // namespace
+
+TEST_CASE("Back then Start opens the menu without a coin") {
+  ChordRun r;
+  CHECK_FALSE(r.poll(true, false, true, false).coin);  // Back: the coin is held back
+  CHECK_FALSE(r.poll(true, false, true, false).coin);
+  const Controls both = r.poll(true, true, true, true);  // the chord
+  CHECK_FALSE(both.coin);
+  CHECK_FALSE(both.start);
+  CHECK_FALSE(r.poll(false, true, false, true).start);  // still nothing until all released
+  CHECK_FALSE(r.poll(false, false, false, false).coin);
+  CHECK_FALSE(r.poll(false, false, false, false).coin);  // no replay of the held-back coin
+}
+
+TEST_CASE("a quick tap of Back still inserts a coin") {
+  ChordRun r;
+  CHECK_FALSE(r.poll(true, false, true, false).coin);
+  CHECK(r.poll(false, false, false, false).coin);  // replayed
+  CHECK(r.poll(false, false, false, false).coin);
+  CHECK(r.poll(false, false, false, false).coin);
+  CHECK_FALSE(r.poll(false, false, false, false).coin);
+}
+
+TEST_CASE("holding Back alone reaches the game after the wait") {
+  ChordRun r;
+  bool seen = false;
+  for (int i = 0; i < 12; ++i) seen |= r.poll(true, false, true, false).coin;
+  CHECK(seen);
+  CHECK(r.poll(true, false, true, false).coin);  // and stays down while held
+}
+
+TEST_CASE("other controls are never held back") {
+  ChordRun r;
+  Controls c;
+  c.item = true;
+  c.gas = 200;
+  r.chord.filter(true, false, r.now, &c);
+  CHECK(c.item);
+  CHECK(c.gas == 200);
 }
