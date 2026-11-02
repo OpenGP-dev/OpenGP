@@ -671,9 +671,11 @@ int run(const Game& game, int argc, char** argv) {
                  static_cast<unsigned long long>(machine.exception_returns()));
 #ifdef OPENGP_VIDEO
     if (g_audio_out)
-      std::fprintf(out, "  audio: queue %.0f ms, %llu underruns, %llu overflows\n", g_audio_out->queue_ms(),
+      std::fprintf(out, "  audio: queue %.0f ms (target %.0f), %llu underruns, %llu overflows, %llu resyncs\n",
+                   g_audio_out->queue_ms(), g_audio_out->target_ms(),
                    static_cast<unsigned long long>(g_audio_out->underruns()),
-                   static_cast<unsigned long long>(g_audio_out->overflows()));
+                   static_cast<unsigned long long>(g_audio_out->overflows()),
+                   static_cast<unsigned long long>(g_audio_out->resyncs()));
 #endif
     for (ppc::TraceStack* s : ppc::trace_all_stacks()) {
       const auto frames = ppc::trace_snapshot(*s);

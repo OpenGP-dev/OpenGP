@@ -12,6 +12,8 @@
 - Fixed pedals binding to the wrong axis half when bound before they were first moved
 - The webcam no longer switches on at start-up: the game's camera check gets a picture without it
 - Fixed the first photo coming out dark: the webcam's first moment, while it adjusts to the light, is left out
+- Fixed audio drifting out of sync after changing the audio device: the sound catches up at once
+- Fixed occasional audio stutter: the sound's buffer suits the device, and grows a little if it ever runs dry
 
 ## 1.0.1 (2/11/2026)
 

@@ -76,6 +76,12 @@ if(TARGET opengp_input)
   add_test(NAME controls COMMAND test_controls)
 endif()
 
+if(TARGET opengp_audio)
+  add_executable(test_audio test_audio.cpp)
+  target_link_libraries(test_audio PRIVATE opengp_audio doctest opengp_warnings)
+  add_test(NAME audio COMMAND test_audio)
+endif()
+
 add_executable(test_camera test_camera.cpp)
 target_link_libraries(test_camera PRIVATE opengp_machine doctest opengp_warnings)
 add_test(NAME camera COMMAND test_camera)
