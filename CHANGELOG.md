@@ -1,4 +1,4 @@
-## Unreleased
+## 1.0.2 (not released yet)
 
 - The command-line installer is now called `opengp-cli`, so it is no longer mistaken for the way to install OpenGP (open `OpenGP` for that). If you unpack the new package over an older one, delete the old `opengp-install`
 - The menu no longer shows your full folder path: an **Open folder** button opens the card or controls folder instead
