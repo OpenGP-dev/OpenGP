@@ -126,7 +126,16 @@ ProcessResult run_process(const std::vector<std::string>& args, const std::strin
   posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0);
   posix_spawn_file_actions_adddup2(&actions, fds[1], 1);
   posix_spawn_file_actions_adddup2(&actions, fds[1], 2);
+  // macOS 26 deprecates the _np name for POSIX 2024's addchdir, but the
+  // packages run on macOS 13 and later, which have only the _np one.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
   if (!cwd.empty()) posix_spawn_file_actions_addchdir_np(&actions, cwd.c_str());
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
   std::vector<char*> argv;
   for (const std::string& a : args) argv.push_back(const_cast<char*>(a.c_str()));
   argv.push_back(nullptr);
