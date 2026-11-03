@@ -5,30 +5,12 @@ name: Package
 # from their own disc image, and the launcher players open, OpenGP, which
 # builds the games with the installer's code. No game code or data is in them.
 #
-# It runs for every version tag and by hand (Actions > Package > Run workflow,
-# or `gh workflow run package.yml --ref <branch>`), and on main and pull
-# requests only when the build itself changes; CI builds and tests every other
-# change. Run it by hand on the release commit before tagging.
+# Pushing a version tag (v1.2.3) builds the packages and attaches them to a
+# draft release, with that version's CHANGELOG.md section as its notes. A run
+# by hand (Actions > Package > Run workflow) only builds and tests them.
 on:
   push:
-    branches: [main]
     tags: ['v*']
-    # Not checked for tags: every tag runs.
-    paths:
-      - '**/CMakeLists.txt'
-      - '**/*.cmake'
-      - 'CMakePresets.json'
-      - 'tools/installer/**'
-      - 'tools/package_probe.py'
-      - '.github/workflows/package.yml'
-  pull_request:
-    paths:
-      - '**/CMakeLists.txt'
-      - '**/*.cmake'
-      - 'CMakePresets.json'
-      - 'tools/installer/**'
-      - 'tools/package_probe.py'
-      - '.github/workflows/package.yml'
   workflow_dispatch:
     inputs:
       launcher_ref:
@@ -47,10 +29,8 @@ env:
 permissions:
   contents: read
 
-# A newer push to the same pull request cancels the older run.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   windows:
@@ -392,8 +372,13 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
+          path: packages
           merge-multiple: true
       - name: Upload the packages
         env:
@@ -408,7 +393,11 @@ jobs:
               exit 1
             fi
           else
-            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "OpenGP ${TAG#v}" --notes "See CHANGELOG.md."
+            # The notes: the lines under "## <version>" (or "## <version> (date)").
+            awk -v v="${TAG#v}" '/^## / { f = ($2 == v); next } f' CHANGELOG.md > notes.md
+            [ -s notes.md ] || echo "See CHANGELOG.md." > notes.md
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "OpenGP ${TAG#v}" --notes-file notes.md
           fi
+          cd packages
           sha256sum OpenGP-* > SHA256SUMS
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber OpenGP-* SHA256SUMS
