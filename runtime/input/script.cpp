@@ -121,9 +121,10 @@ void Script::apply(u64 frame, triforce::Controls& c) const {
     c.cancel |= b.cancel;
     c.test |= b.test;
     c.service |= b.service;
-    if (e.steering) c.steering = *e.steering;
-    if (e.gas) c.gas = *e.gas;
-    if (e.brake) c.brake = *e.brake;
+    // 0-255 as on the cabinet's 8-bit scale, 128 straight ahead.
+    if (e.steering) c.steering = std::clamp((static_cast<float>(*e.steering) - 128.0f) / 127.0f, -1.0f, 1.0f);
+    if (e.gas) c.gas = static_cast<float>(*e.gas) / 255.0f;
+    if (e.brake) c.brake = static_cast<float>(*e.brake) / 255.0f;
   }
 }
 

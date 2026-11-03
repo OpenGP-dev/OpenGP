@@ -143,3 +143,45 @@ TEST_CASE("the time base can be set while paused") {
   h.set_paused(false);
   CHECK(h.timebase() - 12345 < ms_ticks(25));
 }
+
+// ---- The clock's rate (matching a 60 Hz display) ----
+
+TEST_CASE("a faster clock carries on from where it was, at its new rate") {
+  Rig r;
+  const u64 before = r.hw->timebase();
+  r.hw->set_clock_rate(1.001001);
+  const u64 after = r.hw->timebase();
+  CHECK(after >= before);
+  CHECK(after - before < ms_ticks(5));  // no jump
+
+  // Over half a second of the host's clock, the time base runs 0.1% faster.
+  const auto t0 = std::chrono::steady_clock::now();
+  const u64 tb0 = r.hw->timebase();
+  std::this_thread::sleep_for(500ms);
+  const u64 tb1 = r.hw->timebase();
+  const double host_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+  const double ratio = static_cast<double>(tb1 - tb0) / (host_s * static_cast<double>(hw::kTimebaseHz));
+  CHECK(ratio == doctest::Approx(1.001001).epsilon(0.0005));
+
+  // Host times and time base values convert both ways.
+  const u64 now_ns = static_cast<u64>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+  for (const u64 tb : {r.hw->timebase_at(now_ns), r.hw->timebase_at(now_ns) + 12345, r.hw->timebase_at(now_ns) - 999}) {
+    const u64 ns = r.hw->steady_ns_at(tb);
+    CHECK(r.hw->timebase_at(ns) == tb);
+    CHECK(r.hw->timebase_at(ns - 1) < tb);
+  }
+
+  // Back to real time, still without a jump.
+  const u64 fast = r.hw->timebase();
+  r.hw->set_clock_rate(1.0);
+  const u64 slow = r.hw->timebase();
+  CHECK(slow >= fast);
+  CHECK(slow - fast < ms_ticks(5));
+}
+
+TEST_CASE("a clock rate far from real time is refused") {
+  Rig r;
+  r.hw->set_clock_rate(2.0);
+  CHECK(r.hw->clock_rate() == 1.0);
+}

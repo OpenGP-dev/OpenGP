@@ -8,7 +8,7 @@ details.
 
 - **From the installer package**: unpack it, open `OpenGP` (the launcher) and add your disc image
   of each game. It builds each game you have an image of, once, and then plays it; see
-  [packaging.md](packaging.md). On the command line, `opengp-install` builds them the same way.
+  [packaging.md](packaging.md). On the command line, `opengp-cli` builds them the same way.
   The games, `opengp-mkgp2` and `opengp-mkgp1`, then sit next to OpenGP.
 - **From source**: see [building.md](building.md) and [game-files.md](game-files.md).
 
@@ -20,7 +20,8 @@ way, and everything on this page applies to both.
 
 The games behave like the arcade cabinet: insert a coin and press start; in the menus, steer to
 choose and step on the gas pedal to decide. Turn on free play in the menu (Esc), or start the
-game with `--free-play`, to play without coins ("Step on gas pedal to start").
+game with `--free-play`, to play without coins ("Step on gas pedal to start"). The first time a
+game starts, a hint says which keys put in a coin, start and open the menu.
 
 ```sh
 opengp-mkgp2 --free-play                                # in the installer package's folder
@@ -32,14 +33,14 @@ the card keeps your progress (Mario Coins, titles, unlocked characters). See [Ma
 
 ## The menu
 
-**Esc** (or a gamepad's guide button) opens the menu over the game: **Resume**, **Settings**,
+**Esc** (or a gamepad's guide button, or **Back** and **Start** held together) opens the menu over the game: **Resume**, **Settings**,
 **Test menu** (the game's own, for operators: it restarts the game) and **Quit**. The game pauses
 while the menu is open and gets no controls (turn off **Pause while this menu is open** in
 Settings, on the Game page, to keep it running).
 
 The menu works with the keyboard, a gamepad or the mouse: the arrows (or the d-pad and left stick)
 move, **Enter** (or **A**) selects, and **Esc** (or **B**) goes back one step, out to the game
-from the first one; the guide button closes the menu from anywhere. In Settings, **Page Up** and
+from the first one; the guide button (or Back + Start) closes the menu from anywhere. In Settings, **Page Up** and
 **Page Down** (or **LB** and **RB**) change pages, and **Left** and **Right** change the chosen
 row's value without opening a list. Quitting, the test menu and restoring the default controls
 ask first.
@@ -112,10 +113,18 @@ even_pacing` in `user/settings.toml`), OpenGP holds each frame until the game's 
 cabinet's display does, so the frames come evenly spaced. It costs about half a frame (8 ms) of
 delay, and matters most in fullscreen with FreeSync or G-Sync.
 
+### 60 Hz and 120 Hz displays
+
+The game's clock is NTSC's 59.94 Hz, a little slower than a 60 Hz display: at real speed one
+frame in a thousand would be shown twice, a small hitch every 17 seconds. With vsync on, on a
+display within half a percent of 60 Hz or a multiple of it, OpenGP runs the game 0.1% faster to
+match it (the console says so); the sound speeds up the same, which no one hears. Linked races
+run at real speed.
+
 ## Mario Cards
 
 Cards are saved in `user/cards/GGPE01/` (GP) and `user/cards/GGPE02/` (GP 2), one file per card
-(`Card 1.bin`, ...). In the menu's Game tab you choose the card you hold: you insert it when the
+(`Card 1.bin`, ...); **Open folder**, under the card list, opens that folder. In the menu's Game tab you choose the card you hold: you insert it when the
 game asks for your card, and the game takes it back at the end. **New card** gives you a blank one (answer **No** to "Do you have Mario
 Card?", then buy a card, and it is saved under that name); **No card** plays without one. A card the
 game gives you is yours to hold from then on, so you can keep a card per player. Files can be
@@ -141,9 +150,11 @@ there is no webcam, the game runs without its camera and says so on the console.
 `webcam` (the webcam's name, `""` for the first), and `--camera off|webcam|test` sets it for one
 run.
 
-The webcam is on only while the game uses it: while your photo is taken, for a moment as the game
-starts (it checks its camera), and on the test menu's camera page. Its light goes off a few
-seconds later. If the webcam can't be opened then (another program is using it, say), the photo
+The webcam is on only while the game uses it: while your photo is taken and on the test menu's
+camera page (the game's camera check at start-up gets a grey picture, without the webcam). Its
+light goes off a few seconds later. Its first moment's pictures, dark while it adjusts to the
+room's light, are left out, and in a dim room the picture is brightened (the cabinet had its own
+light). If the webcam can't be opened then (another program is using it, say), the photo
 is grey and the console says why.
 
 ## Linked cabinets
@@ -223,7 +234,7 @@ it as well.
 | Start | Enter, 1 | Start |
 | Coin | 5, C | Back |
 | Service / test | F1 / F2 | |
-| Menu | Esc | Guide |
+| Menu | Esc | Guide, Back + Start |
 | Pause | P, Pause | |
 | Fullscreen | F11, Alt+Enter | |
 | Screenshot | F12 | |
@@ -246,7 +257,7 @@ at all is kept as `controls.toml.bad` and the default controls are used. Each co
 
 ```toml
 [keyboard]
-gas = ["Up", "W", "Left Shift"]   # SDL key names
+gas = ["Up", "W", "Left Shift"]   # SDL key names, by their place on a US keyboard
 
 [gamepad]
 item = ["a", "x"]                 # SDL gamepad button names
@@ -256,6 +267,9 @@ steer = ["axis0"]
 gas = ["-axis2"]                  # a pedal that reads highest when released
 brake = ["-axis3"]
 ```
+
+The file names keys by where they are on a US keyboard, so it works with any layout; the menu
+shows them as your keyboard's layout prints them (`W` on an AZERTY keyboard shows as **Z**).
 
 Axes: `axis2` is the whole axis, `axis2+` and `axis2-` are one half of it, and a leading `-`
 turns it around. The file itself lists every name.

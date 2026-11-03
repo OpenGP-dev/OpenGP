@@ -11,7 +11,7 @@
 //                 [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]
 //                 [--input SCRIPT] [--input-file PATH] [--free-play] [--test-menu]
 //                 [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--game-log]
-//                 [--camera off|webcam|test] [--cabinet 1-4] [--lan] [--version]
+//                 [--camera off|webcam|test] [--cabinet 1-4] [--lan] [--verbose] [--version]
 //
 // Options override user/settings.toml for one run (see docs/building.md).
 #pragma once

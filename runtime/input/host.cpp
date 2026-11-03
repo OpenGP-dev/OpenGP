@@ -14,6 +14,7 @@
 #include <map>
 #include <vector>
 
+#include "input/menu_chord.h"
 #include "os/atomic_file.h"
 
 #ifdef _WIN32
@@ -408,6 +409,9 @@ float apply_deadzone(float v, float deadzone) {
 
 }  // namespace
 
+// A capture's baseline for an axis that hasn't reported yet (outside -32768..32767).
+constexpr int kUnknownAxis = 1 << 20;
+
 struct HostInput::Impl {
   struct Device {
     SDL_Gamepad* gamepad = nullptr;
@@ -422,6 +426,7 @@ struct HostInput::Impl {
 
   Config config;
   std::string path;
+  MenuChord menu_chord;
   bool dirty = false;      // bindings changed since load() or save()
   bool keep_file = false;  // the file could not be read nor set aside: never overwritten
 
@@ -437,7 +442,7 @@ struct HostInput::Impl {
     bool active = false;
     DeviceKind kind = DeviceKind::Keyboard;
     std::size_t control = 0;
-    std::map<SDL_JoystickID, std::vector<Sint16>> axes;  // where each axis was at the start
+    std::map<SDL_JoystickID, std::vector<int>> axes;  // where each axis was at the start, or kUnknownAxis
   } capture;
   float digital_steer = 0.0f;  // -1..1, keys and buttons turn it gradually
   bool pause_held = false;     // the pause control's buttons and axes, at the last poll
@@ -497,8 +502,17 @@ struct HostInput::Impl {
     if (s.invert) v = -v;
     return apply_deadzone(v, deadzone);
   }
+  // Whether a joystick axis has reported where it is. Until a device sends
+  // its first report SDL reads every axis as 0, the middle: a pedal that
+  // rests at one end would read half pressed until it was first moved.
+  static bool reported(const Source& s, const Device* d) {
+    if (s.kind != Source::Kind::JoyAxis || !d || !d->joystick) return true;
+    Sint16 initial = 0;
+    return SDL_GetJoystickAxisInitialState(d->joystick, s.index, &initial);
+  }
   // As a pedal or button: 0..1.
   static float amount(const Source& s, const Device* d, float deadzone) {
+    if (!reported(s, d)) return 0.0f;  // at rest, wherever that is
     float v = raw(s, d);
     if (!is_axis(s)) return v;
     if (s.invert) v = -v;
@@ -746,15 +760,27 @@ triforce::Controls HostInput::poll() {
   const float steer = std::clamp(steer_axis + m.digital_steer, -1.0f, 1.0f);
 
   triforce::Controls c;
-  c.steering = static_cast<u8>(std::lround(128.0f + steer * 127.0f));
-  c.gas = static_cast<u8>(std::lround(amount[kGas] * 255.0f));
-  c.brake = static_cast<u8>(std::lround(amount[kBrake] * 255.0f));
+  c.steering = steer;
+  c.gas = amount[kGas];
+  c.brake = amount[kBrake];
   c.item = amount[kItem] > 0.5f;
   c.cancel = amount[kCancel] > 0.5f;
   c.start = amount[kStart] > 0.5f;
   c.coin = amount[kCoin] > 0.5f;
   c.test = amount[kTest] > 0.5f;
   c.service = amount[kService] > 0.5f;
+
+  // Back + Start opens the menu (see menu_chord.h): the first of the two is
+  // held back from the game for a moment.
+  bool half = false, both = false;
+  for (const auto& [id, d] : m.devices) {
+    if (!d.gamepad) continue;
+    const bool back = SDL_GetGamepadButton(d.gamepad, SDL_GAMEPAD_BUTTON_BACK);
+    const bool start = SDL_GetGamepadButton(d.gamepad, SDL_GAMEPAD_BUTTON_START);
+    both |= back && start;
+    half |= back != start;
+  }
+  m.menu_chord.filter(half, both, now, &c);
 
   const bool pause = amount[kPause] > 0.5f;
   if (pause && !m.pause_held) m.pause_pressed = true;
@@ -785,6 +811,24 @@ std::vector<std::string> HostInput::bindings(DeviceKind kind, std::size_t contro
   return names;
 }
 
+std::vector<std::string> HostInput::binding_labels(DeviceKind kind, std::size_t control) const {
+  std::vector<std::string> names;
+  if (control >= kControlCount) return names;
+  for (const Source& source : impl_->bindings(kind).sources[control]) {
+    std::string name;
+    if (source.kind == Source::Kind::Key) {
+      // As in key events: Latin letters on non-Latin layouts and the digits on
+      // a French number row (SDL_HINT_KEYCODE_OPTIONS), which is what the key
+      // caps of a game's controls are usually called by.
+      const SDL_Keycode key = SDL_GetKeyFromScancode(static_cast<SDL_Scancode>(source.index), SDL_KMOD_NONE, true);
+      if (key == SDLK_RETURN) name = "Enter";  // as most keyboards print it (SDL says Return)
+      else if (const char* n = SDL_GetKeyName(key)) name = n;
+    }
+    names.push_back(name.empty() ? source_name(source) : name);
+  }
+  return names;
+}
+
 void HostInput::remove_binding(DeviceKind kind, std::size_t control, std::size_t index) {
   if (control >= kControlCount) return;
   auto& sources = impl_->bindings(kind).sources[control];
@@ -801,11 +845,17 @@ void HostInput::start_capture(DeviceKind kind, std::size_t control) {
   m.capture.kind = kind;
   m.capture.control = control;
   for (const auto& [id, d] : m.devices) {
-    std::vector<Sint16>& axes = m.capture.axes[id];
+    std::vector<int>& axes = m.capture.axes[id];
     if (d.gamepad) {
       for (int a = 0; a < SDL_GAMEPAD_AXIS_COUNT; ++a) axes.push_back(SDL_GetGamepadAxis(d.gamepad, static_cast<SDL_GamepadAxis>(a)));
     } else {
-      for (int a = 0; a < SDL_GetNumJoystickAxes(d.joystick); ++a) axes.push_back(SDL_GetJoystickAxis(d.joystick, a));
+      // An axis that hasn't reported yet reads 0 whatever its position: its
+      // first report sets where it rests (see capture_event).
+      for (int a = 0; a < SDL_GetNumJoystickAxes(d.joystick); ++a) {
+        Sint16 initial = 0;
+        axes.push_back(SDL_GetJoystickAxisInitialState(d.joystick, a, &initial) ? SDL_GetJoystickAxis(d.joystick, a)
+                                                                                : kUnknownAxis);
+      }
     }
   }
 }
@@ -885,6 +935,11 @@ bool HostInput::capture_event(const SDL_Event& e) {
     }
     case SDL_EVENT_JOYSTICK_AXIS_MOTION: {
       if (kind != DeviceKind::Joystick || is_gamepad(e.jaxis.which)) return kind == DeviceKind::Joystick;
+      if (baseline(e.jaxis.which, e.jaxis.axis) == kUnknownAxis) {
+        // The axis's first report: where it rests, not a movement.
+        m.capture.axes[e.jaxis.which][e.jaxis.axis] = e.jaxis.value;
+        return true;
+      }
       const int base = baseline(e.jaxis.which, e.jaxis.axis);
       const int moved = e.jaxis.value - base;
       if (std::abs(moved) < kMoved) return true;

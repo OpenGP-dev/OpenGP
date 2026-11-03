@@ -1,3 +1,30 @@
+## 1.0.2
+
+- The command-line installer is now called `opengp-cli`, so it is no longer mistaken for the way to install OpenGP 
+- The menu no longer shows your full folder path: an **Open folder** button opens the card or controls folder instead
+- Plainer names and help text in the menu's settings, These now match the settings text from the launcher
+- Aspect ratio and resolution choices now name their sizes (16:9, 1080p, 4K and so on)
+- Gamepads without a Guide button (or where Steam takes it) open the menu with **Back** and **Start** held together
+- Key bindings now show the correct key labels on non-US keyboards
+- Fixed the default window size on high-DPI displays
+- Removed debug spam from the console (use `--verbose` to restore pre 1.0.2 behaviour)
+- Added a first-run hint for inserting a coin and opening the menu
+- Improved wheel and pedal precision
+- Fixed pedals reading as half-pressed until they were first moved
+- Fixed pedals binding to the wrong axis half when bound before they were first moved
+- The webcam no longer switches on at start-up: the game's camera check gets a picture without it
+- Fixed the first photo coming out darker than intended
+- Fixed audio drifting out of sync after changing the audio device
+- Fixed occasional audio stutter
+- Fixed a small periodic stutter on 60 and 120 Hz displays
+
+### Known issues
+
+- Races need most of a CPU core: a PC busy with something else (another game) can drop below
+  60 fps.
+- Linked races can still freeze for a moment now and then; this is being fixed for 1.0.3.
+- 1.0.2 cabinets link with 1.0.1 ones, but not with 1.0.0, run 1.0.1 or newer on every cabinet.
+
 ## 1.0.1 (2/11/2026)
 
 - A new in-game menu in the OpenGP launcher's look: a pause card, with the settings in a dialog
@@ -39,4 +66,4 @@
 
 - Races need most of a CPU core: a PC busy with something else (another game) can drop below
   60 fps.
-- 1.0.1 cabinets can't link with 1.0.0 or 0.4.0 ones: run the same version on every cabinet.
+

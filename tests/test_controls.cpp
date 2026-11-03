@@ -140,3 +140,77 @@ TEST_CASE("a bad entry costs only itself, and a broken file is kept aside") {
   CHECK(fs::exists(fs::path(broken.string() + ".bad")));
   CHECK(again.bindings(Kind::Keyboard, control("gas")) == Names{"Up", "W"});
 }
+
+// ---- Pedals (an SDL virtual joystick) ----
+
+namespace {
+
+// A virtual joystick with three axes and no buttons (a set of pedals).
+struct VirtualPedals {
+  SDL_JoystickID id = 0;
+  SDL_Joystick* joystick = nullptr;
+  VirtualPedals() {
+    SDL_VirtualJoystickDesc desc;
+    SDL_INIT_INTERFACE(&desc);
+    desc.type = SDL_JOYSTICK_TYPE_UNKNOWN;
+    desc.naxes = 3;
+    desc.name = "OpenGP test pedals";
+    id = SDL_AttachVirtualJoystick(&desc);
+    if (id) joystick = SDL_OpenJoystick(id);
+  }
+  ~VirtualPedals() {
+    if (joystick) SDL_CloseJoystick(joystick);
+    if (id) SDL_DetachVirtualJoystick(id);
+  }
+  void set(int axis, Sint16 value) { SDL_SetJoystickVirtualAxis(joystick, axis, value); }
+};
+
+void pump(HostInput& in) {
+  SDL_UpdateJoysticks();
+  SDL_Event e;
+  while (SDL_PollEvent(&e)) {
+    if (in.capturing() && in.capture_event(e)) continue;
+    in.handle_event(e);
+  }
+}
+
+}  // namespace
+
+TEST_CASE("a pedal reads released until it reports, and binds the right way round") {
+  const fs::path path = temp_file("pedals.toml");
+  std::ofstream(path) << "[keyboard]\ngas = []\nbrake = []\n[joystick]\ngas = [\"-axis2\"]\n";
+  HostInput in;
+  std::string error;
+  REQUIRE_MESSAGE(in.load(path.string(), &error), error);
+  if (!in.init(&error)) {
+    MESSAGE("no joystick support here: " << error);
+    return;
+  }
+  VirtualPedals pedals;
+  REQUIRE(pedals.joystick);
+  pump(in);
+  // No report yet: SDL reads 0, half way, but the pedal is released.
+  CHECK(in.poll().gas == 0.0f);
+  // Released, resting at the top ("-axis2"), then pressed all the way.
+  pedals.set(2, 32767);
+  pump(in);
+  CHECK(in.poll().gas == doctest::Approx(0.0f));
+  pedals.set(2, -32768);
+  pump(in);
+  CHECK(in.poll().gas == doctest::Approx(1.0f));
+
+  // Binding the brake from the menu, on pedals that haven't reported yet:
+  // axis 1 rests at the top. Its first report sets where it rests; pressing
+  // it then binds the whole axis, turned around.
+  VirtualPedals fresh;
+  REQUIRE(fresh.joystick);
+  pump(in);
+  in.start_capture(Kind::Joystick, control("brake"));
+  fresh.set(1, 32767);
+  pump(in);
+  CHECK(in.capturing());  // a first report is not a press
+  fresh.set(1, -32768);
+  pump(in);
+  CHECK_FALSE(in.capturing());
+  CHECK(in.bindings(Kind::Joystick, control("brake")) == Names{"-axis1"});
+}

@@ -117,6 +117,13 @@ class Hardware {
   u64 steady_ns_at(u64 timebase) const;
   u32 decrementer() const;
   void set_decrementer(u32 value);
+  // How fast the machine's clock runs against the host's: 1 is real time.
+  // The launcher sets it a little above 1 (0.1%) so that the game's 59.94 Hz
+  // retraces line up with a 60 Hz display's refreshes (a display frame would
+  // otherwise be shown twice every 16.7 seconds). The time base carries on
+  // from where it is: no jump. Thread-safe.
+  void set_clock_rate(double rate);
+  double clock_rate() const { return clock_rate_.load(std::memory_order_relaxed); }
 
   // --- Pause --------------------------------------------------------------------------
   // Freezes the machine: the time base and decrementer stop, timed events
@@ -156,6 +163,9 @@ class Hardware {
   void timer_loop();
   u64 host_ticks() const;
   u64 clock_ticks() const;  // host_ticks(), or when it stopped while paused
+  // The machine's clock in host ticks at a time of the steady clock, and back.
+  u64 ticks_at(u64 steady_ns) const;
+  u64 ns_at_ticks(u64 ticks) const;  // the first nanosecond at or after
 
   u8* base_;
   u32 mem1_size_;
@@ -178,6 +188,17 @@ class Hardware {
   // Time base: tb = host_ticks - tb_origin_ (+ guest adjustments, and time
   // spent paused)
   u64 tb_origin_ = 0;
+  // The clock's rate: from the steady clock's anchor_ns on, it runs at
+  // `rate`, starting from anchor_ticks. Read without a lock.
+  struct ClockMap {
+    u64 anchor_ns = 0;
+    u64 anchor_ticks = 0;
+    double rate = 1.0;
+  };
+  ClockMap clock() const;
+  std::atomic<u32> clock_seq_{0};  // odd while set_clock_rate() changes the three below
+  std::atomic<u64> clock_anchor_ns_{0}, clock_anchor_ticks_{0};
+  std::atomic<double> clock_rate_{1.0};
   std::atomic<u64> paused_at_{0};  // host ticks when paused; 0 when running
   std::condition_variable_any pause_cv_;
   // Decrementer: value `dec_value_` written at time base `dec_written_`.

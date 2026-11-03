@@ -32,7 +32,7 @@ your GGPE02.iso ─extract─> main.dol ─decomp-toolkit─> symbols.txt
 | Input | `runtime/input/` | Keyboard, gamepads and wheels (SDL3) mapped onto the cabinet's controls, force feedback, scripted input |
 | App | `runtime/app/` | Command line, settings, window, the in-game menu (Dear ImGui) |
 | Games | `games/` | Per-game manifest, symbol maps, recompiler config and patches (`mkgp1`, `mkgp2`); what both share in `common/` (their `main()`, SDK replacements, the arcade library's free play and test-menu restart) |
-| Installer | `tools/installer/` | Builds the games on the player's machine from the installer package: the library the package's launcher uses, and `opengp-install` (see [docs/packaging.md](docs/packaging.md)) |
+| Installer | `tools/installer/` | Builds the games on the player's machine from the installer package: the library the package's launcher uses, and `opengp-cli` (see [docs/packaging.md](docs/packaging.md)) |
 | Scripts | `tools/*.py`, `tools/devshell.ps1` | Game setup (extract and verify `main.dol`), naming functions (SDK signatures, the GP 2 decomp, matching functions between the games), Windows build shell |
 | Tests | `tests/` | Decoder, known-answer semantics and differential tests (interpreter vs recompiled code), and tests of the hardware, renderer front end, settings, input, link, paths, the installer and crash reports |
 
@@ -61,7 +61,7 @@ The code is held to the same checks as any other:
 Download the launcher package for Windows, Linux or macOS (Apple Silicon) from the releases,
 unpack it and open `OpenGP`, the launcher. Add your disc image of each game: OpenGP builds the games
 on your machine from your images, then plays them (see [docs/packaging.md](docs/packaging.md) and
-[docs/playing.md](docs/playing.md)). On the command line, `opengp-install` builds them the same way.
+[docs/playing.md](docs/playing.md)). On the command line, `opengp-cli` builds them the same way.
 
 ## Building
 

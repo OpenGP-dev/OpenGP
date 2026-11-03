@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <cmath>
 #include <exception>
 #include <chrono>
 #include <cstdio>
@@ -17,6 +18,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -39,6 +41,7 @@
 #include "os/profiler.h"
 #include "os/reboot.h"
 #include "os/thread_priority.h"
+#include "os/verbose.h"
 #include "ppc/hooks.h"
 #include "ppc/trace.h"
 
@@ -66,7 +69,7 @@ constexpr const char* kUsage =
     "          [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]\n"
     "          [--input SCRIPT] [--input-file PATH] [--free-play] [--test-menu]\n"
     "          [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--game-log]\n"
-    "          [--camera off|webcam|test] [--cabinet 1-4] [--lan] [--version]\n";
+    "          [--camera off|webcam|test] [--cabinet 1-4] [--lan] [--verbose] [--version]\n";
 
 struct Options {
   std::vector<std::string> args;  // as given, for restarts (without --reboot and --frame-offset)
@@ -75,7 +78,7 @@ struct Options {
   bool test_menu = false;         // start in the game's test menu
   std::string image;
   std::string user_dir;  // UTF-8
-  int timeout_s = -1, status_s = 5;
+  int timeout_s = -1, status_s = -1;  // status: -1 is every 5 s with --verbose, else none
   bool headless = false, use_video = true, use_audio = true;
   bool game_log = false;  // print the game's debug messages
   std::set<u64> screenshots;
@@ -131,6 +134,7 @@ int parse_options(const std::vector<std::string>& args, Options& o) {
     else if (a == "--audio-dump" && has_value) o.audio_dump = argv[++i];
     else if (a == "--no-audio") o.use_audio = false;
     else if (a == "--game-log") o.game_log = true;
+    else if (a == "--verbose") os::g_verbose = true;
     else if (a == "--volume" && has_value) o.volume = std::clamp(std::atoi(argv[++i]), 0, 100);
     else if (a == "--lan") o.lan = true;
     else if (a == "--cabinet" && has_value) {
@@ -188,6 +192,87 @@ void apply_options(const Options& o, Settings& s) {
   if (o.lan) s.lan = *o.lan;
 }
 
+// The window's size in settings.toml is in units of the display's scale (as
+// Windows' display settings count it), so the default 1280 x 720 is the same
+// size on a 4K display at 200% as on a 1080p one at 100%. This is how many of
+// SDL's window units one of them is: the display's scale where SDL's window
+// sizes are pixels (Windows, X11), 1 where they are already scaled (macOS,
+// Wayland).
+float window_units(SDL_Window* window) {
+  const float display = SDL_GetWindowDisplayScale(window);
+  const float density = SDL_GetWindowPixelDensity(window);
+  if (!(display > 0.0f) || !(density > 0.0f)) return 1.0f;
+  return display / density;
+}
+
+// Sizes a new (hidden) window from the settings for its display, no larger
+// than the display's usable area, and centres it.
+void size_window(SDL_Window* window, int width, int height) {
+  const float units = window_units(window);
+  float w = std::round(static_cast<float>(width) * units), h = std::round(static_cast<float>(height) * units);
+  SDL_Rect usable;
+  if (SDL_GetDisplayUsableBounds(SDL_GetDisplayForWindow(window), &usable) && usable.w > 0 && usable.h > 0) {
+    // Room for the title bar and borders.
+    const float fit = std::min({1.0f, usable.w * 0.95f / w, usable.h * 0.9f / h});
+    w = std::round(w * fit);
+    h = std::round(h * fit);
+  }
+  SDL_SetWindowSize(window, static_cast<int>(w), static_cast<int>(h));
+  SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+}
+
+// The machine's clock rate for the window's display (Hardware::set_clock_rate):
+// the game's retraces come at 59.94 Hz, NTSC's rate. On a display whose
+// refresh is within half a percent of a multiple of it (60 Hz, 120 Hz), with
+// vsync on, the machine runs that much faster so that each of its frames
+// gets the same number of refreshes: at real time, one frame in 1000 is shown
+// twice on a 60 Hz display (a hitch every 16.7 seconds). The sound speeds up
+// the same 0.1%, which no one hears. Otherwise (other rates, variable
+// refresh, no vsync), and in a linked race, real time.
+double display_clock_rate(SDL_Window* window, bool vsync) {
+  if (!window || !vsync) return 1.0;
+  const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
+  if (!mode) return 1.0;
+  const double hz = mode->refresh_rate_numerator > 0 && mode->refresh_rate_denominator > 0
+                        ? static_cast<double>(mode->refresh_rate_numerator) / mode->refresh_rate_denominator
+                        : static_cast<double>(mode->refresh_rate);
+  constexpr double kGameHz = 2.0 * static_cast<double>(hw::kTimebaseHz) / static_cast<double>(hw::ViDevice::kTicksPerFrame);
+  for (int k = 1; k <= 4; ++k) {
+    const double rate = hz / (k * kGameHz);
+    if (std::fabs(rate - 1.0) <= 0.005) return rate;
+  }
+  return 1.0;
+}
+
+// The hint a new player gets once, a few seconds after the game starts: how
+// to open the menu and put in a coin (by their own bindings).
+std::string first_run_hint(const input::HostInput* in, bool free_play) {
+  using Kind = input::HostInput::DeviceKind;
+  auto labels = [in](Kind kind, std::string_view control) -> std::vector<std::string> {
+    if (!in) return {};
+    for (std::size_t c = 0; c < input::HostInput::kControlCount; ++c)
+      if (control == input::HostInput::control_name(c)) return in->binding_labels(kind, c);
+    return {};
+  };
+  auto first = [&](Kind kind, std::string_view control) -> std::string {
+    const std::vector<std::string> l = labels(kind, control);
+    return l.empty() ? "" : l.front();
+  };
+  // The coin key: C when it is bound (easier to find than 5), else the first.
+  const std::vector<std::string> coin_keys = labels(Kind::Keyboard, "coin");
+  std::string coin = coin_keys.empty() ? "" : coin_keys.front();
+  for (const std::string& k : coin_keys)
+    if (k == "C") coin = k;
+  // The gamepad's buttons, when they are still the defaults.
+  const bool pad_coin = first(Kind::Gamepad, "coin") == "back";
+  const bool pad_menu = pad_coin && first(Kind::Gamepad, "start") == "start";
+  std::string text = "Welcome to OpenGP. Use Escape on keyboard";
+  text += pad_menu ? " or Back + Start on gamepad to open the menu." : " to open the menu.";
+  if (!free_play && !coin.empty()) text += " Use " + coin + (pad_coin ? " or Back" : "") + " to insert a coin.";
+  text += " Have fun!";
+  return text;
+}
+
 // What to save: the settings file's values, except those changed (in the
 // menu, or by resizing the window) since start-up. Command-line options stay
 // out of the file.
@@ -207,6 +292,7 @@ Settings settings_to_save(const Settings& file, const Settings& start, const Set
   OPENGP_KEEP_CHANGE(pause_in_menu);
   OPENGP_KEEP_CHANGE(pause_in_background);
   OPENGP_KEEP_CHANGE(card);
+  OPENGP_KEEP_CHANGE(first_run_hint);
   OPENGP_KEEP_CHANGE(camera);
   OPENGP_KEEP_CHANGE(webcam);
   OPENGP_KEEP_CHANGE(rich_presence);
@@ -485,7 +571,7 @@ int run(const Game& game, int argc, char** argv) {
                           "image in the ISO folder next to OpenGP.");
     return start_failed(std::string("No disc image of ") + game.title + " (" + game.id +
                         ") found. Put it in the ISO folder next to OpenGP, or start the game with --iso PATH. If "
-                        "you moved it, add it again in OpenGP (or give it to opengp-install) so the game knows "
+                        "you moved it, add it again in OpenGP (or give it to opengp-cli) so the game knows "
                         "where it is.");
   }
   if (!check_image(game, o.image)) return 1;
@@ -609,9 +695,11 @@ int run(const Game& game, int argc, char** argv) {
                  static_cast<unsigned long long>(machine.exception_returns()));
 #ifdef OPENGP_VIDEO
     if (g_audio_out)
-      std::fprintf(out, "  audio: queue %.0f ms, %llu underruns, %llu overflows\n", g_audio_out->queue_ms(),
+      std::fprintf(out, "  audio: queue %.0f ms (target %.0f), %llu underruns, %llu overflows, %llu resyncs\n",
+                   g_audio_out->queue_ms(), g_audio_out->target_ms(),
                    static_cast<unsigned long long>(g_audio_out->underruns()),
-                   static_cast<unsigned long long>(g_audio_out->overflows()));
+                   static_cast<unsigned long long>(g_audio_out->overflows()),
+                   static_cast<unsigned long long>(g_audio_out->resyncs()));
 #endif
     for (ppc::TraceStack* s : ppc::trace_all_stacks()) {
       const auto frames = ppc::trace_snapshot(*s);
@@ -649,7 +737,7 @@ int run(const Game& game, int argc, char** argv) {
   };
   os::start_profiler_from_env();
 
-  std::thread([timeout_s = o.timeout_s, status_s = o.status_s, print_status] {
+  std::thread([timeout_s = o.timeout_s, status_s = o.status_s >= 0 ? o.status_s : os::verbose() ? 5 : 0, print_status] {
     using clock = std::chrono::steady_clock;
     const auto deadline = timeout_s > 0 ? clock::now() + std::chrono::seconds(timeout_s) : clock::time_point::max();
     for (;;) {
@@ -682,9 +770,11 @@ int run(const Game& game, int argc, char** argv) {
     if (!o.headless) {
       const std::string title = std::string("OpenGP - ") + game.title;
       window = SDL_CreateWindow(title.c_str(), settings.window_width, settings.window_height,
-                                SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY |
+                                SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_HIDDEN |
                                     (settings.fullscreen ? SDL_WINDOW_FULLSCREEN : 0));
       if (!window) return start_failed(std::string("Could not create a window: ") + SDL_GetError());
+      size_window(window, settings.window_width, settings.window_height);
+      SDL_ShowWindow(window);
     }
     static video::Renderer renderer;
     if (!renderer.init(window, internal_scale(settings.internal_resolution, 0), &error)) {
@@ -781,6 +871,22 @@ int run(const Game& game, int argc, char** argv) {
       applied_width = pw, applied_height = ph;
     };
     apply_settings();
+    // The machine's clock follows the display (display_clock_rate), looked at
+    // again every second: the window may move to another display, vsync may
+    // be turned off, a link may start.
+    auto next_clock_check = std::chrono::steady_clock::now();
+    auto match_display = [&] {
+      const auto now = std::chrono::steady_clock::now();
+      if (now < next_clock_check) return;
+      next_clock_check = now + std::chrono::seconds(1);
+      const double rate = machine.network().linked() ? 1.0 : display_clock_rate(window, settings.vsync);
+      if (std::fabs(rate - machine.hardware().clock_rate()) < 1e-7) return;
+      machine.hardware().set_clock_rate(rate);
+      const SDL_DisplayMode* mode = window ? SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window)) : nullptr;
+      std::fprintf(stderr, "[video] the game's clock runs at %.3f%% to match the display (%d/%d, %.3f Hz)\n",
+                   rate * 100.0, mode ? mode->refresh_rate_numerator : 0, mode ? mode->refresh_rate_denominator : 0,
+                   mode ? static_cast<double>(mode->refresh_rate) : 0.0);
+    };
 
     const fs::path shot_dir = user_dir / "screenshots";
     bool shot_requested = false;
@@ -824,6 +930,11 @@ int run(const Game& game, int argc, char** argv) {
       }
       if (use_menu) {
         for (const std::string& notice : os::take_player_notices()) menu.notify(notice, NoticeKind::Problem);
+        // Once the game has started (about 10 s: its device checks).
+        if (settings.first_run_hint && machine.gpu().frames() >= 600 && !menu.is_open()) {
+          settings.first_run_hint = applied.first_run_hint = false;
+          menu.notify(first_run_hint(use_input ? &host_input : nullptr, settings.free_play));
+        }
         // The settings are saved when the menu closes, whatever closed it
         // (Esc, the Guide button, or its Resume button).
         if (menu_was_open && !menu.is_open()) save();
@@ -837,10 +948,9 @@ int run(const Game& game, int argc, char** argv) {
           case SDL_EVENT_WINDOW_RESIZED:
             // Remember the window's size (not the fullscreen or maximised one).
             if (window && !(SDL_GetWindowFlags(window) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_MAXIMIZED))) {
-              settings.window_width = e.window.data1;
-              settings.window_height = e.window.data2;
-              applied.window_width = e.window.data1;
-              applied.window_height = e.window.data2;
+              const float units = window_units(window);
+              settings.window_width = applied.window_width = static_cast<int>(std::lround(e.window.data1 / units));
+              settings.window_height = applied.window_height = static_cast<int>(std::lround(e.window.data2 / units));
             }
             break;
           case SDL_EVENT_WINDOW_ENTER_FULLSCREEN: settings.fullscreen = applied.fullscreen = true; break;
@@ -890,7 +1000,7 @@ int run(const Game& game, int argc, char** argv) {
         triforce::Controls controls = host_input.poll();
         if (release_guard) {
           const bool held = controls.test || controls.service || controls.coin || controls.start || controls.item ||
-                            controls.cancel || controls.gas > 16 || controls.brake > 16;
+                            controls.cancel || controls.gas > 0.0625f || controls.brake > 0.0625f;
           if (held) controls = triforce::Controls{};
           else release_guard = false;
         }
@@ -900,6 +1010,7 @@ int run(const Game& game, int argc, char** argv) {
       }
       settings.card = applied.card = machine.cards().held();  // the game may have given the player a new card
       apply_settings();
+      match_display();
       if (!settings.rich_presence || !game.status || !(window || log_discord)) {
         rich_presence.reset();
       } else if (const auto now = std::chrono::steady_clock::now(); now >= next_status) {

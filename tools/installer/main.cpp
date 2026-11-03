@@ -3,13 +3,13 @@
 // OpenGP's installer for the command line (see installer.h): builds the games
 // from the player's disc images, as the launcher (the package's OpenGP) does.
 //
-//   opengp-install [IMAGE...] [--force] [--jobs N] [--cxx COMPILER] [--keep-build]
+//   opengp-cli [IMAGE...] [--force] [--jobs N] [--cxx COMPILER] [--keep-build]
 //
 // Without images it uses the images each game was built from before, then
 // those in ISO/ and private/ next to it. Each game is built on its own: a
 // missing image only skips that game. Games already built by this version
 // are skipped unless --force is given. On Windows an image can be dropped on
-// opengp-install.exe.
+// opengp-cli.exe.
 
 #include <cstdio>
 #include <cstdlib>
@@ -31,14 +31,14 @@
 namespace {
 
 constexpr const char* kUsage =
-    "usage: opengp-install [IMAGE...] [--force] [--jobs N] [--cxx COMPILER]\n"
+    "usage: opengp-cli [IMAGE...] [--force] [--jobs N] [--cxx COMPILER]\n"
     "                      [--keep-build]\n"
     "\n"
     "Builds the games from your disc images (.iso / .gcm). Without images, it uses\n"
     "the ones the games were built from before, then those in ISO/ and private/.\n"
     "OpenGP, the launcher next to it, does the same in a window.\n";
 
-// When opengp-install.exe was started from Explorer (a double click, or an
+// When opengp-cli.exe was started from Explorer (a double click, or an
 // image dropped on it), its console closes when it exits: wait for a key first.
 void pause_if_own_console() {
 #ifdef _WIN32
@@ -113,7 +113,7 @@ int run(const std::vector<std::string>& args) {
   }
   if (found.empty()) {
     std::printf(
-        "\nPut your disc images in the ISO folder next to opengp-install, or drop one on it (see ISO/README.txt).\n");
+        "\nPut your disc images in the ISO folder next to opengp-cli, or drop one on it (see ISO/README.txt).\n");
     return 1;
   }
 
