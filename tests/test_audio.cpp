@@ -43,6 +43,12 @@ bool open(audio::HostOutput& out) {
   return true;
 }
 
+// The controller lets the queue sit up to 60 ms above the target before it
+// drops samples (kResyncMs in host.cpp), and a busy machine (a shared CI
+// runner) can keep it there for a while, so that is the bound to check: a
+// queue still holding the 400 ms stall would be far above it.
+constexpr double kSlackMs = 60.0;
+
 }  // namespace
 
 TEST_CASE("after the device stalls, the sound catches up at once instead of running late") {
@@ -51,7 +57,7 @@ TEST_CASE("after the device stalls, the sound catches up at once instead of runn
   play(out, 500ms);
   const double target = out.target_ms();
   CHECK(target >= 30.0);
-  CHECK(out.queue_ms() < target + 30.0);
+  CHECK(out.queue_ms() < target + kSlackMs);
 
   // The device stops taking samples for a while (as while the system
   // switches to another device): the queue fills up.
@@ -62,5 +68,5 @@ TEST_CASE("after the device stalls, the sound catches up at once instead of runn
   // faster, took about 20 seconds).
   play(out, 1000ms);
   CHECK(out.resyncs() >= 1);
-  CHECK(out.queue_ms() < target + 30.0);
+  CHECK(out.queue_ms() < target + kSlackMs);
 }
