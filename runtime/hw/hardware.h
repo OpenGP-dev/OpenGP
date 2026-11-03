@@ -28,6 +28,10 @@
 
 namespace hw {
 
+// The clock rate a linked game asks for, to stay in step with the host
+// (games/common/link_pace.h); the launcher applies it during a linked race.
+inline std::atomic<double> g_link_clock_rate{1.0};
+
 using namespace gekko;
 
 // PI interrupt cause bits (INTSR / INTMR).

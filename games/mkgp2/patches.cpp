@@ -2,9 +2,12 @@
 //
 // Mario Kart Arcade GP 2 (GGPE02): replacements for recompiled functions.
 
+#include <chrono>
+
 #include "arcade.h"
 #include "cabinet.h"
 #include "camera_use.h"
+#include "link_pace.h"
 #include "ppc_recomp_shared.h"
 #include "sdk_hle.h"
 #include "widescreen.h"
@@ -73,6 +76,44 @@ PPC_FUNC(StrPcb_StateTick) {
 PPC_FUNC(DVDConvertPathToEntrynum) {
   static constexpr sdk_hle::DvdFs kFs{-0x4EB8, -0x4EC4, -0x4EC0, -0x4EB4, 0x804F4738u};
   sdk_hle::convert_path_to_entrynum(ctx, base, kFs, __imp__DVDConvertPathToEntrynum);
+}
+
+// Keeping linked cabinets in step (link_pace.h). PCBComm_Process(1, 1) is
+// each frame's link exchange; VSMode_FrameUpdate's queue check reads each
+// cabinet's frame entry with RingBuffer_GetKartSlot (returning to 8009DD08)
+// and its queue at +0x22, and while one is 2 or more it waits a retrace and
+// receives again (PCBComm_Process(1, 0), returning to 8009DD70), up to 4
+// times: a frozen frame.
+namespace {
+constexpr link_pace::Layout kLinkLayout{
+    .scene = 0x806CED74u,
+    .race_first = 0x25,
+    .race_last = 0x2D,
+    .link_active = 0x806D0DF0u,
+    .host_flag = 0x806D0F0Cu,
+    .ring_read = 0x806D0DFCu,
+    .ring_write = 0x806D0E00u,
+    .ring_mask = 63,
+};
+}  // namespace
+
+PPC_FUNC(PCBComm_Process) {
+  const gekko::u32 receive = ctx.gpr[3], send = ctx.gpr[4], from = ctx.lr;
+  const auto start = std::chrono::steady_clock::now();
+  __imp__PCBComm_Process(ctx, base);
+  if (from == 0x8009DD70u) link_pace::on_freeze();
+  if (receive == 1 && send == 1) {
+    const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count();
+    link_pace::on_frame(base, kLinkLayout, static_cast<gekko::u64>(ns));
+  }
+}
+
+PPC_FUNC(RingBuffer_GetKartSlot) {
+  const int cabinet = static_cast<int>(ctx.gpr[3]);
+  const gekko::u32 from = ctx.lr;
+  __imp__RingBuffer_GetKartSlot(ctx, base);
+  if (from == 0x8009DD08u && ctx.gpr[3] && base[kLinkLayout.host_flag] == 1)
+    link_pace::on_queue_check(base, ctx.gpr[3], 0x22, cabinet);
 }
 
 // The culling frustum builder: widened in widescreen (widescreen.h).

@@ -131,6 +131,8 @@ Environment variables for debugging:
 | `OPENGP_LOG_NETWORK=1` | the games' sockets on the media board's network (connections, binds, options), and the cabinets the link finds |
 | `OPENGP_LOG_EXI=<n>` / `OPENGP_LOG_SI=<n>` | the first *n* EXI / SI transfers |
 | `OPENGP_LOG_JVS=1` | the JVS I/O protocol |
+| `OPENGP_LOG_LINK_PACE=1` | each second of a linked Versus race: the client's queue of the host's frames and its clock, the host's frozen frames |
+| `OPENGP_LINK_PACE=0` | (not a log) turns off keeping linked cabinets in step: the clients' phase lock and the host's slack (see `games/common/link_pace.h`) |
 | `OPENGP_LOG_FFB=1` | the forces the game sends to the steering wheel |
 | `OPENGP_LOG_DISCORD=1` | what Discord Rich Presence shows, each time it changes; headless runs show it too (on Discord as well, if it runs) |
 | `OPENGP_GPU_DEBUG=1` | enables the GPU API's validation (needs the Vulkan SDK's validation layers) |
