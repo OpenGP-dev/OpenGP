@@ -1,39 +1,20 @@
 name: CI
 
-# Builds and tests every push that changes more than documents. Tags are left
-# out: a tag's commit has already been built on its branch. The game-data check
-# runs for every push, in game-data.yml.
+# Builds and tests every push to main and every pull request, and checks that
+# no game data is committed.
 on:
   push:
-    branches: ['**']
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - 'LICENSE'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/dependabot.yml'
-      - '.github/workflows/game-data.yml'
-      - '.github/workflows/package.yml'
+    branches: [main]
   pull_request:
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - 'LICENSE'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/dependabot.yml'
-      - '.github/workflows/game-data.yml'
-      - '.github/workflows/package.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# A newer push to the same branch or pull request cancels the older run, except
-# on main, where every commit gets its run: each has a group of its own, as
-# GitHub keeps only one waiting run per group and cancels the others.
+# A newer push to the same pull request cancels the older run.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # ccache (installed by ccache-action) keeps the compiled objects from the last
 # run of each job, so a push recompiles only what it changed. CMake takes the
@@ -43,15 +24,18 @@ env:
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CMAKE_CXX_COMPILER_LAUNCHER: ccache
 
-# Every job runs for pushes and manual runs, and for pull requests only from
-# forks: a branch of this repository has already run on its push. Windows and
-# macOS runner minutes cost 2x and 10x Linux's, so those jobs start only once
-# the Linux builds pass: a newer push cancels the run before they start, and a
-# change that breaks the build doesn't spend them.
 jobs:
+  game-data:
+    name: No game data
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Check the tracked files
+        run: python3 tools/check_game_data.py
+
   linux:
     name: Linux (${{ matrix.compiler }})
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -99,7 +83,6 @@ jobs:
 
   macos:
     name: macOS (Apple Clang)
-    needs: linux
     runs-on: macos-15
     timeout-minutes: 20
     steps:
@@ -120,7 +103,6 @@ jobs:
 
   windows:
     name: Windows (clang-cl)
-    needs: linux
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
