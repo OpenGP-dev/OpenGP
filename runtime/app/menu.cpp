@@ -51,6 +51,20 @@ std::string pause_keys(const MenuModel& m, bool first = false) {
   return keys;
 }
 
+// The first keyboard (or else gamepad) key bound to one of the profiler's
+// controls, for its page and overlay ("F10"), or "" if none.
+std::string profiler_key(const MenuModel& m, const char* control) {
+  if (!m.input) return "";
+  for (const auto kind : {input::HostInput::DeviceKind::Keyboard, input::HostInput::DeviceKind::Gamepad}) {
+    for (std::size_t c = input::HostInput::kProfilerFirst; c < input::HostInput::kControlCount; ++c) {
+      if (std::string_view(input::HostInput::control_name(c)) != control) continue;
+      const std::vector<std::string> labels = m.input->binding_labels(kind, c);
+      if (!labels.empty()) return labels.front();
+    }
+  }
+  return "";
+}
+
 // Opens a folder (UTF-8) in the system's file manager, making it first if
 // needed. The menu shows a button for this rather than the folder's path,
 // which would show the player's user name on screen and in screenshots.
@@ -246,7 +260,7 @@ void Menu::notify(std::string message, NoticeKind kind) {
   if (notices_.size() > 4) notices_.erase(notices_.begin());
 }
 
-bool Menu::visible() const { return open_ || paused_ || !notices_.empty(); }
+bool Menu::visible() const { return open_ || paused_ || overlay_ || !notices_.empty(); }
 
 void Menu::apply_scale(float scale) {
   theme::apply_style(ImGui::GetStyle(), scale);
@@ -344,6 +358,7 @@ void Menu::update(MenuModel& m) {
   } else {
     popup_was_open_ = false;
     if (paused_) draw_paused(m);
+    if (overlay_) draw_profiler_overlay(m);
   }
   draw_notices();
   ImGui::Render();
@@ -651,9 +666,9 @@ void Menu::page_controls(MenuModel& m) {
 
   // The cabinet's controls and what drives each.
   const float label_w = px(150), chip_h = px(30);
-  for (std::size_t control = 0; control < input::HostInput::kControlCount; ++control) {
+  auto binding_row = [&](std::size_t control) {
     // Keys cannot hold the wheel half-way: they steer with "steer left/right".
-    if (kind == Kind::Keyboard && input::HostInput::control_is_axis(control)) continue;
+    if (kind == Kind::Keyboard && input::HostInput::control_is_axis(control)) return;
     ImGui::PushID(static_cast<int>(control));
     const ImVec2 start = ImGui::GetCursorPos();
     {
@@ -698,7 +713,13 @@ void Menu::page_controls(MenuModel& m) {
       }
     }
     ImGui::PopID();
-  }
+  };
+  for (std::size_t control = 0; control < input::HostInput::kCabinetControlCount; ++control) binding_row(control);
+
+  w::divider();
+  w::section("Profiler", "OpenGP's own: they work while playing, not in the menu.");
+  for (std::size_t control = input::HostInput::kProfilerFirst; control < input::HostInput::kControlCount; ++control)
+    binding_row(control);
 
   w::divider();
   if (kind == Kind::Keyboard) {
@@ -815,27 +836,71 @@ void Menu::page_link(MenuModel& m) {
 // Recording a profile of the session, for finding what slows the game down
 // or draws it wrong (see app/profiler.h).
 void Menu::page_profiler(MenuModel& m) {
-  if (m.profiling) {
-    w::section("Profile");
-    const std::string frames = std::to_string(static_cast<unsigned long long>(m.profile_frames)) + " frames";
-    w::row_text({"Recording", "The profile is written while you play."}, frames.c_str());
+  const Profiler::LiveStats& p = m.profile;
+  char text[256];
+  const std::string toggle = profiler_key(m, "profile_toggle");
+  const std::string mark_key = profiler_key(m, "profile_mark");
+  const std::string capture_key = profiler_key(m, "profile_capture");
+  const std::string overlay_key = profiler_key(m, "profile_overlay");
+
+  w::section("Live");
+  std::snprintf(text, sizeof(text), "%.1f fps · game %.1f ms (busy %.1f, p99 %.1f) · render %.1f ms",
+                static_cast<double>(p.fps), static_cast<double>(p.guest_ms), static_cast<double>(p.busy_ms),
+                static_cast<double>(p.p99_ms), static_cast<double>(p.render_ms));
+  w::row_text({"Frame times", p.recording ? "A snapshot of the last two seconds." : "Not recording: these are live."},
+              text);
+  std::snprintf(text, sizeof(text), "%llu drops · %llu hitches · %llu marks",
+                static_cast<unsigned long long>(p.drops), static_cast<unsigned long long>(p.hitches),
+                static_cast<unsigned long long>(p.marks));
+  w::row_text({"Drops", "Retraces that went by without a new frame, and frames much longer than the ones before."},
+              text);
+  if (p.system_cpu >= 0) std::snprintf(text, sizeof(text), "%.0f%%", static_cast<double>(p.system_cpu));
+  else std::snprintf(text, sizeof(text), "unknown");
+  w::row_text({"Computer", "The whole computer's CPU use: other programs competing with the game."}, text);
+  std::snprintf(text, sizeof(text), "%u textures, %.0f MB · %u pipelines", p.textures, p.texture_mb, p.pipelines);
+  w::row_text({"GPU", "Textures and pipelines alive on the GPU."}, text);
+  std::snprintf(text, sizeof(text), "%.0f ms queued, %llu underruns", static_cast<double>(p.audio_ms),
+                static_cast<unsigned long long>(p.audio_underruns));
+  w::row_text({"Sound", "The output's queue; an underrun is a dry moment (a click or a gap)."}, text);
+  if (!p.scene.empty() || !p.course.empty()) {
+    const std::string where = p.scene + (p.course.empty() ? "" : " · " + p.course);
+    w::row_text({"Scene", ""}, where.c_str());
+  }
+  if (p.frames) {
+    std::snprintf(text, sizeof(text), "%llu frames in %.1f s", static_cast<unsigned long long>(p.frames), p.seconds);
+    w::row_text({"Recording", "The profile is written while you play."}, text);
     w::row_text({"Folder", "Pictures and frame captures are kept with it."}, m.profile_dir.c_str());
+  }
+
+  take_focus();
+  w::gap(6);
+  w::section("Recording");
+  if (m.profiling) {
     if (w::row_button({"Stop recording", "Finishes the summary and closes the profile."}, "Stop", w::Kind::Danger))
       m.toggle_profiling();
-    if (w::row_button({"Mark this moment", "Notes a stutter or a glitch in the profile, with a picture."}, "Mark")) {
+    if (w::row_button({"Mark this moment", "Notes a stutter or a glitch in the profile, with a picture."},
+                      "Mark")) {
       if (m.mark) m.mark();
     }
   } else {
-    w::section("Profiling");
-    w::text_wrapped(
-        "Records everything about how the game runs while you play: each frame's timings, hitches and what "
-        "caused them, likely graphical glitches, the CPU's work, and pictures of the screen now and then.");
-    w::gap(4);
-    if (w::row_button({"Start recording", "Records until stopped, or until the game quits."}, "Start",
-                      w::Kind::Primary))
+    if (w::row_button({"Start recording",
+                       "Records everything about how the game runs until stopped, or until the game quits."},
+                      "Start", w::Kind::Primary))
       m.toggle_profiling();
   }
-  take_focus();
+  if (m.toggle_overlay) {
+    bool overlay = m.overlay;
+    std::string help = "Shows frame times, drops and the computer's load over the game.";
+    if (!overlay_key.empty()) help += " " + overlay_key + " shows and hides it.";
+    if (w::row_toggle({"Performance overlay", help.c_str()}, &overlay)) m.toggle_overlay();
+  }
+  if (m.toggle_auto_capture) {
+    bool auto_capture = p.auto_capture;
+    if (w::row_toggle({"Capture hitches", "Captures the next frame when a hitch happens or a likely glitch is first seen (at most once every 5 seconds)."},
+                      &auto_capture))
+      m.toggle_auto_capture();
+  }
+
   w::gap(6);
   w::section("Frame capture");
   w::text_wrapped(
@@ -847,7 +912,21 @@ void Menu::page_profiler(MenuModel& m) {
     if (m.capture) m.capture();
   }
   w::gap(6);
-  w::text_wrapped("The profile's keys can be changed on the Controls page.", theme::kSmall, theme::kDim);
+  std::string keys;
+  auto add = [&keys](const std::string& key, const char* what) {
+    if (key.empty()) return;
+    keys += (keys.empty() ? "" : ", ") + key + " " + what;
+  };
+  add(toggle, "starts and stops");
+  add(mark_key, "marks");
+  add(capture_key, "captures the next frame");
+  add(overlay_key, "shows the overlay");
+  if (keys.empty()) {
+    w::text_wrapped("The profiler's keys can be chosen on the Controls page.", theme::kSmall, theme::kDim);
+  } else {
+    const std::string line = "Keys: " + keys + ". Change them on the Controls page.";
+    w::text_wrapped(line.c_str(), theme::kSmall, theme::kDim);
+  }
 }
 
 void Menu::draw_confirm(MenuModel& m) {
@@ -1000,6 +1079,111 @@ void Menu::draw_paused(MenuModel& m) {
       theme::pop_font();
     }
   }
+}
+
+// The live numbers over the game, while it plays: frame times and a graph,
+// drops and hitches, the computer's load, and what is recording (see
+// app/profiler.h and the Profiler tab).
+void Menu::draw_profiler_overlay(MenuModel& m) {
+  const Profiler::LiveStats& p = m.profile;
+  const ImGuiIO& io = ImGui::GetIO();
+  ImDrawList* dl = ImGui::GetForegroundDrawList();
+  const float margin = px(14), pad = px(12), graph_h = px(38);
+  const float width = std::min(px(336), io.DisplaySize.x - 2 * margin);
+
+  std::string keys;
+  auto add_key = [&](const char* control, const char* what) {
+    const std::string key = profiler_key(m, control);
+    if (!key.empty()) keys += (keys.empty() ? "" : " · ") + key + " " + what;
+  };
+  add_key("profile_toggle", "record");
+  add_key("profile_mark", "mark");
+  add_key("profile_capture", "capture");
+  add_key("profile_overlay", "hide");
+  const bool scene = !p.scene.empty() || !p.course.empty();
+  const int lines = 5 + (scene ? 1 : 0) + (keys.empty() ? 0 : 1);
+  const float height = pad * 2 + static_cast<float>(lines) * px(18) + graph_h + px(6);
+
+  const ImVec2 min(margin, margin), max(min.x + width, min.y + height);
+  dl->AddRectFilled(min, max, theme::alpha(theme::kAsphaltDeep, 0.82f), px(10));
+  dl->AddRect(min, max, theme::alpha(theme::kLine, 0.9f), px(10), 0, 1.0f);
+
+  float y = min.y + pad;
+  auto line = [&](const char* text, float size, ImU32 colour, theme::Weight weight = theme::Weight::Regular) {
+    theme::push_font(weight, size);
+    dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(min.x + pad, y), colour, text);
+    y += px(18);
+    theme::pop_font();
+  };
+
+  // The title, with a dot: red while recording, grey when only watching.
+  {
+    const ImU32 colour = p.recording ? theme::kRed : theme::kFaint;
+    dl->AddCircleFilled(ImVec2(min.x + pad + px(4), y + px(7)), px(4), colour);
+    char title[160];
+    if (p.recording)
+      std::snprintf(title, sizeof(title), "Recording · %llu frames · %.1f s",
+                    static_cast<unsigned long long>(p.frames), p.seconds);
+    else
+      std::snprintf(title, sizeof(title), "Profiler · not recording");
+    theme::push_font(theme::Weight::Bold, theme::kBody);
+    dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(min.x + pad + px(14), y), theme::kChalk, title);
+    theme::pop_font();
+    y += px(18);
+  }
+
+  char text[200];
+  if (p.fps > 0)
+    std::snprintf(text, sizeof(text), "%.1f fps · frame %.1f ms · busy %.1f · p99 %.1f", static_cast<double>(p.fps),
+                  static_cast<double>(p.guest_ms), static_cast<double>(p.busy_ms), static_cast<double>(p.p99_ms));
+  else
+    std::snprintf(text, sizeof(text), "frame %.1f ms · busy %.1f ms · p99 %.1f ms", static_cast<double>(p.guest_ms),
+                  static_cast<double>(p.busy_ms), static_cast<double>(p.p99_ms));
+  line(text, theme::kBody, theme::kChalk);
+
+  // The last frames' game times: a line at 16.7 ms (one frame a retrace).
+  {
+    const float x = min.x + pad, w = width - 2 * pad;
+    dl->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + graph_h), theme::alpha(theme::kBlack, 0.35f), px(4));
+    float top = 33.4f;
+    for (const float v : p.graph) top = std::max(top, v);
+    const float unit = graph_h / top;
+    const float target = y + graph_h - 16.683f * unit;
+    dl->AddLine(ImVec2(x, target), ImVec2(x + w, target), theme::alpha(theme::kGreen, 0.45f), 1.0f);
+    if (p.graph.size() > 1) {
+      std::vector<ImVec2> points;
+      points.reserve(p.graph.size());
+      const float dx = w / static_cast<float>(p.graph.size() - 1);
+      for (std::size_t i = 0; i < p.graph.size(); ++i)
+        points.emplace_back(x + dx * static_cast<float>(i), y + graph_h - std::min(p.graph[i], top) * unit);
+      dl->AddPolyline(points.data(), static_cast<int>(points.size()),
+                      p.p99_ms > 20.0f ? theme::kMarquee : theme::kBlue, 0, px(1.5f));
+    }
+    y += graph_h + px(6);
+  }
+
+  if (p.system_cpu >= 0)
+    std::snprintf(text, sizeof(text), "Drops %llu · hitches %llu · marks %llu · CPU %.0f%%",
+                  static_cast<unsigned long long>(p.drops), static_cast<unsigned long long>(p.hitches),
+                  static_cast<unsigned long long>(p.marks), static_cast<double>(p.system_cpu));
+  else
+    std::snprintf(text, sizeof(text), "Drops %llu · hitches %llu · marks %llu",
+                  static_cast<unsigned long long>(p.drops), static_cast<unsigned long long>(p.hitches),
+                  static_cast<unsigned long long>(p.marks));
+  line(text, theme::kBody, theme::kDim);
+
+  std::snprintf(text, sizeof(text), "%u textures (%.0f MB) · %u pipelines · audio %.0f ms", p.textures, p.texture_mb,
+                p.pipelines, static_cast<double>(p.audio_ms));
+  line(text, theme::kBody, theme::kDim);
+
+  std::snprintf(text, sizeof(text), "%llu audio underruns", static_cast<unsigned long long>(p.audio_underruns));
+  line(text, theme::kBody, p.audio_underruns ? theme::kMarquee : theme::kDim);
+
+  if (scene) {
+    const std::string where = p.scene + (p.course.empty() ? "" : " · " + p.course);
+    line(where.c_str(), theme::kBody, theme::kChalk);
+  }
+  if (!keys.empty()) line(keys.c_str(), theme::kSmall, theme::kFaint);
 }
 
 void Menu::draw_notices() {

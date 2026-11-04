@@ -12,7 +12,7 @@
 //   console.log    everything printed to the console
 //   cpu/run<N>/    call stack samples (see profile/monitor.h)
 //   thumbs/        small pictures of the screen, f<frame>.jpg
-//   captures/      frame captures (F9)
+//   captures/      frame captures (the profiler's capture control)
 //   summary.json   written when the session ends
 //
 // Times in events are seconds since the session started ("t"), and "f" is the

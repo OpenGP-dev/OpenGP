@@ -277,8 +277,12 @@ bool Profiler::start(fs::path dir, const fs::path& profiles_dir, bool resume, st
   }
   if (!session_.open(dir, resume, header, run, error)) return false;
   monitor_.start(session_, {options_.rate_hz});
-  frames_ = hitches_ = marks_ = pipelines_ = 0;
+  frames_ = hitches_ = marks_ = drops_ = pipelines_ = pipeline_binds_ = max_texture_kb_ = 0;
+  auto_captures_ = 0;
+  last_auto_capture_us_ = 0;
+  capture_request_ = false;
   guest_times_.clear();
+  busy_times_.clear();
   present_times_.clear();
   hitch_causes_.clear();
   scenes_.clear();
@@ -287,10 +291,17 @@ bool Profiler::start(fs::path dir, const fs::path& profiles_dir, bool resume, st
   recent_next_ = 0;
   have_status_ = have_settings_ = false;
   last_flags_ = 0;
-  last_present_ns_ = 0;
+  last_present_ns_ = last_retrace_ = 0;
+  have_retrace_ = false;
   last_underruns_ = 0;
   next_thumbnail_ = 0;
   thumbnail_now_ = true;
+  live_ = {};
+  live_graph_.clear();
+  live_hitches_ = 0;
+  live_present_avg_us_ = 0;
+  last_live_present_ns_ = last_live_retrace_ = last_live_idle_ns_ = 0;
+  have_live_retrace_ = false;
   renderer_.take_stats();
   renderer_.take_thumbnails();
   std::fprintf(stderr, "[profile] recording to %s\n", dir.string().c_str());
@@ -347,19 +358,17 @@ void Profiler::write_thumbnails() {
 
 void Profiler::on_frame(const gx::Frame& frame, const FrameInfo& info) {
   std::lock_guard lock(mutex_);
-  if (!session_.is_open()) {
-    renderer_.take_stats();  // keep them per frame for when recording starts
-    return;
-  }
   const video::RenderStats rs = renderer_.take_stats();
+  const hw::ViDevice* vi = machine_.hardware().device<hw::ViDevice>();
+  const u64 retrace = vi ? vi->retrace_count() : 0;
+  update_live(frame, info, rs, retrace);
+  if (!session_.is_open()) return;
   write_thumbnails();
   session_.set_frame(info.number);
   const gx::FrameStats& g = frame.stats;
   profile::FrameRecord r;
   r.t_us = session_.now_us();
   r.frame = static_cast<u32>(info.number);
-  const hw::ViDevice* vi = machine_.hardware().device<hw::ViDevice>();
-  const u64 retrace = vi ? vi->retrace_count() : 0;
   r.retrace = static_cast<u32>(retrace);
 
   // The game's state.
@@ -383,6 +392,9 @@ void Profiler::on_frame(const gx::Frame& frame, const FrameInfo& info) {
   r.idle_us = frames_ ? us(idle_ns - last_idle_ns_) : 0;
   r.wait_us = us(g.wait_ns);
   r.readback_wait_us = us(g.readback_ns);
+  r.guest_busy_us = r.guest_us > r.idle_us + r.wait_us + r.readback_wait_us
+                        ? r.guest_us - r.idle_us - r.wait_us - r.readback_wait_us
+                        : 0;
   r.gx_us = us(g.draw_ns);
   r.gx_state_us = us(g.state_ns);
   r.gx_texture_us = us(g.texture_ns);
@@ -426,7 +438,12 @@ void Profiler::on_frame(const gx::Frame& frame, const FrameInfo& info) {
   r.texture_kb = kb(rs.texture_bytes);
   r.gpu_draws = rs.draws;
   r.passes = rs.passes;
+  r.pipeline_binds = rs.pipeline_binds;
   r.live_textures = renderer_.live_textures();
+  r.live_texture_kb = kb(renderer_.live_texture_bytes());
+  r.live_pipelines = renderer_.live_pipelines();
+  pipeline_binds_ += rs.pipeline_binds;
+  max_texture_kb_ = std::max<u64>(max_texture_kb_, r.live_texture_kb);
   r.queue_us = us(info.queue_ns);
   r.queue_depth = info.queue_depth;
   r.pace_us = us(info.pace_ns);
@@ -453,6 +470,14 @@ void Profiler::on_frame(const gx::Frame& frame, const FrameInfo& info) {
   edge(profile::kBackground, "background", "foreground");
   edge(profile::kLinked, "linked", "unlinked");
   last_flags_ = r.flags;
+  // Retraces that went by without a frame: a pause (or the menu) makes many,
+  // and they are not the game's; the first frame after one is not late.
+  if (have_retrace_ && !info.paused && !info.menu_open && retrace > last_retrace_) {
+    r.drops = static_cast<u32>(std::min<u64>(retrace - last_retrace_ - 1, 0xFFFFFFFFu));
+    drops_ += r.drops;
+  }
+  last_retrace_ = retrace;
+  have_retrace_ = true;
   if (mark_pending_) r.flags |= profile::kMark, mark_pending_ = false;
   if (frame.capture) r.flags |= profile::kCapture;
 
@@ -474,6 +499,7 @@ void Profiler::on_frame(const gx::Frame& frame, const FrameInfo& info) {
                                  .add("scene", status.scene_id)
                                  .add("course", status.course));
       thumbnail_now_ = true;
+      maybe_auto_capture();
     }
   }
   if (g.risks > frame.risks.size()) {
@@ -512,6 +538,7 @@ void Profiler::on_frame(const gx::Frame& frame, const FrameInfo& info) {
   if (frames_ && steady && (r.guest_us > threshold || r.present_us > threshold)) {
     r.flags |= profile::kHitch;
     hitch(frame, r, rs, expected);
+    maybe_auto_capture();
   }
   if (steady && r.guest_us) {
     if (recent_.size() < 120) recent_.push_back(r.guest_us);
@@ -531,6 +558,7 @@ void Profiler::on_frame(const gx::Frame& frame, const FrameInfo& info) {
   ++frames_;
   if (!info.paused) {
     guest_times_.push_back(r.guest_us);
+    busy_times_.push_back(r.guest_busy_us);
     present_times_.push_back(r.present_us);
     SceneStats& scene = scenes_[status.scene_id];
     scene.kind = scene_kind(status.scene);
@@ -539,6 +567,111 @@ void Profiler::on_frame(const gx::Frame& frame, const FrameInfo& info) {
     scene.times.push_back(r.guest_us);
     if (r.flags & profile::kHitch) ++scene.hitches;
   }
+}
+
+// The numbers the overlay shows, kept even when not recording: a player can
+// watch the game's frame times and the computer's load before deciding to
+// record, and see the profile's size while it records.
+void Profiler::update_live(const gx::Frame& frame, const FrameInfo& info, const video::RenderStats& rs, u64 retrace) {
+  LiveStats& l = live_;
+  l.recording = session_.is_open();
+  l.auto_capture = auto_capture_;
+  // The frame being handled is counted next: show it now.
+  l.frames = l.recording ? frames_ + 1 : 0;
+  l.marks = l.recording ? marks_ : 0;
+  if (l.recording) l.seconds = static_cast<double>(session_.now_us()) * 1e-6;
+
+  const gx::FrameStats& g = frame.stats;
+  const u64 guest_us = us(g.interval_ns);
+  const u64 idle_total = machine_.threads().idle_ns();
+  const u64 idle_us = last_live_idle_ns_ ? us(idle_total - last_live_idle_ns_) : 0;
+  last_live_idle_ns_ = idle_total;
+  const u64 wait_us = us(g.wait_ns), readback_us = us(g.readback_ns);
+  const u64 busy_us = guest_us > idle_us + wait_us + readback_us ? guest_us - idle_us - wait_us - readback_us : 0;
+  const auto now_ns = static_cast<u64>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+  const u64 present_us = last_live_present_ns_ ? us(now_ns - last_live_present_ns_) : 0;
+  last_live_present_ns_ = now_ns;
+
+  l.guest_ms = static_cast<float>(guest_us) / 1000.0f;
+  l.busy_ms = static_cast<float>(busy_us) / 1000.0f;
+  l.present_ms = static_cast<float>(present_us) / 1000.0f;
+  l.render_ms = static_cast<float>(us(rs.render_ns)) / 1000.0f;
+  l.audio_ms = static_cast<float>(info.audio_queue_ms);
+  l.audio_underruns = info.audio_underruns;
+  l.textures = renderer_.live_textures();
+  l.pipelines = renderer_.live_pipelines();
+  l.texture_mb = static_cast<double>(renderer_.live_texture_bytes()) / (1024.0 * 1024.0);
+
+  // Hitches and drops, as for a recording, but only while playing: a pause
+  // or the menu keeps retraces coming without new frames.
+  const bool steady = !info.paused && !info.menu_open;
+  float expected = 16.683f;
+  if (live_graph_.size() >= 30) {
+    std::vector<float> sorted = live_graph_;
+    std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(sorted.size() / 2), sorted.end());
+    expected = sorted[sorted.size() / 2];
+  }
+  const float slow = std::max(expected * 1.5f, expected + 8.0f);
+  if (steady && (l.guest_ms > slow || l.present_ms > slow)) ++live_hitches_;
+  l.hitches = l.recording ? hitches_ : live_hitches_;
+  if (steady) {
+    if (have_live_retrace_ && retrace > last_live_retrace_)
+      l.drops += std::min<u64>(retrace - last_live_retrace_ - 1, 0xFFFFFFFFu);
+    live_graph_.push_back(l.guest_ms);
+    if (live_graph_.size() > 120) live_graph_.erase(live_graph_.begin());
+    if (present_us) live_present_avg_us_ = live_present_avg_us_ > 0 ? live_present_avg_us_ * 0.9 + present_us * 0.1 : present_us;
+  }
+  last_live_retrace_ = retrace;
+  have_live_retrace_ = true;
+  if (live_graph_.empty()) {
+    l.p99_ms = 0;
+  } else {
+    std::vector<float> sorted = live_graph_;
+    const std::size_t i = static_cast<std::size_t>(0.99f * static_cast<float>(sorted.size() - 1));
+    std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(i), sorted.end());
+    l.p99_ms = sorted[i];
+  }
+  l.fps = live_present_avg_us_ > 0 ? static_cast<float>(1e6 / live_present_avg_us_) : 0;
+  l.system_cpu = monitor_.system_cpu() >= 0 ? static_cast<float>(monitor_.system_cpu() * 100.0) : -1.0f;
+  if (have_status_) {
+    l.scene = last_status_.activity.empty() ? scene_kind(last_status_.scene) : last_status_.activity;
+    if (!last_status_.mode.empty()) l.scene += " · " + last_status_.mode;
+    l.course = last_status_.course;
+  }
+  l.graph = live_graph_;
+}
+
+void Profiler::maybe_auto_capture() {
+  if (!auto_capture_ || !session_.is_open() || capture_request_) return;
+  const u64 now = session_.now_us();
+  if (last_auto_capture_us_ && now - last_auto_capture_us_ < 5'000'000) return;
+  last_auto_capture_us_ = now;
+  capture_request_ = true;
+  ++auto_captures_;
+}
+
+Profiler::LiveStats Profiler::live() const {
+  std::lock_guard lock(mutex_);
+  return live_;
+}
+
+void Profiler::set_auto_capture(bool on) {
+  std::lock_guard lock(mutex_);
+  auto_capture_ = on;
+  live_.auto_capture = on;
+}
+
+bool Profiler::auto_capture() const {
+  std::lock_guard lock(mutex_);
+  return auto_capture_;
+}
+
+bool Profiler::take_capture_request() {
+  std::lock_guard lock(mutex_);
+  const bool requested = capture_request_;
+  capture_request_ = false;
+  return requested;
 }
 
 void Profiler::scene_events(const GameStatus& s) {
@@ -640,7 +773,15 @@ Json Profiler::summary(const char* why) const {
   j.add("why", why).add("run", session_.run()).add("frames", frames_);
   j.add("seconds", static_cast<double>(session_.now_us()) * 1e-6);
   j.add("guest_ms", times_json(guest_times_)).add("present_ms", times_json(present_times_));
-  j.add("hitches", hitches_);
+  j.add("guest_busy_ms", times_json(busy_times_));
+  j.add("hitches", hitches_).add("drops", drops_);
+  j.add("pipeline_binds", pipeline_binds_).add("auto_captures", auto_captures_);
+  Json gpu;
+  gpu.add("textures", live_.textures)
+      .add("texture_mb", live_.texture_mb)
+      .add("max_texture_mb", static_cast<double>(max_texture_kb_) / 1024.0)
+      .add("pipelines", live_.pipelines);
+  j.add("gpu_now", gpu);
   Json causes;
   for (const auto& [cause, n] : hitch_causes_) causes.add(cause, n);
   j.add("hitch_causes", causes);

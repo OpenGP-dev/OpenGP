@@ -58,6 +58,11 @@ constexpr const char* kDefaultConfig = R"(# OpenGP controls. Delete this file to
 #
 # "pause" is OpenGP's, not the cabinet's: it freezes the game until pressed
 # again.
+#
+# The last four are the profiler's: "profile_toggle" starts and stops a
+# recording, "profile_mark" marks a moment, "profile_capture" captures the
+# next frame, and "profile_overlay" shows the live performance overlay. They
+# can go on any key, button or axis, like the cabinet's controls.
 
 [keyboard]
 steer_left = ["Left", "A"]
@@ -71,6 +76,10 @@ coin = ["5", "C"]
 service = ["F1"]
 test = ["F2"]
 pause = ["P", "Pause"]
+profile_toggle = ["F10"]
+profile_mark = ["F8"]
+profile_capture = ["F9"]
+profile_overlay = ["F7"]
 
 [gamepad]
 steer = ["leftx"]
@@ -82,6 +91,12 @@ item = ["a", "rightshoulder"]
 cancel = ["b", "leftshoulder"]
 start = ["start"]
 coin = ["back"]
+# The profiler's actions are unbound here: add buttons ("y", "rightstick"...)
+# to record, mark, capture or show the overlay from a controller.
+profile_toggle = []
+profile_mark = []
+profile_capture = []
+profile_overlay = []
 deadzone = 0.12
 
 [joystick]
@@ -94,6 +109,10 @@ item = ["button0"]
 cancel = ["button1"]
 start = ["button9"]
 coin = []
+profile_toggle = []
+profile_mark = []
+profile_capture = []
+profile_overlay = []
 deadzone = 0.0
 
 [steering]
@@ -131,14 +150,24 @@ enum Control : std::size_t {
   kTest,
   kService,
   kPause,  // OpenGP's, not the cabinet's
+  kProfileToggle,
+  kProfileMark,
+  kProfileCapture,
+  kProfileOverlay,
   kControlCount
 };
 constexpr std::array<const char*, kControlCount> kControlNames = {
-    "steer", "steer_left", "steer_right", "gas", "brake", "item", "cancel", "start", "coin", "test", "service", "pause"};
+    "steer",          "steer_left",   "steer_right",    "gas",         "brake",
+    "item",           "cancel",       "start",          "coin",        "test",
+    "service",        "pause",        "profile_toggle", "profile_mark", "profile_capture",
+    "profile_overlay"};
 constexpr std::array<const char*, kControlCount> kControlLabels = {
-    "Steering", "Steer left", "Steer right", "Gas", "Brake", "Item button", "Cancel button",
-    "Start",    "Coin",       "Test",        "Service", "Pause"};
+    "Steering",       "Steer left",   "Steer right",    "Gas",          "Brake",
+    "Item button",    "Cancel button", "Start",          "Coin",         "Test",
+    "Service",        "Pause",        "Start/stop profile", "Mark moment", "Capture frame",
+    "Profiler overlay"};
 static_assert(kControlCount == HostInput::kControlCount);
+static_assert(kProfileToggle == HostInput::kProfilerFirst);
 
 // The bindings of one kind of device.
 struct Bindings {
@@ -447,6 +476,8 @@ struct HostInput::Impl {
   float digital_steer = 0.0f;  // -1..1, keys and buttons turn it gradually
   bool pause_held = false;     // the pause control's buttons and axes, at the last poll
   bool pause_pressed = false;  // pressed since take_pause_press()
+  u32 profiler_held = 0;       // the profiler's controls' inputs, at the last poll
+  u32 profiler_pressed = 0;    // ... pressed since take_profiler_actions()
   std::chrono::steady_clock::time_point last_poll = std::chrono::steady_clock::now();
   triforce::Outputs outputs;
   std::chrono::steady_clock::time_point last_play{};
@@ -590,10 +621,21 @@ void HostInput::handle_event(const SDL_Event& e) {
   if (e.type == SDL_EVENT_JOYSTICK_ADDED) impl_->open(e.jdevice.which);
   else if (e.type == SDL_EVENT_JOYSTICK_REMOVED) impl_->close(e.jdevice.which);
   // Pause keys go by their key presses, which a poll can miss if they are
-  // quick (the game's controls are held).
+  // quick (the game's controls are held). The profiler's actions are quick
+  // presses too: a key, or a button on a controller.
+  auto press = [&](const Bindings& b, Source::Kind kind, int index) {
+    for (std::size_t c = kProfilerFirst; c < kControlCount; ++c)
+      for (const Source& s : b.sources[c])
+        if (s.kind == kind && s.index == index) impl_->profiler_pressed |= 1u << (c - kProfilerFirst);
+  };
   if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
     for (const Source& s : impl_->config.keyboard.sources[kPause])
       if (s.kind == Source::Kind::Key && s.index == static_cast<int>(e.key.scancode)) impl_->pause_pressed = true;
+    press(impl_->config.keyboard, Source::Kind::Key, e.key.scancode);
+  } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+    press(impl_->config.gamepad, Source::Kind::PadButton, e.gbutton.button);
+  } else if (e.type == SDL_EVENT_JOYSTICK_BUTTON_DOWN) {
+    press(impl_->config.joystick, Source::Kind::JoyButton, e.jbutton.button);
   }
 }
 
@@ -785,7 +827,24 @@ triforce::Controls HostInput::poll() {
   const bool pause = amount[kPause] > 0.5f;
   if (pause && !m.pause_held) m.pause_pressed = true;
   m.pause_held = pause;
+
+  // The profiler's actions, from held keys, buttons and axes. Like the pause
+  // control, their quick key and button presses are also caught by
+  // handle_event(); here they are seen as edges, so holding one does not
+  // repeat it. While an input is being chosen for a control (the menu's
+  // capture), what is pressed is for the capture: no action.
+  u32 profiler = 0;
+  for (std::size_t c = kProfilerFirst; c < kControlCount; ++c)
+    if (amount[c] > 0.5f) profiler |= 1u << (c - kProfilerFirst);
+  if (!m.capture.active) m.profiler_pressed |= profiler & ~m.profiler_held;
+  m.profiler_held = profiler;
   return c;
+}
+
+u32 HostInput::take_profiler_actions() {
+  const u32 actions = impl_->profiler_pressed;
+  impl_->profiler_pressed = 0;
+  return actions;
 }
 
 bool HostInput::take_pause_press() {

@@ -195,6 +195,19 @@ RenderStats Renderer::take_stats() {
   return s;
 }
 
+u64 Renderer::live_texture_bytes() const {
+  u64 bytes = 0;
+  for (const auto& entry : textures_) {
+    const Texture& t = entry.second;
+    for (u32 l = 0, w = t.width, h = t.height; l < std::max(t.levels, 1u); ++l) {
+      bytes += u64{w} * h * 4;
+      w = std::max(1u, w / 2);
+      h = std::max(1u, h / 2);
+    }
+  }
+  return bytes;
+}
+
 std::vector<Thumbnail> Renderer::take_thumbnails() {
   std::vector<Thumbnail> ready;
   ready.swap(thumbnails_);

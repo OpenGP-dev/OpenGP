@@ -20,8 +20,8 @@ enum FrameFlag : gekko::u32 {
   kBackground = 1u << 2,  // the window was not the active one
   kLinked = 1u << 3,
   kHitch = 1u << 4,
-  kMark = 1u << 5,        // the player marked the moment (F8)
-  kCapture = 1u << 6,     // the frame was captured (F9)
+  kMark = 1u << 5,        // the player marked the moment (the mark control)
+  kCapture = 1u << 6,     // the frame was captured (the capture control)
   kThumbnail = 1u << 7,   // a thumbnail was asked for (it is of this frame or the next)
   kVsync = 1u << 8,
   kFullscreen = 1u << 9,
@@ -31,8 +31,8 @@ enum FrameFlag : gekko::u32 {
 #define OPENGP_FRAME_FIELDS(X)                                                                                  \
   X(frame, "displayed frame number, counted from power-on (across the game's restarts)")                       \
   X(retrace, "VI retraces so far (59.94 a second)")                                                             \
-  X(flags, "1 paused, 2 menu open, 4 window in the background, 8 linked, 16 hitch, 32 mark (F8), "              \
-           "64 capture (F9), 128 thumbnail, 256 vsync, 512 fullscreen, 1024 even pacing")                        \
+  X(flags, "1 paused, 2 menu open, 4 window in the background, 8 linked, 16 hitch, 32 mark, "                   \
+           "64 capture, 128 thumbnail, 256 vsync, 512 fullscreen, 1024 even pacing")                            \
   X(scene, "the game's scene number (see the scene events)")                                                    \
   X(race, "in a race: position | lap << 8 | laps << 16 | started << 24 | finished << 25")                       \
   X(guest_us, "game: time since its previous frame (its frame time)")                                           \
@@ -85,6 +85,11 @@ enum FrameFlag : gekko::u32 {
   X(audio_queue_ms10, "sound output queue, in tenths of a millisecond")                                         \
   X(audio_underruns, "times the sound ran dry since the previous frame")                                        \
   X(exceptions, "interrupts delivered to the game since the previous frame")                                    \
+  X(drops, "VI retraces that went by without a new frame before this one (it was late)")                        \
+  X(guest_busy_us, "game: ... of which it was at work (its frame time less idle, waiting and readbacks)")        \
+  X(pipeline_binds, "renderer: pipelines bound for draws")                                                      \
+  X(live_texture_kb, "KiB of GPU textures alive after the frame")                                                \
+  X(live_pipelines, "pipelines alive after the frame")                                                          \
   X(pace_us, "main thread: holding the frame until the game's retrace (even frame pacing)")
 
 struct FrameRecord {

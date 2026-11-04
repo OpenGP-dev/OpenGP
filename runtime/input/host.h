@@ -51,13 +51,27 @@ class HostInput {
   // reads them.
   bool take_pause_press();
 
+  // The profiler's actions (OpenGP's own), bound like the cabinet's controls:
+  // see kDefaultConfig, and the Controls page's Profiler section. Returns the
+  // actions pressed since the last call, as bits of ProfilerAction.
+  enum ProfilerAction : u32 {
+    kProfilerToggle = 1u << 0,   // start or stop recording
+    kProfilerMark = 1u << 1,     // mark the moment
+    kProfilerCapture = 1u << 2,  // capture the next frame
+    kProfilerOverlay = 1u << 3,  // show or hide the live overlay
+  };
+  u32 take_profiler_actions();
+
   // Plays the cabinet's outputs (wheel forces) on the devices.
   void set_outputs(const triforce::Outputs& outputs);
 
   // ---- Seeing and changing the bindings (the menu) ----
 
   enum class DeviceKind { Keyboard, Gamepad, Joystick };
-  static constexpr std::size_t kControlCount = 12;
+  // The cabinet's controls come first, then the profiler's.
+  static constexpr std::size_t kCabinetControlCount = 12;
+  static constexpr std::size_t kProfilerFirst = kCabinetControlCount;
+  static constexpr std::size_t kControlCount = 16;
   // A control's name in the file ("gas") and in the menu ("Gas").
   static const char* control_name(std::size_t control);
   static const char* control_label(std::size_t control);

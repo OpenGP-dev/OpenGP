@@ -74,7 +74,7 @@ constexpr const char* kUsage =
     "          [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--game-log]\n"
     "          [--camera off|webcam|test] [--cabinet 1-4] [--lan] [--verbose] [--version]\n"
     "          [--profile] [--profile-dir PATH] [--profile-rate HZ] [--profile-thumbs FRAMES]\n"
-    "          [--capture-frame FRAME]...\n";
+    "          [--profile-overlay] [--capture-frame FRAME]...\n";
 
 struct Options {
   std::vector<std::string> args;  // as given, for restarts (without --reboot, --frame-offset and --profile-resume)
@@ -103,6 +103,7 @@ struct Options {
   fs::path profile_dir;
   fs::path profile_resume;  // a recording to go on with (after a restart)
   int profile_rate = 500, profile_thumbs = 120, profile_thumb_width = 480;
+  bool profile_overlay = false;  // show the live profiler overlay from the start
   std::set<u64> capture_frames;  // frames to capture (see app/capture.h)
 };
 
@@ -153,6 +154,7 @@ int parse_options(const std::vector<std::string>& args, Options& o) {
     else if (a == "--volume" && has_value) o.volume = std::clamp(std::atoi(argv[++i]), 0, 100);
     else if (a == "--lan") o.lan = true;
     else if (a == "--profile") o.profile = true;
+    else if (a == "--profile-overlay") o.profile_overlay = true;
     else if (a == "--profile-dir" && has_value) o.profile_dir = os::utf8_path(argv[++i]);
     else if (a == "--profile-rate" && has_value) o.profile_rate = std::clamp(std::atoi(argv[++i]), 0, 10000);
     else if (a == "--profile-thumbs" && has_value) {
@@ -296,6 +298,21 @@ std::string first_run_hint(const input::HostInput* in, bool free_play) {
   if (!free_play && !coin.empty()) text += " Use " + coin + (pad_coin ? " or Back" : "") + " to insert a coin.";
   text += " Have fun!";
   return text;
+}
+
+// The first key (or else gamepad button) bound to one of the profiler's
+// controls, for its notices ("F10"), or "" if none.
+std::string profiler_key(const input::HostInput* in, std::string_view control) {
+  using Kind = input::HostInput::DeviceKind;
+  if (!in) return "";
+  for (const Kind kind : {Kind::Keyboard, Kind::Gamepad}) {
+    for (std::size_t c = input::HostInput::kProfilerFirst; c < input::HostInput::kControlCount; ++c) {
+      if (control != input::HostInput::control_name(c)) continue;
+      const std::vector<std::string> labels = in->binding_labels(kind, c);
+      if (!labels.empty()) return labels.front();
+    }
+  }
+  return "";
 }
 
 // What to save: the settings file's values, except those changed (in the
@@ -877,9 +894,12 @@ int run(const Game& game, int argc, char** argv) {
     std::printf("  saves:  %s\n", machine.cards().dir().c_str());
     std::fflush(stdout);
 
-    // Profiling: from the start (--profile), or with F10 or the menu.
+    // Profiling: from the start (--profile), or with the profiler's controls
+    // (F10 by default) or the menu.
     static Profiler profiler(machine, game, renderer, {o.profile_rate, o.profile_thumbs, static_cast<gekko::u32>(o.profile_thumb_width)});
     g_profiler = &profiler;
+    bool profiler_overlay = o.profile_overlay;
+    if (use_menu) menu.set_profiler_overlay(profiler_overlay);
     profiler.set_describe([window, &o, argc, argv] {
       profile::JsonArray args;
       for (int i = 0; i < argc; ++i) args.add(argv[i]);
@@ -996,27 +1016,36 @@ int run(const Game& game, int argc, char** argv) {
     model.webcams = [] { return camera::Webcam::names(); };
     model.quit = [&quit] { quit("quit from the menu"); };
     auto toggle_profiling = [&] {
+      const std::string key = profiler_key(use_input ? &host_input : nullptr, "profile_toggle");
       if (profiler.recording()) {
         profiler.stop("stopped by the player");
         menu.notify("Profile saved: " + profiler.dir().string());
       } else if (std::string why; profiler.start({}, profiles_dir, false, &why)) {
-        menu.notify("Recording a profile (F10 stops)");
+        menu.notify(key.empty() ? "Recording a profile" : "Recording a profile (" + key + " stops)");
       } else {
         menu.notify("Can't record a profile: " + why);
       }
     };
     auto mark = [&] {
       if (!profiler.recording()) {
-        menu.notify("Not recording a profile (F10 starts)");
+        const std::string key = profiler_key(use_input ? &host_input : nullptr, "profile_toggle");
+        menu.notify(key.empty() ? "Not recording a profile" : "Not recording a profile (" + key + " starts)");
         return;
       }
-      profiler.mark("F8");
+      const std::string key = profiler_key(use_input ? &host_input : nullptr, "profile_mark");
+      profiler.mark(key.empty() ? "mark" : key);
       menu.notify("Marked");
     };
-    // Frame captures: F9 (the next frame), and the frames asked for.
+    // Frame captures: the capture control (F9 by default, the next frame),
+    // and the frames asked for.
     auto capture = [&] {
       machine.gpu().frontend().request_capture();
       menu.notify("Capturing a frame...");
+    };
+    auto toggle_overlay = [&] {
+      profiler_overlay = !profiler_overlay;
+      if (use_menu) menu.set_profiler_overlay(profiler_overlay);
+      menu.notify(profiler_overlay ? "Performance overlay on" : "Performance overlay off");
     };
     auto next_capture = [&o](u64 from) {
       // Frames count from power-on; the front end's from this boot.
@@ -1027,6 +1056,16 @@ int run(const Game& game, int argc, char** argv) {
     model.toggle_profiling = toggle_profiling;
     model.mark = mark;
     model.capture = capture;
+    model.toggle_overlay = toggle_overlay;
+    model.toggle_auto_capture = [p = &profiler] { p->set_auto_capture(!p->auto_capture()); };
+    model.overlay = profiler_overlay;
+    auto refresh_profiler = [&] {
+      model.profiling = profiler.recording();
+      model.profile_dir = model.profiling ? profiler.dir().string() : std::string();
+      model.profile = profiler.live();
+      model.overlay = profiler_overlay;
+    };
+    refresh_profiler();
     u64 queue_ns = 0;  // waiting for the next frame to present
     // Even frame pacing: the retraces that say when to show each frame, and
     // when the last one was shown (steady clock, ns).
@@ -1078,9 +1117,6 @@ int run(const Game& game, int argc, char** argv) {
           case SDL_EVENT_KEY_DOWN:
             if (e.key.repeat) break;
             if (e.key.key == SDLK_F12) shot_requested = true;
-            if (e.key.key == SDLK_F8) mark();
-            if (e.key.key == SDLK_F9) capture();
-            if (e.key.key == SDLK_F10) toggle_profiling();
             if (e.key.key == SDLK_F11 || (e.key.key == SDLK_RETURN && (e.key.mod & SDL_KMOD_ALT))) {
               settings.fullscreen = !settings.fullscreen;
               continue;  // not for the game (Enter is its start button)
@@ -1130,6 +1166,15 @@ int run(const Game& game, int argc, char** argv) {
         machine.set_controls(menu.is_open() ? triforce::Controls{} : controls);
         // A paused game's wheel forces stop too.
         host_input.set_outputs(paused ? triforce::Outputs{} : machine.outputs());
+        // The profiler's controls work while playing: in the menu its own
+        // page has the buttons, and what is pressed is for choosing a binding.
+        const u32 actions = host_input.take_profiler_actions();
+        if (!menu.is_open()) {
+          if (actions & input::HostInput::kProfilerToggle) toggle_profiling();
+          if (actions & input::HostInput::kProfilerMark) mark();
+          if (actions & input::HostInput::kProfilerCapture) capture();
+          if (actions & input::HostInput::kProfilerOverlay) toggle_overlay();
+        }
       }
       settings.card = applied.card = machine.cards().held();  // the game may have given the player a new card
       apply_settings();
@@ -1182,6 +1227,7 @@ int run(const Game& game, int argc, char** argv) {
         // stuck): keep the menu alive.
         const auto redraw_after = std::chrono::milliseconds(paused ? 16 : 100);
         if (use_menu && menu.visible() && std::chrono::steady_clock::now() - last_present > redraw_after) {
+          refresh_profiler();
           menu.update(model);
           renderer.redraw();
           last_present = std::chrono::steady_clock::now();
@@ -1239,6 +1285,8 @@ int run(const Game& game, int argc, char** argv) {
           info.audio_underruns = g_audio_out->underruns();
         }
         profiler.on_frame(*frame, info);
+        // A hitch or a likely glitch asked for a capture of the next frame.
+        if (profiler.take_capture_request() && !frame->capture) machine.gpu().frontend().request_capture();
         queue_ns = 0;
         if (frame->capture && capture_images) {
           // Written on its own thread, with the frame (not recycled).
@@ -1281,9 +1329,7 @@ int run(const Game& game, int argc, char** argv) {
           next_capture(number + 1);
           continue;
         }
-        model.profiling = profiler.recording();
-        model.profile_dir = model.profiling ? profiler.dir().string() : std::string();
-        model.profile_frames = profiler.frames();
+        refresh_profiler();
       }
       queue.give_back(std::move(frame));
       if (shoot && shot.width) {

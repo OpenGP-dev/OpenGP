@@ -8,15 +8,27 @@ by a developer or by an AI assistant.
 
 ## Recording while you play
 
-| Key | What it does |
-|-----|--------------|
-| **F10** | Starts recording a profile, and stops it (the Profiler tab in the Esc menu does the same) |
-| **F8** | Marks the moment: press it right after a stutter or when something looks wrong, so it can be found in the profile |
-| **F9** | Captures the next frame: every texture, every draw and what drew it (see [Frame captures](#frame-captures)). Press it while a glitch is on screen |
+The profiler's controls are OpenGP's own, separate from the cabinet's. They
+can be put on any key, gamepad button or axis, like the cabinet's controls:
+choose them on the **Controls** page of the menu (its **Profiler** section), or
+set `profile_toggle`, `profile_mark`, `profile_capture` and `profile_overlay`
+in `user/controls.toml`. The defaults are:
 
-Or start the game with `--profile` to record from the start. Recording stops
-when the game quits; a game that restarts itself (the test menu) goes on
-recording into the same profile.
+| Control | Default key | What it does |
+|---------|-------------|--------------|
+| Start/stop profile | **F10** | Starts recording a profile, and stops it (the Profiler tab in the Esc menu does the same) |
+| Mark moment | **F8** | Marks the moment: press it right after a stutter or when something looks wrong, so it can be found in the profile |
+| Capture frame | **F9** | Captures the next frame: every texture, every draw and what drew it (see [Frame captures](#frame-captures)). Press it while a glitch is on screen |
+| Performance overlay | **F7** | Shows and hides the [live overlay](#watching-while-you-play) |
+
+Gamepads and joysticks have no profiler controls bound by default: add
+buttons on the Controls page if you want to record or mark without the
+keyboard.
+
+Or start the game with `--profile` to record from the start (and
+`--profile-overlay` to start with the overlay showing). Recording stops when
+the game quits; a game that restarts itself (the test menu) goes on recording
+into the same profile.
 
 Profiles are saved in `user/profiles/<date>_<time>/`. To send one, zip its
 folder. A profile holds small pictures of the screen and a frame capture holds
@@ -29,19 +41,44 @@ What it costs: each call stack sample stops the thread it samples for about
 none). The rest of the recording happens on other threads. A scene where the
 game is close to missing frames may miss a few more while recording.
 
+## Watching while you play
+
+The performance overlay shows what the game and the computer are doing without
+writing a profile. **F7** (or the Profiler tab's **Performance overlay**
+switch) shows and hides it. It has a graph of the last two seconds' game frame
+times with a line at one frame a retrace (16.7 ms), and:
+
+- frame rate, the game's frame time, how much of it it was busy (not idle or
+  waiting), and the 99th percentile frame time;
+- retraces that went by without a new frame (**drops**), hitches (frames much
+  longer than the ones before) and marks;
+- the whole computer's CPU use, so another program can be ruled out;
+- the GPU textures and pipelines alive, and the sound queue and underruns;
+- the scene, activity and course the game reports.
+
+While recording, it also shows the profile's frame count and length. The
+overlay works whether or not a profile is recording, so it can be used to
+check a problem before deciding to record it.
+
+Hitches and likely glitches are also worth a frame capture. Turn on
+**Capture hitches** on the Profiler tab and, while recording, OpenGP captures
+the next frame when a hitch happens or a likely glitch is first seen. It does
+this at most once every 5 seconds, so one bad moment does not fill the profile
+with captures.
+
 ## What a profile holds
 
 | File | What's in it |
 |------|--------------|
 | `session.json` | The game, OpenGP's version and commit, the computer (OS, CPU, memory), and the per-frame record's layout |
-| `frames.bin` | One record per frame shown (`profile/record.h`): the game's frame time and how much of it was spent idle (spare time), in the GX front end (draw state, texture lookups and decoding, vertex transforms), waiting for the renderer or for EFB readbacks; the renderer's time (uploads, waiting for the display or GPU, shader compiles) and, with even frame pacing, how long the frame was held for the game's retrace; draws, triangles, textures decoded, EFB copies; the scene, race position and lap; pause and menu state. `profiles.py fields` lists them all |
+| `frames.bin` | One record per frame shown (`profile/record.h`): the game's frame time and how much of it was spent idle (spare time), busy, in the GX front end (draw state, texture lookups and decoding, vertex transforms), waiting for the renderer or for EFB readbacks; retraces that went by without a new frame (`drops`); the renderer's time (uploads, waiting for the display or GPU, shader compiles, pipeline binds) and, with even frame pacing, how long the frame was held for the game's retrace; draws, triangles, textures decoded, EFB copies; live GPU textures and pipelines; the scene, race position and lap; pause and menu state. `profiles.py fields` lists them all |
 | `events.jsonl` | One JSON object per line, in time order. `"e"` says what: `start`/`resume`/`end`, `scene` (the game's scene, mode, course, character), `race_start`, `lap`, `race_end`, `hitch` (a frame much longer than usual, with what took the time and the game's busiest functions then), `risk` (a likely glitch, below), `pipelines` (shaders compiled, and how long it took), `settings`, `efb` (the internal resolution or widescreen width changed), `paused`/`unpaused`, `menu_opened`/`menu_closed`, `background`/`foreground`, `mark`, `capture`, `screenshot`, `hang`, `link_lost`. `"t"` is seconds since the start, `"f"` the frame |
 | `system.jsonl` | Once a second: CPU use of each thread by name (`main` renders, `guest N` run the game, `timer` runs the hardware's timed events), of OpenGP and of the whole computer (other programs competing), memory, page faults |
 | `console.log` | Everything OpenGP printed |
 | `cpu/run<N>/` | Call stack samples of every busy thread (Windows): `samples.bin`, `stacks.bin`, `symbols.tsv`, `threads.tsv` (see `profile/monitor.h`). Recompiled game functions show under the game's names |
 | `thumbs/f<frame>.jpg` | A small picture of the screen every 2 seconds (`--profile-thumbs N` frames), and of every scene change, hitch, likely glitch and mark |
 | `captures/` | Frame captures made while recording |
-| `summary.json` | Frame time percentiles, hitches by cause, every scene's frame times, the likely glitches with counts. Written when recording stops |
+| `summary.json` | Frame time percentiles, hitches and their causes, drops, every scene's frame times, the likely glitches with counts, pipeline binds and the GPU's live texture and pipeline counts. Written when recording stops |
 
 ### Hitches
 
@@ -65,7 +102,8 @@ thumbnail; `summary.json` counts them.
 
 ## Frame captures
 
-**F9** (or `--capture-frame FRAME`, repeatable, or the Profiler tab) saves one
+The **capture control** (F9 by default), `--capture-frame FRAME` (repeatable),
+or the Profiler tab saves one
 frame with everything needed to see why it looks wrong, in the profile being
 recorded (`captures/<n>_f<frame>/`) or else in `user/captures/`:
 

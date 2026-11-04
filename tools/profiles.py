@@ -110,10 +110,16 @@ class Profile:
             n = len(data) // self.struct.size
             names = self.fields
             self._frames = [dict(zip(names, v)) for v in self.struct.iter_unpack(data[:n * self.struct.size])]
-            prev = None
-            for r in self._frames:
-                r['drops'] = 0 if prev is None else max(0, r['retrace'] - prev['retrace'] - 1)
-                prev = r
+            if 'drops' not in names:
+                # Older records: compute it from the retraces. A pause or the
+                # menu makes retraces without frames too, but they are not
+                # late frames.
+                prev = None
+                for r in self._frames:
+                    r['drops'] = 0
+                    if prev is not None and not r['flags'] & 3:
+                        r['drops'] = max(0, r['retrace'] - prev['retrace'] - 1)
+                    prev = r
         return self._frames
 
     @property
@@ -260,6 +266,13 @@ def cmd_list(_):
             pass
         info = '%d frames, %d hitches, %.0f s' % (s['frames'], s['hitches'], s['seconds']) if s else '(no summary: still recording, or ended abruptly)'
         print('%-22s %8.1f MB frames  %s' % (d, size / 1e6, info))
+
+
+def guest_busy_us(r):
+    """The game's own work in a frame: not idle, waiting or reading back."""
+    if 'guest_busy_us' in r:
+        return r['guest_busy_us']
+    return max(0, r['guest_us'] - r['idle_us'] - r['wait_us'] - r['readback_wait_us'])
 
 
 def frame_stats(frames):

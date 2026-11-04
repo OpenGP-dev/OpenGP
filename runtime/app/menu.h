@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "app/profiler.h"
 #include "app/settings.h"
 #include "input/host.h"
 #include "triforce/card_folder.h"
@@ -42,11 +43,14 @@ struct MenuModel {
   std::function<void()> quit;
   std::function<void()> test_menu;  // restarts into the game's test menu (if it has one)
   // Profiling (app/profiler.h): whether a profile is being recorded, where,
-  // how many frames so far; starting or stopping, marking a moment.
+  // how many frames so far, and the live numbers the overlay and its page
+  // show; starting or stopping, marking a moment, the overlay and auto
+  // captures.
   bool profiling = false;
   std::string profile_dir;
-  u64 profile_frames = 0;
-  std::function<void()> toggle_profiling, mark, capture;
+  Profiler::LiveStats profile;
+  bool overlay = false;
+  std::function<void()> toggle_profiling, mark, capture, toggle_overlay, toggle_auto_capture;
 };
 
 // A notice's kind: information, or a problem (a save that failed).
@@ -75,7 +79,11 @@ class Menu final : public video::Overlay {
   // Shows that the game is paused (while the menu is closed).
   void set_paused(bool paused) { paused_ = paused; }
 
-  // Whether there is anything to draw (the menu, a notice, or "Paused").
+  // Shows the live profiler overlay over the game while the menu is closed.
+  void set_profiler_overlay(bool on) { overlay_ = on; }
+
+  // Whether there is anything to draw (the menu, a notice, "Paused", or the
+  // profiler's overlay).
   bool visible() const;
 
   // Lays the menu out for the next presented frame.
@@ -118,6 +126,7 @@ class Menu final : public video::Overlay {
   void draw_confirm(MenuModel& m);
   void draw_hints(bool pages);
   void draw_paused(MenuModel& m);
+  void draw_profiler_overlay(MenuModel& m);
   void draw_notices();
 
   std::vector<std::string> webcams_;  // listed when the webcam list opens
@@ -127,6 +136,7 @@ class Menu final : public video::Overlay {
   bool initialised_ = false;
   bool open_ = false;
   bool paused_ = false;
+  bool overlay_ = false;  // the live profiler overlay, while the menu is closed
   bool focus_window_ = false;  // focus the screen's window on its next frame
   bool focus_item_ = false;    // focus the screen's first widget on its next frame
   bool show_focus_ = true;     // ... with its ring showing

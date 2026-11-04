@@ -187,6 +187,8 @@ class Renderer {
   RenderStats take_stats();
   u32 live_textures() const { return static_cast<u32>(textures_.size()); }
   u32 live_pipelines() const { return static_cast<u32>(tev_pipelines_.size() + clear_pipelines_.size()); }
+  // The size of the GPU textures alive now, in bytes (their levels included).
+  u64 live_texture_bytes() const;
   // Asks for a picture of the next frame with an XFB, `width` pixels wide at
   // most. It is copied without waiting for the GPU: take_thumbnails() returns
   // it a frame or two later.

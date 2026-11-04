@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Frame captures (F9, --capture-frame N, or the menu's Profiler tab): one
+// Frame captures (the capture control, --capture-frame N, or the menu's
+// Profiler tab): one
 // displayed frame with everything needed to see why it looks wrong, in a
 // folder (captures/<n>_f<frame>/ in the profile being recorded, else
 // user/captures/<date>_<time>_f<frame>/):

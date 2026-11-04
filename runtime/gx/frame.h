@@ -233,7 +233,8 @@ struct Risk {
   u32 address = 0, a = 0, b = 0;
 };
 
-// A frame captured for inspection (F9, see app/capture.h): what the front end
+// A frame captured for inspection (the profiler's capture control, see
+// app/capture.h): what the front end
 // knew about each draw, EFB copy and texture. Only captured frames have one.
 // In a captured frame each of the game's primitives is its own DrawCmd, and
 // every texture is decoded afresh (the texture cache is emptied first), so
