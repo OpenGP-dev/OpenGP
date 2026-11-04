@@ -31,7 +31,7 @@ enum class CameraSource : u8 {
 struct Settings {
   // [video]
   bool fullscreen = false;
-  int window_width = 1280, window_height = 720;  // the window's size when not fullscreen
+  int window_width = 1280, window_height = 720;  // the window's size when not fullscreen, at 100% display scale
   AspectRatio aspect = AspectRatio::Auto;
   u32 internal_resolution = 0;  // 0: from the window's size, else 1 to 8 times 640x528
   bool vsync = true;
@@ -45,6 +45,7 @@ struct Settings {
   bool pause_in_menu = true;         // the game pauses while the menu is open
   bool pause_in_background = false;  // ... and while its window is not the active one
   std::string card = "Card 1";  // the Mario Card the player holds (a file in user/cards/); "" for none
+  bool first_run_hint = true;   // show the hint about coins and the menu (once, then false)
 
   // [camera] (read at start-up: changes take effect when the game restarts)
   CameraSource camera = CameraSource::Off;
@@ -63,7 +64,8 @@ struct Settings {
 
 // Reads `path` over `settings` (what the file leaves out keeps its value).
 // Returns false with `error` set if the file cannot be parsed; a missing file
-// is not an error.
+// is not an error. A value it does not understand keeps the setting's value
+// and is described in `error`, with true returned.
 bool load_settings(const std::string& path, Settings* settings, std::string* error);
 
 // Writes `settings` to `path` (replacing it only once written in full).

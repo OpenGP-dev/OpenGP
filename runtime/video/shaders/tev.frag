@@ -188,8 +188,9 @@ void main() {
   ivec3 tevcoord = ivec3(0);
 
   // Texture coordinates in fixed point (1/128 texel).
-  ivec2 uv[8];
-  for (int i = 0; i < 8; ++i) {
+  // Only the coordinates the draw has (all the reads below are of those).
+  ivec2 uv[8] = ivec2[8](ivec2(0), ivec2(0), ivec2(0), ivec2(0), ivec2(0), ivec2(0), ivec2(0), ivec2(0));
+  for (int i = 0; i < int(min(num_texgens, 8u)); ++i) {
     vec3 t = v_tex[i];
     vec2 st = t.z == 0.0 ? t.xy : t.xy / t.z;
     uv[i] = ivec2(st * vec2(tcscale[i].xy) * 128.0);

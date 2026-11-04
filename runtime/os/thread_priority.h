@@ -9,7 +9,7 @@ namespace os {
 // on macOS, the user-interactive quality of service, so that Apple Silicon
 // runs it on a performance core and wakes it without timer coalescing (at
 // the default quality of service the game thread could land on an
-// efficiency core and miss frames). Elsewhere it does nothing for now.
+// efficiency core and miss frames). Elsewhere it does nothing.
 void set_interactive_thread();
 
 // Names the calling thread, for debuggers and profiles (see profile/monitor.h).

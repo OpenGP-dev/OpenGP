@@ -5,7 +5,7 @@
 // that was busy, the functions it spent its time in: self time (inlined code
 // counts towards the function it was inlined into), then inclusive time.
 // Waits show up as system calls (Nt*, Zw*). Names come from the
-// executable's debug symbols. Windows only for now.
+// executable's debug symbols. Windows only.
 //
 // OPENGP_PROFILE=START,SECONDS profiles SECONDS seconds, beginning START
 // seconds after start-up.

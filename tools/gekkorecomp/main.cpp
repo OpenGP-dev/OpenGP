@@ -7,11 +7,13 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "analysis.h"
 #include "codegen.h"
 #include "config.h"
 #include "dol.h"
+#include "os/utf8.h"
 #include "symbols.h"
 
 namespace {
@@ -26,7 +28,11 @@ void usage() {
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int main(int argc_, char** argv_) {
+  const std::vector<std::string> args = os::utf8_args(argc_, argv_);
+  const int argc = static_cast<int>(args.size());
+  std::vector<const char*> argv;
+  for (const std::string& a : args) argv.push_back(a.c_str());
   std::string config_path, dol_override, symbols_override, out_override;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];

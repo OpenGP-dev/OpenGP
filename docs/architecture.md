@@ -12,9 +12,8 @@ A matching decompilation means rewriting every function by hand until it compile
 bytes. That takes years. Static recompilation is mechanical: once the recompiler and runtime
 work, the whole game is translated at once.
 
-A decompilation can still come later. The symbol files use the decomp-toolkit format, so a
-decomp project can share them. Hand-written C++ can also replace individual recompiled
-functions (see "Overriding functions" below).
+The symbol files use the decomp-toolkit format, so a decomp project can share them. Hand-written
+C++ can also replace individual recompiled functions (see "Overriding functions" below).
 
 ## Pipeline
 
@@ -40,7 +39,7 @@ private/GGPE02.iso ─extract─> main.dol ─decomp-toolkit (dtk)─> symbols.t
 
 ### Instruction set
 
-`common/gekko/ops.inc` is an X-macro table that lists every Gekko instruction once, with its
+`common/gekko/include/gekko/ops.inc` is an X-macro table that lists every Gekko instruction once, with its
 opcode, extended opcode and operand signature. The following are all generated from it:
 - the decoder
 - the disassembler
@@ -96,8 +95,8 @@ Instruction semantics are **not** duplicated in the generator:
 - The helpers are `inline`, so the compiler folds them down to the equivalent hand-written C++.
 - The interpreter calls the same helpers.
 
-Performance work comes later and is not needed for correctness. The plan is to keep guest registers
-in C++ locals rather than in `ctx`, as XenonRecomp does.
+Guest registers live in `ctx`, not in C++ locals as in XenonRecomp. The performance work is in the
+runtime (see the CHANGELOG).
 
 ### Address classification
 
@@ -106,7 +105,7 @@ Loads and stores go to one of four places:
 | Kind | Addresses | Emitted as |
 |------|-----------|------------|
 | `Ram` | MEM1 (`0x80000000`, `0xC0000000`) | Direct big-endian access to host memory |
-| `Mmio` | Hardware registers (`0xCC000000`–`0xCC007FFF`) and the CPU's window onto the EFB (`0xC8000000`–`0xC8FFFFFF`) | Runtime MMIO handler |
+| `Mmio` | Hardware registers (`0xCC000000`–`0xCC00FFFF`, except the gather pipe's `0xCC008xxx`) and the CPU's window onto the EFB (`0xC8000000`–`0xC8FFFFFF`) | Runtime MMIO handler |
 | `GatherPipe` | Write-gather pipe (`0xCC008000`) | Appended to the GPU FIFO |
 | `Checked` | Anything not proven to be RAM | Cheap address check, then one of the above |
 
@@ -117,6 +116,8 @@ To pick the kind, the recompiler runs constant propagation over each function's 
 graph, tracking `lis` / `addi` / `ori` / `mr`:
 - Addresses built from constants are classified exactly.
 - `r1` (the stack), `r2` and `r13` (the small-data bases) always point to RAM.
+- A known RAM address plus an unknown index (an array or jump-table access) stays in RAM: reaching
+  the hardware registers would need an index near `0x4C000000`.
 - Everything else gets the `Checked` path.
 
 ### Config (`recomp.toml`)
@@ -171,13 +172,15 @@ Hooks declared in `recomp.toml` are defined the same way, with `PPC_HOOK(Name) {
 
 A 4 GiB host range is reserved, so a guest address is simply `base + addr`:
 - **MEM1** is mapped twice, at `0x80000000` (cached) and `0xC0000000` (uncached), backed by the
-  same physical pages: `memfd` on Linux, `CreateFileMapping` + `MapViewOfFile3` on Windows.
+  same physical pages: `memfd` on Linux, an unlinked `shm_open` object on macOS, and
+  `CreateFileMapping` + `MapViewOfFile3` on Windows.
 - The **locked cache** (16 KiB) sits at `0xE0000000`.
 - Everything else is left unmapped, so a stray access crashes immediately instead of silently
   corrupting state.
 
 MEM1 is 24 MiB on the GameCube. Its size is a runtime parameter: the machine takes it from the
-disc's `bi2.bin`, which says 48 MiB for the Triforce games (clamped to 24-64 MiB, as Dolphin does).
+disc's `bi2.bin`, which says 48 MiB for GP 2 and 24 MiB for GP (clamped to 24-64 MiB, as Dolphin
+does).
 
 ### Floating point
 
@@ -189,8 +192,16 @@ Gekko FP behaviour is ported from Dolphin, which bases it on hardware tests:
 - Load/store conversions between single and double are bit-exact.
 - Quantized loads and stores (`psq_l` / `psq_st`) follow the GQR settings.
 
-FPSCR exception flags are not tracked yet (see the TODO in `ops.h`). The rounding mode is used
+FPSCR exception flags are not tracked yet (see `runtime/ppc/fp.h`). The rounding mode is used
 by `fctiw`.
+
+Linked cabinets each run the race themselves and exchange only their controls (the game's link
+is a lockstep relayed by the host cabinet), so every cabinet must compute the same guest results
+to the bit, whatever its OS, CPU or compiler. What keeps them the same: the generated code is
+built with `-ffp-contract=off` (no fused multiply-adds the guest didn't ask for), NaNs are chosen
+explicitly as above, guest FMAs use a correctly rounded `fma`, and the host's floating-point
+environment stays at its defaults. A change that breaks this breaks linked races between
+platforms.
 
 ### Interpreter
 
@@ -208,6 +219,22 @@ restored.
 | `test_decoder` | Every instruction in the table survives an encode/decode round trip; known encodings disassemble to the expected text |
 | `test_semantics` | Known answers for tricky instructions: carries, `divw` edge cases, rotate masks, FP conversion, estimate tables, quantization |
 | `test_diff` | `fixturegen` writes a DOL of hand-written and randomly generated functions; `gekkorecomp` recompiles it during the build; each function then runs through both the interpreter and the recompiled code, which must end in bit-identical state (registers, memory, gather-pipe output) |
+| `test_recomp_inputs` | The recompiler's inputs: decomp-toolkit symbol files, `recomp.toml`, DOL parsing, identifiers |
+| `test_input` | Scripted input: parsing and timing |
+| `test_dsp` | The ARAM accelerator's sample decoding and the AX microcode's voice mixing, on hand-made voices |
+| `test_pause` | Pausing: the time base stops and carries on, timed events wait, guest code waits at safe points; retraces on the host's clock |
+| `test_disc` | Disc images: SHA-1 known answers, finding the executable, files by path |
+| `test_texture` | Telling mipmaps that fade with distance (an effect) from plain downscaled copies |
+| `test_vertex_pipeline` | The GX vertex pipeline on random formats, matrices, lights and primitives: the same output every run, and bit for bit on x86-64 |
+| `test_text` | The games' text on the console |
+| `test_settings` | `settings.toml`, the card folder and reboot files |
+| `test_controls` | `controls.toml`: reading, changing bindings as the menu does, writing it back |
+| `test_camera` | The NamCam2 stand-in and its JPEG pictures, on the media board's network |
+| `test_discord` | Discord Rich Presence's messages and client, against a stand-in for Discord |
+| `test_link` | Linked cabinets on one computer: finding each other, connecting, versions, refusing strangers |
+| `test_paths` | Folders named in other scripts ("José Ж 日本"): settings, cards, reboot files, images |
+| `test_installer` | The installer: `package.toml` from this release and from 1.0.0 (which lists no sources), a compiler download that a server will not resume, and a package folder it cannot write to (not checked as root, who can write anywhere) |
+| `crash_reports` | `crash_probe` crashes on purpose four ways; each must write `crash-report.txt` and exit with code 3 |
 
 The differential test exercises the whole pipeline end to end: DOL parsing, symbol import,
 analysis, codegen, dispatch, and the interpreter.
@@ -347,30 +374,41 @@ phase shift for 3D sound).
 The games' executables only describe the game (`app::Game`: its ID, its recompiled module, how to
 turn free play on); `app::run` does the rest:
 - the command line and the player's settings (`settings.h`: `user/settings.toml`);
-- booting, the status line, crash reports, and hang reports (`hang_watch.h`: when no frame comes for
-  10 seconds, each guest thread's call stack, from its stack's back chain);
+- the user folder's lock (`paths.h`: `user/.lock-<game ID>`, held while the game runs, so a second
+  copy of the same game can't share the folder's saves; the other game may);
+- booting, the status line, crash reports (`os/crash.h`: written to `user/crash-report.txt` from
+  the crashing thread with no allocation, with a watchdog that ends the process if writing the
+  report hangs), and hang reports (`hang_watch.h`: when no frame comes for 10 seconds, each guest
+  thread's call stack, from its stack's back chain, to `user/hang-report.txt`);
 - the window (fullscreen, and the aspect ratio and internal resolution that follow its size), the
   controls, the sound;
 - the menu (`menu.h`): Dear ImGui, drawn by the renderer over the presented picture
-  (`video::Overlay`), with the settings and the Mario Card the player holds. Settings changed there
-  apply at once; they are saved when the menu closes and at exit, except those set on the command
-  line.
+  (`video::Overlay`), with the settings and the Mario Card the player holds. It is drawn in the
+  OpenGP launcher's look: `menu_theme.h` has the launcher's palette, its typeface (M PLUS Rounded
+  1c, embedded from `thirdparty/fonts`) and icons, and `menu_widgets.h` the widgets, each a Dear
+  ImGui item drawn with the draw lists (a setting's row is one keyboard or gamepad stop). Settings
+  changed there apply at once; they are saved when the menu closes and at exit, except those set
+  on the command line.
 
 ### The installer package (`tools/installer/`)
 
 Releases ship everything but the games: the runtime as static libraries with its headers, the
 recompiler (inside the installer) and the games' own files. The installer checks the player's image,
 recompiles its `main.dol`, compiles the result with a C++ compiler (llvm-mingw on Windows, the
-system's on Linux and macOS) and links it with the runtime. See [packaging.md](packaging.md).
+system's on Linux and macOS) and links it with the runtime. It is a library: the program players
+open, `OpenGP` (from opengp-launcher), builds the games with it, and so does `opengp-cli`, its
+command-line program. See [packaging.md](packaging.md).
 
 ### Reboots (`runtime/os/reboot.h`)
 
 Games restart themselves with `OSResetSystem`, keeping a region of memory for the next boot (the
 Triforce games use it to enter and leave their test menus). OpenGP replaces `OSResetSystem` (see
 `games/common/sdk_hle.cpp`) and restarts the whole process: the launcher writes the reset code and
-the kept memory to `user/reboot.bin` and starts itself again with the same options; the new
-process hands them to the game's `OSInit` (`__OSGetExecParams`). Frame numbers (for scripted
-input and screenshots) carry on across the restart.
+the kept memory to `user/reboot-<game ID>.bin` and starts itself again with the same options;
+the new process hands them to the game's `OSInit` (`__OSGetExecParams`). Frame numbers (for
+scripted input and screenshots) carry on across the restart. The new process does not inherit the
+old one's sockets: they close as the old process ends or is replaced, so the new one can listen on
+the same ports.
 
 ### Input (`runtime/input/`)
 
@@ -404,8 +442,10 @@ and start as soon as the game has its number, because the game looks for the oth
 moment as it starts (below): they must be known by then. A game's connection to another cabinet goes to the host port only once that cabinet has said it
 listens there, so a connection never waits for a cabinet that is not there, and it starts with a
 16-byte hello naming the cabinet and the game: the cabinet accepting it hands it to its game only
-then, as a connection from the other cabinet's address. With `lan` off, everything stays on the
-loopback interface. `Network::link_status()` is what the menu shows.
+then, as a connection from the other cabinet's address. Link connections send each write at once
+(`TCP_NODELAY`): the games send one small message a frame, and with Nagle's algorithm each would
+wait for the other computer's delayed acknowledgement, so messages between computers came in
+bursts. With `lan` off, everything stays on the loopback interface. `Network::link_status()` is what the menu shows.
 
 `Network::linked()` says whether the game has linked to another cabinet since start-up: a
 connection to one made, or one accepted (services don't count). The launcher pauses only a game
@@ -438,8 +478,7 @@ JSON; no Discord SDK), connecting while Discord runs, reconnecting when it resta
 within Discord's rate limit. The pictures are art assets in OpenGP's Discord application, uploaded
 there from the games' textures; nothing from the games is in the code.
 
-## What comes next
+## Scope
 
-| Area | Plan |
-|------|------|
-| GPU | Remaining GX features as games need them (depth textures, z-freeze, destination alpha with blending, logic ops) |
+The GPU emulation leaves out some GX features (depth textures, z-freeze, destination alpha with
+blending, logic ops) that neither game is known to need.

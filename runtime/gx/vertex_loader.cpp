@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Based on Dolphin's VertexLoader*.cpp and the software renderer's
+// SWVertexLoader.cpp (Copyright Dolphin Emulator Project,
+// GPL-2.0-or-later).
 
 #include "gx/vertex_loader.h"
 

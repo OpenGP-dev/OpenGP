@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Based on the Dolphin software renderer's TransformUnit.cpp (Copyright
+// Dolphin Emulator Project, GPL-2.0-or-later).
 
 #include "gx/transform.h"
 

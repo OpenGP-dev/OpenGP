@@ -2,6 +2,7 @@
 
 #include "os/reboot.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -16,6 +17,7 @@
 #define NOMINMAX
 #include <windows.h>
 #else
+#include <fcntl.h>
 #include <unistd.h>
 #endif
 
@@ -123,6 +125,13 @@ void restart_process([[maybe_unused]] const std::string& argv0, const std::vecto
   argv.push_back(const_cast<char*>(argv0.c_str()));
   for (const std::string& arg : args) argv.push_back(const_cast<char*>(arg.c_str()));
   argv.push_back(nullptr);
+  // The new program gets nothing of this one's open files (the webcam, the
+  // game's sockets, MEM1's memory file) beyond the console.
+  const long max_fd = std::min(sysconf(_SC_OPEN_MAX), 65536L);
+  for (int fd = 3; fd < static_cast<int>(max_fd > 0 ? max_fd : 1024); ++fd) {
+    const int flags = fcntl(fd, F_GETFD);
+    if (flags >= 0) fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+  }
 #ifdef __linux__
   execv("/proc/self/exe", argv.data());
 #endif

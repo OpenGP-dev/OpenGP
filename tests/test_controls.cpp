@@ -9,10 +9,12 @@
 
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <string>
 #include <vector>
 
 #include "input/host.h"
+#include "test_temp.h"
 
 namespace fs = std::filesystem;
 using input::HostInput;
@@ -21,8 +23,7 @@ using Kind = HostInput::DeviceKind;
 namespace {
 
 fs::path temp_file(const char* name) {
-  const fs::path dir = fs::temp_directory_path() / "opengp_tests" / "controls";
-  fs::create_directories(dir);
+  static const fs::path dir = opengp_test::temp_dir("controls");
   fs::remove(dir / name);
   return dir / name;
 }
@@ -105,4 +106,111 @@ TEST_CASE("changed bindings survive saving") {
   std::string first;
   std::getline(f, first);
   CHECK(first.rfind("# OpenGP controls", 0) == 0);
+}
+
+TEST_CASE("a bad entry costs only itself, and a broken file is kept aside") {
+  const fs::path path = temp_file("bad.toml");
+  // An input name it does not know, and nan, which TOML allows.
+  std::ofstream(path) << "[keyboard]\ngas = [\"Left Shift\", \"NoSuchKey\"]\n[gamepad]\ndeadzone = nan\n"
+                         "[force_feedback]\nstrength = nan\n";
+  HostInput in;
+  std::string error;
+  CHECK(in.load(path.string(), &error));
+  CHECK(error.find("NoSuchKey") != std::string::npos);
+  CHECK(in.bindings(Kind::Keyboard, control("gas")) == Names{"Left Shift"});
+  CHECK(in.deadzone(Kind::Gamepad) == doctest::Approx(0.12f));  // the default's, not nan
+  CHECK(in.force_feedback() == doctest::Approx(1.0f));
+  in.set_deadzone(Kind::Gamepad, std::numeric_limits<float>::quiet_NaN());
+  CHECK(in.deadzone(Kind::Gamepad) == in.deadzone(Kind::Gamepad));  // not NaN
+
+  // A key SDL has no name for is not bound: capture keeps waiting.
+  in.start_capture(Kind::Keyboard, control("item"));
+  SDL_Event e{};
+  e.type = SDL_EVENT_KEY_DOWN;
+  e.key.scancode = SDL_SCANCODE_UNKNOWN;
+  CHECK(in.capture_event(e));
+  CHECK(in.capturing());
+
+  // A file that cannot be parsed is kept as .bad, and the defaults are used.
+  const fs::path broken = temp_file("broken.toml");
+  fs::remove(fs::path(broken.string() + ".bad"));
+  std::ofstream(broken) << "[keyboard\ngas = ";
+  HostInput again;
+  CHECK_FALSE(again.load(broken.string(), &error));
+  CHECK(fs::exists(fs::path(broken.string() + ".bad")));
+  CHECK(again.bindings(Kind::Keyboard, control("gas")) == Names{"Up", "W"});
+}
+
+// ---- Pedals (an SDL virtual joystick) ----
+
+namespace {
+
+// A virtual joystick with three axes and no buttons (a set of pedals).
+struct VirtualPedals {
+  SDL_JoystickID id = 0;
+  SDL_Joystick* joystick = nullptr;
+  VirtualPedals() {
+    SDL_VirtualJoystickDesc desc;
+    SDL_INIT_INTERFACE(&desc);
+    desc.type = SDL_JOYSTICK_TYPE_UNKNOWN;
+    desc.naxes = 3;
+    desc.name = "OpenGP test pedals";
+    id = SDL_AttachVirtualJoystick(&desc);
+    if (id) joystick = SDL_OpenJoystick(id);
+  }
+  ~VirtualPedals() {
+    if (joystick) SDL_CloseJoystick(joystick);
+    if (id) SDL_DetachVirtualJoystick(id);
+  }
+  void set(int axis, Sint16 value) { SDL_SetJoystickVirtualAxis(joystick, axis, value); }
+};
+
+void pump(HostInput& in) {
+  SDL_UpdateJoysticks();
+  SDL_Event e;
+  while (SDL_PollEvent(&e)) {
+    if (in.capturing() && in.capture_event(e)) continue;
+    in.handle_event(e);
+  }
+}
+
+}  // namespace
+
+TEST_CASE("a pedal reads released until it reports, and binds the right way round") {
+  const fs::path path = temp_file("pedals.toml");
+  std::ofstream(path) << "[keyboard]\ngas = []\nbrake = []\n[joystick]\ngas = [\"-axis2\"]\n";
+  HostInput in;
+  std::string error;
+  REQUIRE_MESSAGE(in.load(path.string(), &error), error);
+  if (!in.init(&error)) {
+    MESSAGE("no joystick support here: " << error);
+    return;
+  }
+  VirtualPedals pedals;
+  REQUIRE(pedals.joystick);
+  pump(in);
+  // No report yet: SDL reads 0, half way, but the pedal is released.
+  CHECK(in.poll().gas == 0.0f);
+  // Released, resting at the top ("-axis2"), then pressed all the way.
+  pedals.set(2, 32767);
+  pump(in);
+  CHECK(in.poll().gas == doctest::Approx(0.0f));
+  pedals.set(2, -32768);
+  pump(in);
+  CHECK(in.poll().gas == doctest::Approx(1.0f));
+
+  // Binding the brake from the menu, on pedals that haven't reported yet:
+  // axis 1 rests at the top. Its first report sets where it rests; pressing
+  // it then binds the whole axis, turned around.
+  VirtualPedals fresh;
+  REQUIRE(fresh.joystick);
+  pump(in);
+  in.start_capture(Kind::Joystick, control("brake"));
+  fresh.set(1, 32767);
+  pump(in);
+  CHECK(in.capturing());  // a first report is not a press
+  fresh.set(1, -32768);
+  pump(in);
+  CHECK_FALSE(in.capturing());
+  CHECK(in.bindings(Kind::Joystick, control("brake")) == Names{"-axis1"});
 }

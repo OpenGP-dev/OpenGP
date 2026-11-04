@@ -97,7 +97,7 @@ u32 internal_scale(u32 setting, int window_height) {
 }
 
 bool load_settings(const std::string& path, Settings* settings, std::string* error) {
-  std::ifstream f(path, std::ios::binary);
+  std::ifstream f(os::utf8_path(path), std::ios::binary);
   if (!f) return true;  // defaults
   const std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
   toml::parse_result parsed = toml::parse(text);
@@ -108,15 +108,16 @@ bool load_settings(const std::string& path, Settings* settings, std::string* err
   }
   const toml::table& root = parsed.table();
   Settings s = *settings;
+  std::string warnings;
+  auto warn = [&](const std::string& what) { warnings += (warnings.empty() ? path + ": " : "; ") + what; };
   const auto video = root["video"];
   s.fullscreen = video["fullscreen"].value_or(s.fullscreen);
   s.window_width = std::clamp(video["window_width"].value_or(s.window_width), 320, 16384);
   s.window_height = std::clamp(video["window_height"].value_or(s.window_height), 240, 16384);
-  if (const auto aspect = video["aspect_ratio"].value<std::string>(); aspect && !parse_aspect(*aspect, &s.aspect)) {
-    if (error) *error = path + ": unknown aspect_ratio \"" + *aspect + "\"";
-    return false;
-  }
-  s.internal_resolution = static_cast<u32>(std::clamp(video["internal_resolution"].value_or(0), 0, 8));
+  if (const auto aspect = video["aspect_ratio"].value<std::string>(); aspect && !parse_aspect(*aspect, &s.aspect))
+    warn("unknown aspect_ratio \"" + *aspect + "\" (kept " + aspect_name(s.aspect) + ")");
+  s.internal_resolution = static_cast<u32>(
+      std::clamp(video["internal_resolution"].value_or(static_cast<int>(s.internal_resolution)), 0, 8));
   s.vsync = video["vsync"].value_or(s.vsync);
   s.even_pacing = video["even_pacing"].value_or(s.even_pacing);
   s.volume = std::clamp(root["audio"]["volume"].value_or(s.volume), 0, 100);
@@ -125,11 +126,10 @@ bool load_settings(const std::string& path, Settings* settings, std::string* err
   s.pause_in_menu = game["pause_in_menu"].value_or(s.pause_in_menu);
   s.pause_in_background = game["pause_in_background"].value_or(s.pause_in_background);
   s.card = game["card"].value_or(s.card);
+  s.first_run_hint = game["first_run_hint"].value_or(s.first_run_hint);
   const auto camera = root["camera"];
-  if (const auto source = camera["source"].value<std::string>(); source && !parse_camera(*source, &s.camera)) {
-    if (error) *error = path + ": unknown camera source \"" + *source + "\"";
-    return false;
-  }
+  if (const auto source = camera["source"].value<std::string>(); source && !parse_camera(*source, &s.camera))
+    warn("unknown camera source \"" + *source + "\" (kept " + camera_name(s.camera) + ")");
   s.webcam = camera["webcam"].value_or(s.webcam);
   s.rich_presence = root["discord"]["rich_presence"].value_or(s.rich_presence);
   const auto link = root["link"];
@@ -137,6 +137,7 @@ bool load_settings(const std::string& path, Settings* settings, std::string* err
   s.lan = link["lan"].value_or(s.lan);
   s.link_port = std::clamp(link["port"].value_or(s.link_port), 1024, 65535 - 40);
   *settings = std::move(s);
+  if (error) *error = warnings;
   return true;
 }
 
@@ -148,7 +149,7 @@ bool save_settings(const std::string& path, const Settings& s, std::string* erro
          "fullscreen = "
       << (s.fullscreen ? "true" : "false")
       << "\n"
-         "# The window's size when not fullscreen.\n"
+         "# The window's size when not fullscreen, at 100% display scale (it grows with the scale).\n"
          "window_width = "
       << s.window_width << "\nwindow_height = " << s.window_height
       << "\n"
@@ -184,6 +185,10 @@ bool save_settings(const std::string& path, const Settings& s, std::string* erro
          "card = "
       << quoted(s.card)
       << "\n"
+         "# Show the hint about coins and the menu the next time the game starts.\n"
+         "first_run_hint = "
+      << (s.first_run_hint ? "true" : "false")
+      << "\n"
          "\n"
          "[camera]\n"
          "# The cabinet's camera, for the players' photos: \"off\", \"webcam\" or \"test\" (colour bars).\n"
@@ -215,11 +220,7 @@ bool save_settings(const std::string& path, const Settings& s, std::string* erro
          "port = "
       << s.link_port << "\n";
   const std::string text = out.str();
-  if (!os::write_file_atomically(path, text.data(), text.size())) {
-    if (error) *error = "cannot write " + path;
-    return false;
-  }
-  return true;
+  return os::write_file_atomically(path, text.data(), text.size(), error);
 }
 
 }  // namespace app

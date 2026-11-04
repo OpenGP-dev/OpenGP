@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "dol.h"
+#include "os/utf8.h"
 
 #include <cstdio>
 #include <fstream>
@@ -25,7 +26,7 @@ void put_be32(std::vector<u8>& out, std::size_t at, u32 v) {
 }  // namespace
 
 bool read_file(const std::string& path, std::vector<u8>* out, std::string* error) {
-  std::ifstream f(path, std::ios::binary);
+  std::ifstream f(os::utf8_path(path), std::ios::binary);
   if (!f) {
     if (error) *error = "cannot open " + path;
     return false;
@@ -35,7 +36,7 @@ bool read_file(const std::string& path, std::vector<u8>* out, std::string* error
 }
 
 bool write_file(const std::string& path, const void* data, std::size_t size, std::string* error) {
-  std::ofstream f(path, std::ios::binary | std::ios::trunc);
+  std::ofstream f(os::utf8_path(path), std::ios::binary | std::ios::trunc);
   if (!f) {
     if (error) *error = "cannot write " + path;
     return false;

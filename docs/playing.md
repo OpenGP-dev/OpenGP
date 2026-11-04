@@ -1,24 +1,31 @@
 # Playing
 
+OpenGP needs Windows 10 (version 1809 or later, 64-bit), Linux or macOS 13 on Apple Silicon, and a
+graphics driver with Vulkan (on macOS, Metal). [packaging.md](packaging.md#requirements) has the
+details.
+
 ## Installing
 
-- **From the installer package**: unpack it, put your disc images in its `ISO` folder and run
-  `OpenGP` (or drop an image on `OpenGP.exe`). It builds each game you have an image of, once;
-  see [packaging.md](packaging.md). The launchers then sit next to it.
+- **From the installer package**: unpack it, open `OpenGP` (the launcher) and add your disc image
+  of each game. It builds each game you have an image of, once, and then plays it; see
+  [packaging.md](packaging.md). On the command line, `opengp-cli` builds them the same way.
+  The games, `opengp-mkgp2` and `opengp-mkgp1`, then sit next to OpenGP.
 - **From source**: see [building.md](building.md) and [game-files.md](game-files.md).
 
 ## Starting a game
 
-Each game has its own launcher: `opengp-mkgp1` for Mario Kart Arcade GP and `opengp-mkgp2` for
-Mario Kart Arcade GP 2. They work the same way, and everything on this page applies to both.
+Each game is its own program: `opengp-mkgp1` for Mario Kart Arcade GP and `opengp-mkgp2` for
+Mario Kart Arcade GP 2. In an installer package, OpenGP starts them (**Play**). They work the same
+way, and everything on this page applies to both.
 
 The games behave like the arcade cabinet: insert a coin and press start; in the menus, steer to
 choose and step on the gas pedal to decide. Turn on free play in the menu (Esc), or start the
-launcher with `--free-play`, to play without coins ("Step on gas pedal to start").
+game with `--free-play`, to play without coins ("Step on gas pedal to start"). The first time a
+game starts, a hint says which keys put in a coin, start and open the menu.
 
 ```sh
-build/<preset>/games/mkgp1/opengp-mkgp1 --free-play
-build/<preset>/games/mkgp2/opengp-mkgp2 --free-play
+opengp-mkgp2 --free-play                                # in the installer package's folder
+build/<preset>/games/mkgp2/opengp-mkgp2 --free-play     # in a source build
 ```
 
 The first time, the game asks "Do you have Mario Card?". Choose **No**, then **Yes** to make one:
@@ -26,19 +33,34 @@ the card keeps your progress (Mario Coins, titles, unlocked characters). See [Ma
 
 ## The menu
 
-**Esc** (or a gamepad's guide button) opens the menu over the game; Esc again closes it. The game
-pauses while it is open and gets no controls (turn off **Pause while this menu is open** in the
-Game tab to keep it running).
+**Esc** (or a gamepad's guide button, or **Back** and **Start** held together) opens the menu over the game: **Resume**, **Settings**,
+**Test menu** (the game's own, for operators: it restarts the game) and **Quit**. The game pauses
+while the menu is open and gets no controls (turn off **Pause while this menu is open** in
+Settings, on the Game page, to keep it running).
 
-| Tab | Settings |
-|-----|----------|
-| Game | The Mario Card you hold; the camera; pausing; free play |
-| Video | Fullscreen, aspect ratio, internal resolution, VSync, even frame pacing |
+The menu works with the keyboard, a gamepad or the mouse: the arrows (or the d-pad and left stick)
+move, **Enter** (or **A**) selects, and **Esc** (or **B**) goes back one step, out to the game
+from the first one; the guide button (or Back + Start) closes the menu from anywhere. In Settings, **Page Up** and
+**Page Down** (or **LB** and **RB**) change pages, and **Left** and **Right** change the chosen
+row's value without opening a list. Quitting, the test menu and restoring the default controls
+ask first.
+
+| Page | Settings |
+|------|----------|
+| Game | The Mario Card you hold; pausing; Discord; free play |
+| Video | Full screen, aspect ratio, internal resolution, VSync, even frame pacing |
 | Sound | Volume |
-| Controls | The keys, buttons and axes for each control; force feedback, steering speed, dead zones |
+| Controls | The keys, buttons and axes for each control; steering speed, dead zones, force feedback |
+| Camera | The webcam (or the test pattern) the game takes your photo with |
+| Linked cabinets | This cabinet's number and the link over the local network |
+
+The settings are the launcher's: the launcher's Settings edit the same file. The camera and the
+link settings take effect when the game next starts; the page says so while a change waits.
 
 **F11** (or Alt+Enter) switches between a window and fullscreen, and **F12** saves a screenshot to
-`user/screenshots/`.
+`user/screenshots/`. On a Mac keyboard, hold **Fn** for the F keys (or turn on "Use F1, F2, etc.
+keys as standard function keys" in the keyboard settings), use Option+Return for Alt+Enter, and
+**P** to pause.
 
 ### Pausing
 
@@ -49,15 +71,20 @@ too, and **Pause when the window is unfocused** (Game tab) pauses it while you a
 window. The pause control can be changed like the others (Controls tab, or `pause` in
 `controls.toml`). The game's clock falls behind by the time spent paused, until it next starts.
 
-Pausing is only for playing solo. Once the game has linked to another cabinet (on this computer or
-a LAN), the other cabinets need it to keep running, so it doesn't pause again until it restarts:
+Pausing is only for playing solo. Once the game has linked to another cabinet (on this computer
+or the local network), the other cabinets need it to keep running, so it doesn't pause again until it restarts:
 the pause control does nothing, and the menu opens over the running game.
 
 ## Settings
 
 The menu's settings are saved in `user/settings.toml` when the menu closes and when the game quits,
 along with the window's size. The file can be edited by hand; command-line options (see
-[building.md](building.md#running)) override it for one run without changing it.
+[building.md](building.md#running)) override it for one run without changing it. An aspect ratio
+or camera source OpenGP does not know keeps its setting, and the game says so on screen; other
+values of the wrong type are ignored, and numbers out of range are brought into range. A file it
+cannot read at all is kept as `settings.toml.bad`, for you to fix, and the defaults are used. If
+a setting, a Mario Card or a screenshot cannot be saved (a folder you cannot write to, a full
+disk), the game says so on screen: keep OpenGP in a folder you can write to, not in Program Files.
 
 ### Widescreen
 
@@ -72,9 +99,9 @@ the edge of the wide one.
 
 ### Internal resolution
 
-The game renders at its native 640x528 times the internal resolution. **Match the window** (the
-default) picks the smallest multiple at least as tall as the window: 2x for 720p, 3x for 1080p,
-5x for 4K.
+The game draws at its native 640x528 times the internal resolution, and shows 640x480 of it
+times the same (the menu lists the size shown). **Match the window** (the default) picks the
+smallest multiple at least as tall as the window: 2x for 720p, 3x for 1080p, 5x for 4K.
 
 ### Even frame pacing
 
@@ -86,10 +113,18 @@ even_pacing` in `user/settings.toml`), OpenGP holds each frame until the game's 
 cabinet's display does, so the frames come evenly spaced. It costs about half a frame (8 ms) of
 delay, and matters most in fullscreen with FreeSync or G-Sync.
 
+### 60 Hz and 120 Hz displays
+
+The game's clock is NTSC's 59.94 Hz, a little slower than a 60 Hz display: at real speed one
+frame in a thousand would be shown twice, a small hitch every 17 seconds. With vsync on, on a
+display within half a percent of 60 Hz or a multiple of it, OpenGP runs the game 0.1% faster to
+match it (the console says so); the sound speeds up the same, which no one hears. Linked races
+run at real speed.
+
 ## Mario Cards
 
 Cards are saved in `user/cards/GGPE01/` (GP) and `user/cards/GGPE02/` (GP 2), one file per card
-(`Card 1.bin`, ...). In the menu's Game tab you choose the card you hold: you insert it when the
+(`Card 1.bin`, ...); **Open folder**, under the card list, opens that folder. In the menu's Game tab you choose the card you hold: you insert it when the
 game asks for your card, and the game takes it back at the end. **New card** gives you a blank one (answer **No** to "Do you have Mario
 Card?", then buy a card, and it is saved under that name); **No card** plays without one. A card the
 game gives you is yours to hold from then on, so you can keep a card per player. Files can be
@@ -105,7 +140,8 @@ race. OpenGP can use a webcam for it. In the menu's Game tab, **Photos from** is
 
 - **Off** (the default): the game takes no photos, as a cabinet without its camera.
 - **Webcam**: the webcam chosen below it (**Default** is the first one). Its picture is cropped to 4:3 around
-  the middle. On macOS, the system asks once whether OpenGP may use the camera.
+  the middle. On macOS, the system asks once whether OpenGP may use the camera (started from
+  Terminal, it asks for Terminal).
 - **Test pattern**: colour bars, for trying it without a webcam.
 
 The camera is set up when the game starts, so a change takes effect when the game restarts. If
@@ -114,16 +150,20 @@ there is no webcam, the game runs without its camera and says so on the console.
 `webcam` (the webcam's name, `""` for the first), and `--camera off|webcam|test` sets it for one
 run.
 
-The webcam is on only while the game uses it: while your photo is taken, for a moment as the game
-starts (it checks its camera), and on the test menu's camera page. Its light goes off a few
-seconds later. If the webcam can't be opened then (another program is using it, say), the photo
+The webcam is on only while the game uses it: while your photo is taken and on the test menu's
+camera page (the game's camera check at start-up gets a grey picture, without the webcam). Its
+light goes off a few seconds later. Its first moment's pictures, dark while it adjusts to the
+room's light, are left out, and in a dim room the picture is brightened (the cabinet had its own
+light). If the webcam can't be opened then (another program is using it, say), the photo
 is grey and the console says why.
 
 ## Linked cabinets
 
 Up to four cabinets link, so that up to four players race each other in Versus mode, as in an
 arcade. Each cabinet is a copy of OpenGP: on the same computer, or on computers on the same local
-network. Both games link, each with its own kind (GP 2 with GP 2, GP with GP).
+network. Both games link, each with its own kind (GP 2 with GP 2, GP with GP). Run the same
+version of OpenGP on every cabinet: a cabinet whose version can't link with this one is left out,
+and the Game tab names it.
 
 Each cabinet needs its own number, 1 to 4: **Cabinet number** in the menu's Game tab
 (`[link] cabinet` in `user/settings.toml`, or `--cabinet N` for one run). **The game's setting**
@@ -131,16 +171,30 @@ keeps the number set in the game's test menu, which is 1 unless changed there. T
 when the game starts, so a change takes effect when it restarts.
 
 - **On one computer**, give each copy its own user folder as well as its own number, since two
-  copies sharing one would overwrite each other's settings and saves:
-  `opengp-mkgp2 --user-dir user2 --cabinet 2`. To drive them all at once from one keyboard or
-  gamepad, turn on **Use the controls in the background too** (Controls tab) in each.
+  copies sharing one would overwrite each other's settings and saves (a second copy started on a
+  folder already in use says so and stops): `opengp-mkgp2 --user-dir user2 --cabinet 2`. To drive
+  them all at once from one keyboard or gamepad, turn on **Use the controls in the background
+  too** (Controls tab) in each.
 - **On a local network**, turn on **Link over the local network** on each computer
   (`[link] lan = true`, or `--lan`). The cabinets find each other by broadcasting on the network.
-  The first time, Windows asks whether OpenGP may use the network: allow it (on the kind of
-  network you are on, which Windows may call public). macOS asks whether OpenGP, or the Terminal
-  you start it from, may find devices on your local network: allow that too.
-  The link uses ports 28500 to 28539 (TCP and UDP) on each computer; `[link] port` moves them
+  The first time, Windows asks whether OpenGP may use the network: allow it. macOS asks whether
+  OpenGP, or the Terminal you start it from, may find devices on your local network: allow that
+  too. The link uses ports 28500 to 28539 (TCP and UDP) on each computer; `[link] port` moves them
   (give every cabinet the same).
+
+  Like the arcade machines, linked cabinets trust each other: there is no password, and another
+  computer on the same network could disrupt a race. Link over networks you trust (your home, a
+  LAN party), not public Wi-Fi. OpenGP only links with computers on a local network (private
+  addresses, or a network this computer is on, such as a Radmin VPN or Hamachi network), never
+  over the internet.
+
+  If the cabinets don't find each other ("looking for other cabinets" stays on), check that the
+  firewall lets OpenGP use the network: if you said no to Windows' question, allow
+  `opengp-mkgp2` (and `opengp-mkgp1`) in Windows Security > Firewall & network protection > Allow
+  an app through firewall, for private networks. If Windows calls your home network public, set it
+  to private (Settings > Network & internet > your network > Private network). Wi-Fi with "client
+  isolation" (common on guest networks) keeps computers from seeing each other; use a wired
+  connection or another network.
 
 Start the cabinets, and wait for the later ones to get through their start-up (the attract mode
 begins): a cabinet links to the others as it starts. Then start a game on one cabinet. The others show "Waiting for entry!", and players who insert a
@@ -180,7 +234,7 @@ it as well.
 | Start | Enter, 1 | Start |
 | Coin | 5, C | Back |
 | Service / test | F1 / F2 | |
-| Menu | Esc | Guide |
+| Menu | Esc | Guide, Back + Start |
 | Pause | P, Pause | |
 | Fullscreen | F11, Alt+Enter | |
 | Screenshot | F12 | |
@@ -190,17 +244,20 @@ wheel half-way); sticks and wheels steer directly.
 
 ### Changing them
 
-In the menu's **Controls** tab, choose the keyboard, gamepads or wheels and joysticks, then click
-**+** next to a control and press the key or button (or move the axis, the pedal or the wheel)
-to add it; click an input to remove it. Changes apply at once and are saved when the menu closes.
+In the menu's Settings, on the **Controls** page, choose the keyboard, gamepads or wheels and other
+controllers, then choose **Add** next to a control and press the key or button (or move the axis,
+the pedal or the wheel) to add it; Esc cancels. Choose an input (its cross) to remove it. While an
+input is awaited, a gamepad's buttons go to the control, not to the menu. Changes apply at once and
+are saved when the menu closes.
 
 They are kept in `user/controls.toml`, which is written with the defaults the first time the game
 runs (with a window). It can also be edited by hand (then restart); delete it to get the defaults
-back. Each control lists the inputs that drive it:
+back. An input name OpenGP does not know is left out (the game says which); a file it cannot read
+at all is kept as `controls.toml.bad` and the default controls are used. Each control lists the inputs that drive it:
 
 ```toml
 [keyboard]
-gas = ["Up", "W", "Left Shift"]   # SDL key names
+gas = ["Up", "W", "Left Shift"]   # SDL key names, by their place on a US keyboard
 
 [gamepad]
 item = ["a", "x"]                 # SDL gamepad button names
@@ -210,6 +267,9 @@ steer = ["axis0"]
 gas = ["-axis2"]                  # a pedal that reads highest when released
 brake = ["-axis3"]
 ```
+
+The file names keys by where they are on a US keyboard, so it works with any layout; the menu
+shows them as your keyboard's layout prints them (`W` on an AZERTY keyboard shows as **Z**).
 
 Axes: `axis2` is the whole axis, `axis2+` and `axis2-` are one half of it, and a leading `-`
 turns it around. The file itself lists every name.
@@ -267,11 +327,19 @@ into it (the window closes and opens again, as the cabinet reboots). In the test
 service button) moves to the next item and **F2** chooses it; **EXIT** restarts the game.
 
 Holding **F1** and pressing **F2** during the game opens the I/O test instead (wheel and pedal
-calibration and a switch test); hold F1 and press F2 again to leave it.
+calibration and a switch test); hold F1 and press F2 again to leave it. Leave the calibration page
+with the wheel or stick centred and the pedals released: the game takes the centre from there. If
+the steering pulls to one side afterwards, open the page again and leave it centred.
 
-## If the game freezes
+## If the game freezes or crashes
 
 If the game's picture stops for 10 seconds while it is not paused, OpenGP writes where the game's
-threads are to `user/hang-report.txt` (and the console). Please send that file with the report:
-it shows what the game was waiting for.
+threads are to `user/hang-report.txt` (and the console), with the version, the game and the time.
+If it crashes, it writes what went wrong to `user/crash-report.txt` and says so; on Windows a
+message names the file. Please attach that file to a
+[bug report](https://github.com/OpenGP-dev/OpenGP/issues/new/choose): it shows what the game was
+doing. Never attach files from the games.
+
+If the game cannot start (no disc image, no graphics driver with Vulkan or Metal), it says why on
+the console and, when started for a window, in a message.
 

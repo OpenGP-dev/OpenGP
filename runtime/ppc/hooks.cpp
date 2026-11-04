@@ -7,28 +7,27 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include "os/verbose.h"
+#include "ppc/timebase.h"
+
 namespace ppc {
 
 namespace {
-
-// 40.5 MHz: the Gekko time base ticks at bus clock / 4 (162 MHz / 4).
-constexpr u64 kTimebaseHz = 40500000;
 
 u64 g_timebase_offset = 0;
 
 u64 host_ticks() {
   const auto now = std::chrono::steady_clock::now().time_since_epoch();
-  const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now).count();
-  return static_cast<u64>(ns) * kTimebaseHz / 1000000000ULL;
+  return ns_to_ticks(static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now).count()));
 }
 
 u32 default_mmio_read(u32 addr, u32 size) {
-  std::fprintf(stderr, "[ppc] unhandled MMIO read%u @ %08X\n", size * 8, addr);
+  if (os::verbose()) std::fprintf(stderr, "[ppc] unhandled MMIO read%u @ %08X\n", size * 8, addr);
   return 0;
 }
 
 void default_mmio_write(u32 addr, u32 value, u32 size) {
-  std::fprintf(stderr, "[ppc] unhandled MMIO write%u @ %08X = %08X\n", size * 8, addr, value);
+  if (os::verbose()) std::fprintf(stderr, "[ppc] unhandled MMIO write%u @ %08X = %08X\n", size * 8, addr, value);
 }
 
 void default_gather_pipe_write(const u8* bytes, u32 size) {

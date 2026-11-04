@@ -19,6 +19,7 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -26,6 +27,27 @@
 #include "gx/regs.h"
 
 namespace gx {
+
+// An allocator that leaves new elements uninitialised (resize() does not
+// zero bytes about to be overwritten).
+template <class T>
+struct DefaultInitAllocator : std::allocator<T> {
+  template <class U>
+  struct rebind {
+    using other = DefaultInitAllocator<U>;
+  };
+  DefaultInitAllocator() = default;
+  template <class U>
+  DefaultInitAllocator(const DefaultInitAllocator<U>&) noexcept {}
+  template <class U>
+  void construct(U* p) noexcept(std::is_nothrow_default_constructible_v<U>) {
+    ::new (static_cast<void*>(p)) U;
+  }
+  template <class U, class... Args>
+  void construct(U* p, Args&&... args) {
+    ::new (static_cast<void*>(p)) U(std::forward<Args>(args)...);
+  }
+};
 
 // A transformed vertex, in the layout the renderer's vertex shader reads.
 struct Vertex {
@@ -296,7 +318,7 @@ struct Frame {
   std::vector<CopyCmd> copies;
   std::vector<Command> commands;
   std::vector<TextureUpload> uploads;  // created before the commands run
-  std::vector<u8> texels;
+  std::vector<u8, DefaultInitAllocator<u8>> texels;  // written in full by the decoders: not zeroed first
   std::vector<u32> releases;  // texture handles no longer used (destroy after this frame)
   u32 xfb = 0;                // XFB copy to display (texture handle), 0 if none
   u32 xfb_width = 0, xfb_height = 0;

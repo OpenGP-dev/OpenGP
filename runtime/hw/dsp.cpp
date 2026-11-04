@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Based on Dolphin's DSP.cpp and DSPHLE (Copyright Dolphin Emulator Project,
+// GPL-2.0-or-later).
 
 #include "hw/dsp.h"
 
@@ -7,6 +10,7 @@
 
 #include "dsp/ax.h"
 #include "hw/ai.h"
+#include "os/verbose.h"
 
 namespace hw {
 
@@ -66,7 +70,7 @@ class TaskUcode : public DspUcode {
   using DspUcode::DspUcode;
   void initialize() override { dsp_.push_mail(DSP_INIT, true); }
   void handle_mail(u32 mail) override {
-    if (logged_ < 32) {
+    if (logged_ < 32 && os::verbose()) {
       std::fprintf(stderr, "[dsp] ucode %08X: mail %08X (not emulated)\n", crc(), mail);
       ++logged_;
     }
@@ -141,7 +145,8 @@ void DspDevice::boot_ucode(u32 ram_address, u32 length, u32 imem_address, u32 dm
   const u8* code = hw_.ram(ram_address, length);
   const u32 crc = code ? hash_ector(code, length) : 0;
   auto ucode = make_ucode(crc);
-  std::fprintf(stderr, "[dsp] booting ucode: crc %08X (%s), %u bytes from %08X (imem %04X, dmem %u, pc %04X)\n",
+  if (os::verbose())
+    std::fprintf(stderr, "[dsp] booting ucode: crc %08X (%s), %u bytes from %08X (imem %04X, dmem %u, pc %04X)\n",
                crc, ucode->name(), length, ram_address, imem_address, dmem_length, start_pc);
   set_ucode(std::move(ucode));
 }
@@ -159,7 +164,7 @@ void DspDevice::swap_ucode(u32 crc) {
   }
   if (!last_ucode_) last_ucode_ = std::move(retired_ucode_);
   ucode_ = make_ucode(crc);
-  std::fprintf(stderr, "[dsp] switching to ucode %08X (%s)\n", crc, ucode_->name());
+  if (os::verbose()) std::fprintf(stderr, "[dsp] switching to ucode %08X (%s)\n", crc, ucode_->name());
   ucode_->initialize();
 }
 

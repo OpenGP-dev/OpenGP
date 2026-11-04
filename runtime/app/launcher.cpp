@@ -4,6 +4,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
+#include <cmath>
+#include <exception>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -16,6 +19,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -34,10 +38,12 @@
 #include "os/activity.h"
 #include "os/atomic_file.h"
 #include "os/crash.h"
+#include "os/notice.h"
 #include "os/printf.h"
 #include "os/profiler.h"
 #include "os/reboot.h"
 #include "os/thread_priority.h"
+#include "os/verbose.h"
 #include "ppc/hooks.h"
 #include "ppc/trace.h"
 
@@ -66,7 +72,7 @@ constexpr const char* kUsage =
     "          [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]\n"
     "          [--input SCRIPT] [--input-file PATH] [--free-play] [--test-menu]\n"
     "          [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--game-log]\n"
-    "          [--camera off|webcam|test] [--cabinet 1-4] [--lan] [--version]\n"
+    "          [--camera off|webcam|test] [--cabinet 1-4] [--lan] [--verbose] [--version]\n"
     "          [--profile] [--profile-dir PATH] [--profile-rate HZ] [--profile-thumbs FRAMES]\n"
     "          [--capture-frame FRAME]...\n";
 
@@ -76,8 +82,8 @@ struct Options {
   u64 frame_offset = 0;           // frames shown by the runs before the reboot
   bool test_menu = false;         // start in the game's test menu
   std::string image;
-  fs::path user_dir;
-  int timeout_s = -1, status_s = 5;
+  std::string user_dir;  // UTF-8
+  int timeout_s = -1, status_s = -1;  // status: -1 is every 5 s with --verbose, else none
   bool headless = false, use_video = true, use_audio = true;
   bool game_log = false;  // print the game's debug messages
   std::set<u64> screenshots;
@@ -101,8 +107,12 @@ struct Options {
 };
 
 // Returns 0 to go on, or an exit code.
-int parse_options(int argc, char** argv, Options& o) {
+int parse_options(const std::vector<std::string>& args, Options& o) {
   std::string error;
+  const int argc = static_cast<int>(args.size());
+  std::vector<const char*> argv_storage;
+  for (const std::string& a : args) argv_storage.push_back(a.c_str());
+  const char* const* argv = argv_storage.data();
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     if ((a == "--reboot" || a == "--frame-offset" || a == "--profile-resume") && i + 1 < argc) ++i;
@@ -139,6 +149,7 @@ int parse_options(int argc, char** argv, Options& o) {
     else if (a == "--audio-dump" && has_value) o.audio_dump = argv[++i];
     else if (a == "--no-audio") o.use_audio = false;
     else if (a == "--game-log") o.game_log = true;
+    else if (a == "--verbose") os::g_verbose = true;
     else if (a == "--volume" && has_value) o.volume = std::clamp(std::atoi(argv[++i]), 0, 100);
     else if (a == "--lan") o.lan = true;
     else if (a == "--profile") o.profile = true;
@@ -176,7 +187,7 @@ int parse_options(int argc, char** argv, Options& o) {
     } else if ((a == "--input" || a == "--input-file") && has_value) {
       std::string text = argv[++i];
       if (a == "--input-file") {
-        std::ifstream f(text, std::ios::binary);
+        std::ifstream f(os::utf8_path(text), std::ios::binary);
         if (!f) {
           std::fprintf(stderr, "cannot read %s\n", text.c_str());
           return 1;
@@ -206,6 +217,87 @@ void apply_options(const Options& o, Settings& s) {
   if (o.lan) s.lan = *o.lan;
 }
 
+// The window's size in settings.toml is in units of the display's scale (as
+// Windows' display settings count it), so the default 1280 x 720 is the same
+// size on a 4K display at 200% as on a 1080p one at 100%. This is how many of
+// SDL's window units one of them is: the display's scale where SDL's window
+// sizes are pixels (Windows, X11), 1 where they are already scaled (macOS,
+// Wayland).
+float window_units(SDL_Window* window) {
+  const float display = SDL_GetWindowDisplayScale(window);
+  const float density = SDL_GetWindowPixelDensity(window);
+  if (!(display > 0.0f) || !(density > 0.0f)) return 1.0f;
+  return display / density;
+}
+
+// Sizes a new (hidden) window from the settings for its display, no larger
+// than the display's usable area, and centres it.
+void size_window(SDL_Window* window, int width, int height) {
+  const float units = window_units(window);
+  float w = std::round(static_cast<float>(width) * units), h = std::round(static_cast<float>(height) * units);
+  SDL_Rect usable;
+  if (SDL_GetDisplayUsableBounds(SDL_GetDisplayForWindow(window), &usable) && usable.w > 0 && usable.h > 0) {
+    // Room for the title bar and borders.
+    const float fit = std::min({1.0f, usable.w * 0.95f / w, usable.h * 0.9f / h});
+    w = std::round(w * fit);
+    h = std::round(h * fit);
+  }
+  SDL_SetWindowSize(window, static_cast<int>(w), static_cast<int>(h));
+  SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+}
+
+// The machine's clock rate for the window's display (Hardware::set_clock_rate):
+// the game's retraces come at 59.94 Hz, NTSC's rate. On a display whose
+// refresh is within half a percent of a multiple of it (60 Hz, 120 Hz), with
+// vsync on, the machine runs that much faster so that each of its frames
+// gets the same number of refreshes: at real time, one frame in 1000 is shown
+// twice on a 60 Hz display (a hitch every 16.7 seconds). The sound speeds up
+// the same 0.1%, which no one hears. Otherwise (other rates, variable
+// refresh, no vsync), and in a linked race, real time.
+double display_clock_rate(SDL_Window* window, bool vsync) {
+  if (!window || !vsync) return 1.0;
+  const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
+  if (!mode) return 1.0;
+  const double hz = mode->refresh_rate_numerator > 0 && mode->refresh_rate_denominator > 0
+                        ? static_cast<double>(mode->refresh_rate_numerator) / mode->refresh_rate_denominator
+                        : static_cast<double>(mode->refresh_rate);
+  constexpr double kGameHz = 2.0 * static_cast<double>(hw::kTimebaseHz) / static_cast<double>(hw::ViDevice::kTicksPerFrame);
+  for (int k = 1; k <= 4; ++k) {
+    const double rate = hz / (k * kGameHz);
+    if (std::fabs(rate - 1.0) <= 0.005) return rate;
+  }
+  return 1.0;
+}
+
+// The hint a new player gets once, a few seconds after the game starts: how
+// to open the menu and put in a coin (by their own bindings).
+std::string first_run_hint(const input::HostInput* in, bool free_play) {
+  using Kind = input::HostInput::DeviceKind;
+  auto labels = [in](Kind kind, std::string_view control) -> std::vector<std::string> {
+    if (!in) return {};
+    for (std::size_t c = 0; c < input::HostInput::kControlCount; ++c)
+      if (control == input::HostInput::control_name(c)) return in->binding_labels(kind, c);
+    return {};
+  };
+  auto first = [&](Kind kind, std::string_view control) -> std::string {
+    const std::vector<std::string> l = labels(kind, control);
+    return l.empty() ? "" : l.front();
+  };
+  // The coin key: C when it is bound (easier to find than 5), else the first.
+  const std::vector<std::string> coin_keys = labels(Kind::Keyboard, "coin");
+  std::string coin = coin_keys.empty() ? "" : coin_keys.front();
+  for (const std::string& k : coin_keys)
+    if (k == "C") coin = k;
+  // The gamepad's buttons, when they are still the defaults.
+  const bool pad_coin = first(Kind::Gamepad, "coin") == "back";
+  const bool pad_menu = pad_coin && first(Kind::Gamepad, "start") == "start";
+  std::string text = "Welcome to OpenGP. Use Escape on keyboard";
+  text += pad_menu ? " or Back + Start on gamepad to open the menu." : " to open the menu.";
+  if (!free_play && !coin.empty()) text += " Use " + coin + (pad_coin ? " or Back" : "") + " to insert a coin.";
+  text += " Have fun!";
+  return text;
+}
+
 // What to save: the settings file's values, except those changed (in the
 // menu, or by resizing the window) since start-up. Command-line options stay
 // out of the file.
@@ -225,6 +317,7 @@ Settings settings_to_save(const Settings& file, const Settings& start, const Set
   OPENGP_KEEP_CHANGE(pause_in_menu);
   OPENGP_KEEP_CHANGE(pause_in_background);
   OPENGP_KEEP_CHANGE(card);
+  OPENGP_KEEP_CHANGE(first_run_hint);
   OPENGP_KEEP_CHANGE(camera);
   OPENGP_KEEP_CHANGE(webcam);
   OPENGP_KEEP_CHANGE(rich_presence);
@@ -253,22 +346,41 @@ void stop_profiler(const char* why) {
 #endif
 }
 
+// The player's devices, so that a wheel's forces stop with the process (it
+// ends with std::_Exit, without destructors).
+#ifdef OPENGP_VIDEO
+input::HostInput* g_host_input = nullptr;
+#endif
+void stop_outputs() {
+#ifdef OPENGP_VIDEO
+  if (g_host_input) g_host_input->stop_outputs();
+#endif
+}
+
 // The reboot the game asked for (set on the guest thread; the main thread
 // restarts the process).
 std::mutex g_reboot_mutex;
 std::optional<os::Reboot> g_pending_reboot;
 std::atomic<bool> g_reboot_requested{false};
 
+// The reboot file (os/reboot.h): one per game, so that both games can run
+// from one folder at once.
+std::string g_reboot_file = "reboot.bin";
+
 // Restarts the process to continue with `reboot` (see os/reboot.h).
 // `frames` is how many frames have been shown since power-on.
 [[noreturn]] void restart(const Options& o, const fs::path& user_dir, const char* argv0, const os::Reboot& reboot,
                           u64 frames) {
-  const fs::path path = user_dir / "reboot.bin";
-  if (!os::save_reboot(path.string(), reboot)) {
-    std::fprintf(stderr, "[opengp] cannot write %s\n", path.string().c_str());
+  // Messages the window can no longer show (a save just before the restart
+  // failed): see quit().
+  for (const std::string& notice : os::take_player_notices()) std::fprintf(stderr, "[unseen] %s\n", notice.c_str());
+  const std::string path = os::utf8(user_dir / g_reboot_file);
+  if (!os::save_reboot(path, reboot)) {
+    std::fprintf(stderr, "[opengp] cannot write %s\n", path.c_str());
     std::_Exit(1);
   }
   stop_link();
+  stop_outputs();
   std::vector<std::string> args = o.args;
 #ifdef OPENGP_VIDEO
   if (g_profiler && g_profiler->recording()) {
@@ -279,7 +391,7 @@ std::atomic<bool> g_reboot_requested{false};
   }
 #endif
   args.push_back("--reboot");
-  args.push_back(path.string());
+  args.push_back(path);
   args.push_back("--frame-offset");
   args.push_back(std::to_string(frames));
   std::fprintf(stderr, "[opengp] restarting\n");
@@ -300,26 +412,62 @@ os::Reboot next_boot(const os::Reboot& requested) {
   return requested;
 }
 
+// Whether start-up failures also show a message box: for a game started for a
+// window, whose console (if any) may close with it. Not when the OpenGP
+// launcher started it: the launcher shows the message from the log.
+bool g_error_box = false;
+
+// settings.toml could not be read nor set aside: it is never overwritten.
+bool g_keep_settings_file = false;
+
+// Reports a problem that stops the game from starting; returns the exit code.
+int start_failed(const std::string& message) {
+  // On one line in the log, whose last line the OpenGP launcher shows; the
+  // box keeps the paragraphs.
+  std::string line;
+  for (const char c : message) {
+    if (c != '\n') line += c;
+    else if (!line.empty() && line.back() != ' ') line += ' ';
+  }
+  std::fprintf(stderr, "%s\n", line.c_str());
+#ifdef OPENGP_VIDEO
+  if (g_error_box) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "OpenGP", message.c_str(), nullptr);
+#endif
+  return 1;
+}
+
 // The game's image: the one it was installed from (user/images.toml), else
 // the first in ISO/ or private/ with its ID, else one holding its main.dol
 // under another ID (a placeholder header).
 std::string find_image(const Game& game, const fs::path& user_dir) {
-  if (std::string image = remembered_image(user_dir, game.id); !image.empty()) {
-    std::error_code ec;
-    if (fs::is_regular_file(os::utf8_path(image), ec)) return image;
+  // The installer records it in the package's user/images.toml; another user
+  // folder (--user-dir, for a second cabinet) may have its own.
+  const fs::path dirs[] = {user_dir, home_dir() / "user"};
+  for (std::size_t i = 0; i < 2; ++i) {
+    if (i == 1 && dirs[1].lexically_normal() == dirs[0].lexically_normal()) break;  // the same folder
+    if (std::string image = remembered_image(dirs[i], game.id); !image.empty()) {
+      std::error_code ec;
+      if (fs::is_regular_file(os::utf8_path(image), ec)) return image;
+      std::fprintf(stderr, "[opengp] %s's image is no longer at %s: looking in ISO/ and private/\n", game.title,
+                   image.c_str());
+    }
   }
   std::vector<std::string> others;
   for (const char* folder : {"ISO", "private"}) {
     const fs::path dir = home_dir() / folder;
     std::error_code ec;
     if (!fs::is_directory(dir, ec)) continue;
-    for (const auto& entry : fs::recursive_directory_iterator(dir, ec)) {
-      const std::string ext = entry.path().extension().string();
-      if (ext != ".iso" && ext != ".gcm" && ext != ".ISO" && ext != ".GCM") continue;
+    // Never throws: an unreadable folder in there is skipped.
+    for (fs::recursive_directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end;
+         !ec && it != end; it.increment(ec)) {
+      std::string ext = os::utf8(it->path().extension());
+      std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
+      if (ext != ".iso" && ext != ".gcm") continue;
+      const std::string path = os::utf8(it->path());
       disc::Image img;
-      if (!img.open(entry.path().string(), nullptr)) continue;
-      if (img.game_id() == game.id) return entry.path().string();
-      others.push_back(entry.path().string());
+      if (!img.open(path, nullptr)) continue;
+      if (img.game_id() == game.id) return path;
+      others.push_back(path);
     }
   }
   if (game.dol_sha1) {
@@ -338,7 +486,7 @@ bool check_image(const Game& game, const std::string& path) {
   disc::Image img;
   std::string error;
   if (!img.open(path, &error)) {
-    std::fprintf(stderr, "%s\n", error.c_str());
+    start_failed(error);
     return false;
   }
   const std::string actual = game.dol_sha1 ? disc::dol_sha1(img) : std::string();
@@ -349,22 +497,28 @@ bool check_image(const Game& game, const std::string& path) {
     return true;
   }
   if (img.game_id() != game.id) {
-    std::fprintf(stderr, "%s is %s, not %s (%s).\n", path.c_str(), img.game_id().c_str(), game.title, game.id);
+    start_failed(path + " is " + img.game_id() + ", not " + game.title + " (" + game.id + ").");
     return false;
   }
   if (!game.dol_sha1) return true;
-  std::fprintf(stderr,
-               "%s: its main.dol (SHA-1 %s) is not the release of %s this build supports (SHA-1 %s). "
-               "See docs/game-files.md.\n",
-               path.c_str(), actual.empty() ? "unreadable" : actual.c_str(), game.title, game.dol_sha1);
+  start_failed(path + ": its main.dol (SHA-1 " + (actual.empty() ? std::string("unreadable") : actual) +
+               ") is not the release of " + game.title + " this build supports (SHA-1 " + game.dol_sha1 +
+               "). See docs/game-files.md.");
   return false;
 }
 
-// Function names for backtraces, from the decomp-toolkit symbol file.
+// Function names for backtraces, from the decomp-toolkit symbol file (UTF-8;
+// an installed game's is relative to its executable's folder).
 std::map<u32, std::string> load_function_names(const char* path) {
   std::map<u32, std::string> names;
   if (!path) return names;
-  std::ifstream f(path);
+  fs::path file = os::utf8_path(path);
+  if (file.is_relative()) file = executable_dir() / file;
+  std::ifstream f(file);
+  if (!f) {
+    std::fprintf(stderr, "[opengp] cannot read %s: reports show addresses without names\n", os::utf8(file).c_str());
+    return names;
+  }
   std::string line;
   while (std::getline(f, line)) {
     if (line.find("type:function") == std::string::npos) continue;
@@ -429,37 +583,68 @@ unsigned long long elapsed_ns(std::chrono::steady_clock::time_point since) {
 }  // namespace
 
 int run(const Game& game, int argc, char** argv) {
-  for (int i = 1; i < argc; ++i) {
-    if (std::string(argv[i]) == "--version") {
+  const std::vector<std::string> args = os::utf8_args(argc, argv);
+  for (std::size_t i = 1; i < args.size(); ++i) {
+    if (args[i] == "--version") {
       std::printf("OpenGP %s: %s (%s)\n", OPENGP_VERSION, game.title, game.id);
       return 0;
     }
   }
   os::use_utf8_console();
   Options o;
-  if (const int code = parse_options(argc, argv, o)) return code;
+  if (const int code = parse_options(args, o)) return code;
 #ifndef OPENGP_VIDEO
   o.use_video = false;
 #endif
   // With a window the game runs until it is closed; otherwise for 20 seconds.
   const bool windowed = o.use_video && !o.headless;
   if (o.timeout_s < 0) o.timeout_s = windowed ? 0 : 20;
-  const fs::path user_dir = o.user_dir.empty() ? home_dir() / "user" : o.user_dir;
+  // Started by the OpenGP launcher (it sets OPENGP_LAUNCHER): the player has
+  // no command line, so the messages point at the launcher instead.
+  const bool from_launcher = std::getenv("OPENGP_LAUNCHER") != nullptr;
+  g_error_box = windowed && !from_launcher;
+  const fs::path user_dir = o.user_dir.empty() ? home_dir() / "user" : os::utf8_path(o.user_dir);
+  g_reboot_file = std::string("reboot-") + game.id + ".bin";
+  if (!lock_user_dir(user_dir, game.id)) {
+    if (from_launcher)
+      return start_failed(std::string(game.title) + " is already running from this OpenGP folder (" +
+                          os::utf8(user_dir) + "). Close it before starting it again.");
+    return start_failed(std::string("Another copy of ") + game.title + " is using the folder " + os::utf8(user_dir) +
+                        ". Give each copy its own folder with --user-dir (see Linked cabinets in docs/playing.md).");
+  }
   if (o.image.empty()) o.image = find_image(game, user_dir);
   if (o.image.empty()) {
-    std::fprintf(stderr, "No %s image found in ISO/ or private/ (see docs/game-files.md), or pass --iso.\n", game.id);
-    return 1;
+    if (from_launcher)
+      return start_failed(std::string("No disc image of ") + game.title + " (" + game.id +
+                          ") found. In OpenGP, choose the game and add its disc image (Add disc image), or put the "
+                          "image in the ISO folder next to OpenGP.");
+    return start_failed(std::string("No disc image of ") + game.title + " (" + game.id +
+                        ") found. Put it in the ISO folder next to OpenGP, or start the game with --iso PATH. If "
+                        "you moved it, add it again in OpenGP (or give it to opengp-cli) so the game knows "
+                        "where it is.");
   }
   if (!check_image(game, o.image)) return 1;
 
   // Settings: the file, then this run's options.
   std::string error;
-  const std::string settings_path = (user_dir / "settings.toml").string();
+  const std::string settings_path = os::utf8(user_dir / "settings.toml");
   static Settings file_settings;
+  static std::string settings_problem;
   if (!load_settings(settings_path, &file_settings, &error)) {
-    std::fprintf(stderr, "[settings] %s (using the defaults)\n", error.c_str());
+    // Kept aside, not overwritten by the next save: the player can fix it.
+    std::error_code ec;
+    fs::rename(os::utf8_path(settings_path), os::utf8_path(settings_path + ".bad"), ec);
+    if (ec) {
+      g_keep_settings_file = true;  // never overwrite it
+      settings_problem = error + ". The default settings are used, and changes are not saved until it is fixed.";
+    } else {
+      settings_problem = error + ". It was kept as settings.toml.bad; the default settings are used.";
+    }
     file_settings = Settings{};
+  } else {
+    settings_problem = error;
   }
+  if (!settings_problem.empty()) std::fprintf(stderr, "[settings] %s\n", settings_problem.c_str());
   static Settings settings = file_settings;
   apply_options(o, settings);
   static const Settings start_settings = settings;
@@ -476,7 +661,7 @@ int run(const Game& game, int argc, char** argv) {
     os::g_previous_boot = &previous_boot;
   }
   static opengp::Machine machine;
-  machine.set_user_dir(user_dir.string());
+  machine.set_user_dir(os::utf8(user_dir));
   machine.set_script(std::move(o.script));
   machine.set_frame_offset(o.frame_offset);
   // A reboot now: with a window, the main thread restarts (after saving the
@@ -495,10 +680,7 @@ int run(const Game& game, int argc, char** argv) {
 
   os::BootResult boot;
   machine.set_game_id(game.id);
-  if (!machine.boot(o.image, &boot, &error)) {
-    std::fprintf(stderr, "boot failed: %s\n", error.c_str());
-    return 1;
-  }
+  if (!machine.boot(o.image, &boot, &error)) return start_failed("The game could not start: " + error);
   machine.install(*game.module);
   machine.cards().hold(settings.card);
   if (game.set_free_play) game.set_free_play(machine.base(), settings.free_play);
@@ -507,7 +689,7 @@ int run(const Game& game, int argc, char** argv) {
   static std::shared_ptr<camera::Source> camera_source = start_camera(settings, &camera_info);
   if (camera_source) camera::attach(machine.network(), camera_source);
   if (game.set_camera) game.set_camera(camera_source != nullptr);
-  machine.network().enable_link({game.id, static_cast<u16>(settings.link_port), settings.lan});
+  machine.network().enable_link({game.id, static_cast<u16>(settings.link_port), settings.lan, OPENGP_VERSION});
   if (game.set_cabinet) {
     game.set_cabinet(settings.cabinet, [] {
       const triforce::LinkStatus link = machine.network().link_status();
@@ -541,9 +723,9 @@ int run(const Game& game, int argc, char** argv) {
   std::fflush(stdout);
 
   static const auto names = load_function_names(game.symbols);
-  auto print_status = [](const char* why) {
+  auto print_status = [](const char* why, std::FILE* out = stderr) {
     auto* vi = machine.hardware().device<hw::ViDevice>();
-    std::fprintf(stderr,
+    std::fprintf(out,
                  "[opengp] %s: %llu retraces, %llu frames (%llu rendered), %llu draws, %d guest threads, "
                  "PI cause %05X mask %05X\n",
                  why, static_cast<unsigned long long>(vi ? vi->retrace_count() : 0),
@@ -552,7 +734,7 @@ int run(const Game& game, int argc, char** argv) {
                  machine.hardware().interrupt_cause(), machine.hardware().interrupt_mask());
     const gx::Frontend::Stats& st = machine.gpu().frontend().stats();
     auto sec = [](const std::atomic<u64>& ns) { return static_cast<double>(ns.load()) * 1e-9; };
-    std::fprintf(stderr,
+    std::fprintf(out,
                  "  guest: draws %.1f s (state %.1f s, textures %.1f s, %llu vertices %.1f s), %llu EFB readbacks "
                  "%.1f s; renderer: %.1f s, idle %.1f s; exceptions %llu (%llu unwound)\n",
                  sec(st.draw_ns), sec(st.state_ns), sec(st.texture_ns), static_cast<unsigned long long>(st.vertices.load()),
@@ -562,38 +744,58 @@ int run(const Game& game, int argc, char** argv) {
                  static_cast<unsigned long long>(machine.exception_returns()));
 #ifdef OPENGP_VIDEO
     if (g_audio_out)
-      std::fprintf(stderr, "  audio: queue %.0f ms, %llu underruns, %llu overflows\n", g_audio_out->queue_ms(),
+      std::fprintf(out, "  audio: queue %.0f ms (target %.0f), %llu underruns, %llu overflows, %llu resyncs\n",
+                   g_audio_out->queue_ms(), g_audio_out->target_ms(),
                    static_cast<unsigned long long>(g_audio_out->underruns()),
-                   static_cast<unsigned long long>(g_audio_out->overflows()));
+                   static_cast<unsigned long long>(g_audio_out->overflows()),
+                   static_cast<unsigned long long>(g_audio_out->resyncs()));
 #endif
     for (ppc::TraceStack* s : ppc::trace_all_stacks()) {
       const auto frames = ppc::trace_snapshot(*s);
       if (frames.empty()) continue;
-      std::fprintf(stderr, "  stack:");
+      std::fprintf(out, "  stack:");
       const std::size_t first = frames.size() > 12 ? frames.size() - 12 : 0;
-      for (std::size_t i = frames.size(); i-- > first;) std::fprintf(stderr, "\n    %s", describe(names, frames[i]).c_str());
-      std::fprintf(stderr, "\n");
+      for (std::size_t i = frames.size(); i-- > first;) std::fprintf(out, "\n    %s", describe(names, frames[i]).c_str());
+      std::fprintf(out, "\n");
     }
-    std::fflush(stderr);
+    std::fflush(out);
   };
-  ppc::g_hooks.fatal = [](const char* message) { std::fprintf(stderr, "[opengp] fatal: %s\n", message); };
+  // Crashes, fatal errors and uncaught exceptions end in a crash report:
+  // user/crash-report.txt and the console, with the guest threads' stacks.
   static const auto status_on_crash = print_status;
-  os::install_crash_handler(machine.base(), [] {
-    status_on_crash("crash");
+  const std::string header = std::string("OpenGP ") + OPENGP_VERSION + ", " + game.title + " (" + game.id + ")";
+  os::install_crash_handler(
+      machine.base(),
+      [](std::FILE* out) {
+        if (out == stderr) {
+          stop_link();
+          stop_outputs();
+        }
+        status_on_crash("crash", out);
 #ifdef OPENGP_VIDEO
-    if (g_profiler) g_profiler->flush();  // unless a file is being written: the crash may be in the profiler
+        if (g_profiler) g_profiler->flush();  // unless a file is being written: the crash may be in the profiler
 #endif
-  });
-  app::start_hang_watch(machine, names, user_dir / "hang-report.txt", 10, [](const std::string& report) {
+      },
+      os::utf8(user_dir / "crash-report.txt"), header);
+  ppc::g_hooks.fatal = [](const char* message) {
+    char reason[512];
+    std::snprintf(reason, sizeof(reason), "fatal: %s", message);
+    os::crash_now(reason);
+  };
+  // Hang reports, from when the game starts running: a message about a
+  // start-up failure can stay open for as long as the player likes.
+  auto watch_for_hangs = [&user_dir, &header] {
+    app::start_hang_watch(machine, names, user_dir / "hang-report.txt", header, 10, [](const std::string& report) {
 #ifdef OPENGP_VIDEO
-    if (g_profiler) g_profiler->note("hang", profile::Json().add("report", report));
+      if (g_profiler) g_profiler->note("hang", profile::Json().add("report", report));
 #else
-    (void)report;
+      (void)report;
 #endif
-  });
+    });
+  };
   os::start_profiler_from_env();
 
-  std::thread([timeout_s = o.timeout_s, status_s = o.status_s, print_status] {
+  std::thread([timeout_s = o.timeout_s, status_s = o.status_s >= 0 ? o.status_s : os::verbose() ? 5 : 0, print_status] {
     using clock = std::chrono::steady_clock;
     const auto deadline = timeout_s > 0 ? clock::now() + std::chrono::seconds(timeout_s) : clock::time_point::max();
     for (;;) {
@@ -616,25 +818,29 @@ int run(const Game& game, int argc, char** argv) {
     main_thread_restarts = true;
     os::set_thread_name("main");
     SDL_SetMainReady();
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
-      std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
-      return 1;
-    }
+    if (!SDL_Init(SDL_INIT_VIDEO)) return start_failed(std::string("SDL_Init failed: ") + SDL_GetError());
+    // Closing the console window quits as closing the game's window does:
+    // the settings are saved and the other cabinets told.
+    os::on_console_close([] {
+      SDL_Event quit_event{};
+      quit_event.type = SDL_EVENT_QUIT;
+      SDL_PushEvent(&quit_event);
+    });
     SDL_Window* window = nullptr;
     if (!o.headless) {
       const std::string title = std::string("OpenGP - ") + game.title;
       window = SDL_CreateWindow(title.c_str(), settings.window_width, settings.window_height,
-                                SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY |
+                                SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_HIDDEN |
                                     (settings.fullscreen ? SDL_WINDOW_FULLSCREEN : 0));
-      if (!window) {
-        std::fprintf(stderr, "could not create a window: %s\n", SDL_GetError());
-        return 1;
-      }
+      if (!window) return start_failed(std::string("Could not create a window: ") + SDL_GetError());
+      size_window(window, settings.window_width, settings.window_height);
+      SDL_ShowWindow(window);
     }
     static video::Renderer renderer;
     if (!renderer.init(window, internal_scale(settings.internal_resolution, 0), &error)) {
-      std::fprintf(stderr, "renderer: %s\n", error.c_str());
-      return 1;
+      return start_failed("The game cannot draw: " + error +
+                          "\n\nOpenGP needs a graphics card and driver with Vulkan (Windows and Linux) or Metal "
+                          "(macOS). Updating the graphics driver often helps.");
     }
     std::printf("  video:  %s%s\n", renderer.driver(), o.headless ? ", headless" : "");
     std::fflush(stdout);
@@ -642,12 +848,16 @@ int run(const Game& game, int argc, char** argv) {
     // The player's controls, sound and menu (not when headless: scripted
     // input only, no sound).
     static input::HostInput host_input;
+    g_host_input = &host_input;
     bool use_input = false;
     static Menu menu;
     bool use_menu = false;
     if (!o.headless) {
-      const std::string controls_path = (user_dir / "controls.toml").string();
-      if (!host_input.load(controls_path, &error)) std::fprintf(stderr, "[input] %s\n", error.c_str());
+      const std::string controls_path = os::utf8(user_dir / "controls.toml");
+      error.clear();
+      host_input.load(controls_path, &error);
+      if (!error.empty()) os::notify_player(error);
+      if (!settings_problem.empty()) os::notify_player(settings_problem);
       use_input = host_input.init(&error);
       if (!use_input) std::fprintf(stderr, "[input] controllers unavailable: %s\n", error.c_str());
       std::printf("  input:  %s\n", controls_path.c_str());
@@ -694,8 +904,10 @@ int run(const Game& game, int argc, char** argv) {
 
     static video::FrameQueue queue;
     machine.gpu().set_output(&queue);
+    watch_for_hangs();  // once: the loop below never ends, it quits or restarts
     std::thread([] {
       os::set_interactive_thread();
+      os::prepare_thread_for_crashes();  // as for the game's other threads
       machine.run();
       std::fprintf(stderr, "[opengp] entry point returned\n");
     }).detach();
@@ -703,23 +915,29 @@ int run(const Game& game, int argc, char** argv) {
     auto save = [&settings_path, &use_input] {
       if (use_input) {
         std::string why;
-        if (!host_input.save(&why)) std::fprintf(stderr, "[input] %s\n", why.c_str());
+        if (!host_input.save(&why)) os::notify_player("The controls could not be saved: " + why);
       }
-      if (settings == start_settings) return;
+      if (settings == start_settings || g_keep_settings_file) return;
       const Settings s = settings_to_save(file_settings, start_settings, settings);
       if (s == file_settings) return;
       std::string why;
       if (save_settings(settings_path, s, &why)) file_settings = s;
-      else std::fprintf(stderr, "[settings] %s\n", why.c_str());
+      else os::notify_player("The settings could not be saved: " + why);
     };
     auto quit = [&save, &print_status](const char* why) {
       save();
       wait_for_captures();
+      // What the player can no longer see in the window (a save that failed
+      // just now): for the console, and for the launcher, which shows lines
+      // that start "[unseen]" once the game has ended.
+      for (const std::string& notice : os::take_player_notices()) std::fprintf(stderr, "[unseen] %s\n", notice.c_str());
       print_status(why);
       stop_profiler(why);
       stop_link();
+      stop_outputs();
       std::fflush(stdout);
-      std::_Exit(0);
+      // Closed while the crash message was up (Windows): still a crash.
+      std::_Exit(os::crashing() ? 3 : 0);
     };
 
     // Applies settings that changed (in the menu, by resizing the window...).
@@ -740,6 +958,22 @@ int run(const Game& game, int argc, char** argv) {
       applied_width = pw, applied_height = ph;
     };
     apply_settings();
+    // The machine's clock follows the display (display_clock_rate), looked at
+    // again every second: the window may move to another display, vsync may
+    // be turned off, a link may start.
+    auto next_clock_check = std::chrono::steady_clock::now();
+    auto match_display = [&] {
+      const auto now = std::chrono::steady_clock::now();
+      if (now < next_clock_check) return;
+      next_clock_check = now + std::chrono::seconds(1);
+      const double rate = machine.network().linked() ? 1.0 : display_clock_rate(window, settings.vsync);
+      if (std::fabs(rate - machine.hardware().clock_rate()) < 1e-7) return;
+      machine.hardware().set_clock_rate(rate);
+      const SDL_DisplayMode* mode = window ? SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window)) : nullptr;
+      std::fprintf(stderr, "[video] the game's clock runs at %.3f%% to match the display (%d/%d, %.3f Hz)\n",
+                   rate * 100.0, mode ? mode->refresh_rate_numerator : 0, mode ? mode->refresh_rate_denominator : 0,
+                   mode ? static_cast<double>(mode->refresh_rate) : 0.0);
+    };
 
     const fs::path shot_dir = user_dir / "screenshots";
     bool shot_requested = false;
@@ -804,11 +1038,27 @@ int run(const Game& game, int argc, char** argv) {
         restart(o, user_dir, argv[0], game.test_menu(), machine.frame_offset() + machine.gpu().frames());
       };
     }
+    bool menu_was_open = false;
+    // After the menu closes, the game gets no controls until they are all
+    // released: the press that closed it (Enter, A, a click) is not for it.
+    bool release_guard = false, menu_open_at_poll = false;
     for (;;) {
       if (g_reboot_requested) {
         save();
         std::lock_guard lock(g_reboot_mutex);
         restart(o, user_dir, argv[0], next_boot(*g_pending_reboot), machine.frame_offset() + machine.gpu().frames());
+      }
+      if (use_menu) {
+        for (const std::string& notice : os::take_player_notices()) menu.notify(notice, NoticeKind::Problem);
+        // Once the game has started (about 10 s: its device checks).
+        if (settings.first_run_hint && machine.gpu().frames() >= 600 && !menu.is_open()) {
+          settings.first_run_hint = applied.first_run_hint = false;
+          menu.notify(first_run_hint(use_input ? &host_input : nullptr, settings.free_play));
+        }
+        // The settings are saved when the menu closes, whatever closed it
+        // (Esc, the Guide button, or its Resume button).
+        if (menu_was_open && !menu.is_open()) save();
+        menu_was_open = menu.is_open();
       }
       os::g_main_activity.set("handling the window's events");
       SDL_Event e;
@@ -818,10 +1068,9 @@ int run(const Game& game, int argc, char** argv) {
           case SDL_EVENT_WINDOW_RESIZED:
             // Remember the window's size (not the fullscreen or maximised one).
             if (window && !(SDL_GetWindowFlags(window) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_MAXIMIZED))) {
-              settings.window_width = e.window.data1;
-              settings.window_height = e.window.data2;
-              applied.window_width = e.window.data1;
-              applied.window_height = e.window.data2;
+              const float units = window_units(window);
+              settings.window_width = applied.window_width = static_cast<int>(std::lround(e.window.data1 / units));
+              settings.window_height = applied.window_height = static_cast<int>(std::lround(e.window.data2 / units));
             }
             break;
           case SDL_EVENT_WINDOW_ENTER_FULLSCREEN: settings.fullscreen = applied.fullscreen = true; break;
@@ -841,11 +1090,7 @@ int run(const Game& game, int argc, char** argv) {
         }
         // Choosing an input for a control in the menu takes the next one.
         if (use_input && host_input.capturing() && host_input.capture_event(e)) continue;
-        const bool was_open = menu.is_open();
-        if (use_menu && menu.handle_event(e)) {
-          if (was_open && !menu.is_open()) save();
-          continue;
-        }
+        if (use_menu && menu.handle_event(e)) continue;
         if (use_input) host_input.handle_event(e);
       }
       // Pausing: with the pause control, while the menu is open, or while the
@@ -860,6 +1105,8 @@ int run(const Game& game, int argc, char** argv) {
       if (linked) pause_pressed = false;
       model.linked = linked;
       model.link = machine.network().link_status();
+      model.restart_needed = settings.camera != start_settings.camera || settings.webcam != start_settings.webcam ||
+                             settings.cabinet != start_settings.cabinet || settings.lan != start_settings.lan;
       const SDL_WindowFlags window_flags = window ? SDL_GetWindowFlags(window) : 0;
       const bool background = window && ((window_flags & SDL_WINDOW_MINIMIZED) || !(window_flags & SDL_WINDOW_INPUT_FOCUS));
       const bool paused = !linked && (pause_pressed || (menu.is_open() && settings.pause_in_menu) ||
@@ -871,12 +1118,22 @@ int run(const Game& game, int argc, char** argv) {
       menu.set_paused(paused);
       if (use_input) {
         // While the menu is open the game gets nothing (the menu has the keys).
-        machine.set_controls(menu.is_open() ? triforce::Controls{} : host_input.poll());
+        if (menu_open_at_poll && !menu.is_open()) release_guard = true;
+        menu_open_at_poll = menu.is_open();
+        triforce::Controls controls = host_input.poll();
+        if (release_guard) {
+          const bool held = controls.test || controls.service || controls.coin || controls.start || controls.item ||
+                            controls.cancel || controls.gas > 0.0625f || controls.brake > 0.0625f;
+          if (held) controls = triforce::Controls{};
+          else release_guard = false;
+        }
+        machine.set_controls(menu.is_open() ? triforce::Controls{} : controls);
         // A paused game's wheel forces stop too.
         host_input.set_outputs(paused ? triforce::Outputs{} : machine.outputs());
       }
       settings.card = applied.card = machine.cards().held();  // the game may have given the player a new card
       apply_settings();
+      match_display();
       if (!settings.rich_presence || !game.status || !(window || log_discord)) {
         rich_presence.reset();
       } else if (const auto now = std::chrono::steady_clock::now(); now >= next_status) {
@@ -896,7 +1153,7 @@ int run(const Game& game, int argc, char** argv) {
           link_lost.reset();
         } else if (!link_lost) {
           link_lost = now;
-          menu.notify("The link to the other cabinets was lost: restarting");
+          menu.notify("The link to the other cabinets was lost: restarting", NoticeKind::Problem);
           std::fprintf(stderr, "[opengp] the link to the other cabinets was lost: restarting\n");
           profiler.note("link_lost");
         } else if (now - *link_lost >= std::chrono::seconds(4)) {
@@ -1033,10 +1290,12 @@ int run(const Game& game, int argc, char** argv) {
         std::error_code ec;
         fs::create_directories(shot_dir, ec);
         const fs::path path = shot_dir / ("frame_" + std::to_string(number) + ".png");
-        if (video::write_png(path.string(), shot)) {
-          std::fprintf(stderr, "[opengp] screenshot: %s\n", path.string().c_str());
-          profiler.note("screenshot", profile::Json().add("path", path.string()));
-          if (shot_requested && use_menu) menu.notify("Screenshot saved: " + path.filename().string());
+        if (video::write_png(os::utf8(path), shot)) {
+          std::fprintf(stderr, "[opengp] screenshot: %s\n", os::utf8(path).c_str());
+          profiler.note("screenshot", profile::Json().add("path", os::utf8(path)));
+          if (shot_requested && use_menu) menu.notify("Screenshot saved: " + os::utf8(path.filename()));
+        } else if (shot_requested) {
+          os::notify_player("The screenshot could not be saved to " + os::utf8(shot_dir));
         }
         shot_requested = false;
       }
@@ -1045,6 +1304,7 @@ int run(const Game& game, int argc, char** argv) {
 #endif
 
   if (o.profile || !o.profile_dir.empty()) std::fprintf(stderr, "[profile] profiling needs video (not --no-video)\n");
+  watch_for_hangs();
   machine.run();
   print_status("entry point returned");
   return 0;

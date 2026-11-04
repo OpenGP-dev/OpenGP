@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "audio/wav.h"
+#include "os/utf8.h"
 
 namespace audio {
 
@@ -20,7 +21,7 @@ void put32(u8* p, u32 v) {
 
 bool WavWriter::open(const std::string& path) {
   close();
-  file_ = std::fopen(path.c_str(), "wb");
+  file_ = os::fopen_utf8(path, "wb");
   rate_ = 0;
   frames_ = 0;
   if (file_) write_header();

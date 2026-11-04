@@ -1,0 +1,14 @@
+name: Design tweak
+description: A change to how OpenGP looks or reads.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A design tweak changes wording, layout or how something looks. See CONTRIBUTING.md.
+  - type: textarea
+    id: tweak
+    attributes:
+      label: What you would change, and why
+    validations:
+      required: true

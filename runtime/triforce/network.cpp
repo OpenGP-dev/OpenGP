@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Based on the socket commands of Dolphin's DVD/AMMediaboard.cpp (Copyright
+// Dolphin Emulator Project, GPL-2.0-or-later).
 
 #include "triforce/network.h"
 
@@ -10,6 +13,7 @@
 #include <cstring>
 #include <mutex>
 #include <random>
+#include <set>
 #include <thread>
 
 #ifdef _WIN32
@@ -60,7 +64,9 @@ void set_nonblocking(HostSocket s) {
   u_long on = 1;
   ioctlsocket(s, FIONBIO, &on);
 }
+void set_no_inherit(HostSocket s) { SetHandleInformation(reinterpret_cast<HANDLE>(s), HANDLE_FLAG_INHERIT, 0); }
 constexpr int kSendFlags = 0;
+constexpr short kPollPri = 0;  // Winsock refuses POLLPRI (WSAEINVAL)
 #else
 using HostSocket = int;
 constexpr HostSocket kNoSocket = -1;
@@ -75,6 +81,8 @@ int host_poll(PollFd* fds, std::size_t count, int timeout_ms) {
   return r;
 }
 void set_nonblocking(HostSocket s) { fcntl(s, F_SETFL, fcntl(s, F_GETFL, 0) | O_NONBLOCK); }
+void set_no_inherit(HostSocket s) { fcntl(s, F_SETFD, FD_CLOEXEC); }
+constexpr short kPollPri = POLLPRI;
 #if defined(__linux__)
 constexpr int kSendFlags = MSG_NOSIGNAL;
 #else
@@ -82,16 +90,29 @@ constexpr int kSendFlags = 0;
 #endif
 #endif
 
-// A new host socket for the guest: non-blocking, and never raising SIGPIPE.
+// A new host socket for the guest: non-blocking, never raising SIGPIPE, and
+// not inherited by the process a reboot starts (it would keep the link's
+// ports bound and the other cabinets' connections open).
 HostSocket open_host(int type) {
   const HostSocket s = ::socket(AF_INET, type, 0);
   if (s == kNoSocket) return s;
   set_nonblocking(s);
+  set_no_inherit(s);
 #if defined(__APPLE__)
   int on = 1;
   setsockopt(s, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof(on));
 #endif
   return s;
+}
+
+// Sends each of the game's writes at once (no Nagle's algorithm). A link
+// connection carries messages one way only, one a frame, so with Nagle a
+// message waits for the acknowledgement of the one before, which the other
+// computer may delay (up to 200 ms on Windows): over a network, a cabinet's
+// messages then come in bursts. The games never ask for TCP_NODELAY.
+void set_no_delay(HostSocket s) {
+  const int on = 1;
+  ::setsockopt(s, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&on), sizeof(on));
 }
 
 // The host's errors as the board reports them.
@@ -131,9 +152,11 @@ sockaddr_in host_address(Endpoint e) {
 // The broadcast addresses of the computer's networks (host byte order), so
 // that the link's beacons reach the local network whichever one it is (a
 // broadcast to 255.255.255.255 leaves by one network only, which may be a
-// VPN's or a virtual machine's).
-std::vector<u32> broadcast_addresses() {
+// VPN's or a virtual machine's). Each network's address and netmask go in
+// `subnets` (see link_allows).
+std::vector<u32> broadcast_addresses(std::vector<Subnet>* subnets) {
   std::vector<u32> out;
+  subnets->clear();
 #ifdef _WIN32
   ULONG size = 16 * 1024;
   std::vector<u8> buffer(size);
@@ -152,7 +175,9 @@ std::vector<u32> broadcast_addresses() {
       if (u->Address.lpSockaddr->sa_family != AF_INET || u->OnLinkPrefixLength == 0 || u->OnLinkPrefixLength > 30)
         continue;
       const u32 ip = ntohl(reinterpret_cast<const sockaddr_in*>(u->Address.lpSockaddr)->sin_addr.s_addr);
-      out.push_back(ip | (0xFFFFFFFFu >> u->OnLinkPrefixLength));
+      const u32 host_bits = 0xFFFFFFFFu >> u->OnLinkPrefixLength;
+      out.push_back(ip | host_bits);
+      subnets->push_back({ip, ~host_bits});
     }
   }
 #else
@@ -162,6 +187,9 @@ std::vector<u32> broadcast_addresses() {
     if (!i->ifa_addr || i->ifa_addr->sa_family != AF_INET || !i->ifa_broadaddr) continue;
     if (!(i->ifa_flags & IFF_UP) || !(i->ifa_flags & IFF_BROADCAST) || (i->ifa_flags & IFF_LOOPBACK)) continue;
     out.push_back(ntohl(reinterpret_cast<const sockaddr_in*>(i->ifa_broadaddr)->sin_addr.s_addr));
+    if (i->ifa_netmask)
+      subnets->push_back({ntohl(reinterpret_cast<const sockaddr_in*>(i->ifa_addr)->sin_addr.s_addr),
+                          ntohl(reinterpret_cast<const sockaddr_in*>(i->ifa_netmask)->sin_addr.s_addr)});
   }
   freeifaddrs(list);
 #endif
@@ -224,8 +252,16 @@ constexpr int kCabinets = 4;
 constexpr u16 kGamePort = 5000;
 constexpr u16 kGamePorts = 9;  // 5000-5008: a cabinet moves on to the next when it listens again
 constexpr int kPortsPerCabinet = 10;
-constexpr u8 kLinkVersion = 1;
-constexpr std::size_t kHelloSize = 16, kBeaconSize = 24;
+// 1: OpenGP 0.4.0 and 1.0.0. 2: OpenGP 1.0.1 (TCP_NODELAY; the beacon carries
+// OpenGP's version). The first six bytes of the hello and the beacon (magic,
+// version, cabinet) stay the same in every version, so that any OpenGP can
+// tell another version's.
+constexpr u8 kLinkVersion = 2;
+constexpr std::size_t kHelloSize = 16, kBeaconSize = 40, kBeaconVersionAt = 24, kBeaconVersionSize = 16;
+constexpr std::size_t kMaxIncoming = 8;               // connections waiting on a link listener
+constexpr auto kAcceptTimeout = std::chrono::seconds(30);  // ... for the game to take them
+constexpr std::size_t kMaxQueued = 1 << 20;           // bytes a link connection holds for a slow reader
+constexpr u32 kLinkConnectWaitMs = 500;               // a cabinet on the network answers in a few ms
 constexpr auto kBeaconInterval = std::chrono::milliseconds(500);
 constexpr auto kPeerTimeout = std::chrono::seconds(5);  // a cabinet not heard from for this long is gone
 constexpr auto kHelloTimeout = std::chrono::seconds(5);
@@ -269,7 +305,8 @@ int read_hello(const u8* p, const GameTag& game) {
 // A beacon: "OGPB", the version, the cabinet, the ports it listens on (bit k
 // for 5000 + k, big endian), the sender's random number (to tell its own
 // beacons and another cabinet with the same number apart), the game, flags
-// (bit 0: leaving), 3 bytes of 0.
+// (bit 0: leaving), 3 bytes of 0, and OpenGP's version (16 bytes, padded with
+// zeros).
 struct Beacon {
   int cabinet = 0;
   u16 listening = 0;
@@ -277,8 +314,24 @@ struct Beacon {
   bool leaving = false;  // the cabinet is stopping
 };
 
-void write_beacon(u8* p, const Beacon& b, const GameTag& game) {
+// This computer, and the private, link-local and shared (CGNAT, used by
+// virtual LANs such as Tailscale) ranges (see link_allows).
+bool is_loopback(u32 ip) { return (ip >> 24) == 127; }
+bool is_local_network(u32 ip) {
+  return is_loopback(ip) || (ip >> 24) == 10 || (ip >> 20) == (0xAC10u >> 4) || (ip >> 16) == 0xC0A8 ||
+         (ip >> 16) == 0xA9FE || (ip >> 22) == (0x6440u >> 6);
+}
+
+// A beacon from OpenGP at all (any version, any game): its version byte.
+bool beacon_magic(const u8* p, std::size_t size, u8* version) {
+  if (size < 6 || std::memcmp(p, "OGPB", 4) != 0) return false;
+  *version = p[4];
+  return true;
+}
+
+void write_beacon(u8* p, const Beacon& b, const GameTag& game, const std::string& version) {
   std::memset(p, 0, kBeaconSize);
+  std::memcpy(p + kBeaconVersionAt, version.data(), std::min(version.size(), kBeaconVersionSize));
   std::memcpy(p, "OGPB", 4);
   p[4] = kLinkVersion;
   p[5] = static_cast<u8>(b.cabinet);
@@ -343,6 +396,17 @@ std::string ipv4_string(u32 ip) {
   return buf;
 }
 
+bool link_allows(u32 ip, bool lan, std::span<const Subnet> networks) {
+  if (is_loopback(ip)) return true;
+  if (!lan) return false;
+  // One of this computer's networks counts if it is no wider than a /8 (as
+  // Radmin VPN's and Hamachi's are), so that an odd netmask never lets the
+  // internet in.
+  return is_local_network(ip) || std::any_of(networks.begin(), networks.end(), [ip](const Subnet& n) {
+           return (n.mask >> 24) == 0xFF && (ip & n.mask) == (n.ip & n.mask);
+         });
+}
+
 // A guest socket: a host socket until it connects to a service.
 struct Network::Socket {
   // A connection from another cabinet whose hello has not all come yet.
@@ -351,7 +415,8 @@ struct Network::Socket {
     Endpoint from;
     std::array<u8, kHelloSize> hello{};
     std::size_t received = 0;
-    int cabinet = 0;  // who it is, once the hello has come
+    int cabinet = 0;    // who it says it is, once the hello has come
+    bool ready = false;  // ... and it comes from that cabinet's address: the game can take it
     Clock::time_point since;
   };
 
@@ -368,6 +433,7 @@ struct Network::Socket {
   int cabinet = 0;             // the cabinet at the other end of a connection
   bool accepted = false;       // ... which it made
   std::vector<Incoming> incoming;
+  std::string queued;          // bytes the game sent that the host could not take yet (stream sockets)
   u64 sent = 0, received = 0;  // bytes, for the log
 
   ~Socket() {
@@ -386,9 +452,12 @@ struct Network::Socket {
 class Network::Link {
  public:
   struct Peer {
-    u32 ip = 0;  // where it is (host byte order)
+    u32 ip = 0;  // where it is (host byte order): this computer's loopback when it is here
     u16 listening = 0;
+    u32 nonce = 0;  // its random number: the number is its until it leaves or goes quiet
+    std::array<u32, 4> addresses{};  // the addresses its beacons came from (its connections must too)
     Clock::time_point seen{};
+    bool from(u32 a) const { return std::find(addresses.begin(), addresses.end(), a) != addresses.end(); }
   };
 
   explicit Link(const LinkOptions& options)
@@ -429,6 +498,12 @@ class Network::Link {
     }
     wake_.notify_all();
   }
+  // Whether beacons and connections may come from `ip` (link_allows, with
+  // this computer's networks).
+  bool allows(u32 ip) const {
+    std::lock_guard lock(mutex_);
+    return link_allows(ip, options_.lan, networks_);
+  }
   // A cabinet heard from recently.
   bool peer(int cabinet, Peer* out) const {
     std::lock_guard lock(mutex_);
@@ -450,6 +525,8 @@ class Network::Link {
     }
     s.clash = clash_seen_ != Clock::time_point{} && now - clash_seen_ < kClashTimeout;
     s.error = error_;
+    for (const auto& [ip, other] : incompatible_)
+      if (now - other.seen < kPeerTimeout) s.incompatible.push_back(ipv4_string(ip) + " (" + other.version + ")");
     return s;
   }
 
@@ -469,6 +546,13 @@ class Network::Link {
       lock.unlock();
       if (cabinet && socket_cabinet_ != cabinet && now >= next_open_) open(cabinet, now);
       if (socket_ != kNoSocket) {
+        if (options_.lan && now >= next_networks_) {
+          std::vector<Subnet> networks;
+          broadcasts_ = broadcast_addresses(&networks);  // networks come and go
+          next_networks_ = now + std::chrono::seconds(10);
+          std::lock_guard network_lock(mutex_);
+          networks_ = std::move(networks);
+        }
         receive();
         if (changed || now >= next_beacon_) {
           send(listening, false);
@@ -519,7 +603,7 @@ class Network::Link {
 
   void receive() {
     for (int i = 0; i < 64; ++i) {
-      u8 data[64];
+      u8 data[128];
       sockaddr_in from{};
       socklen_t from_len = sizeof(from);
       const auto r = ::recvfrom(socket_, reinterpret_cast<char*>(data), sizeof(data), 0,
@@ -528,23 +612,64 @@ class Network::Link {
         if (would_block(host_error())) break;
         continue;
       }
-      Beacon b;
-      if (!read_beacon(data, static_cast<std::size_t>(r), game_, &b) || b.nonce == nonce_) continue;
       const Clock::time_point now = Clock::now();
       const u32 ip = ntohl(from.sin_addr.s_addr);
+      u8 version = 0;
+      if (!beacon_magic(data, static_cast<std::size_t>(r), &version)) continue;
+      // Only from this computer, or with linking on the local network, from
+      // an address on one: never from the internet. The log says so once for
+      // each address (the first 16), so a cabinet never found has a reason.
+      if (!allows(ip)) {
+        if (refused_.size() < 16 && refused_.insert(ip).second)
+          net_log("link: a beacon from %s is not from a local network; ignored", ipv4_string(ip).c_str());
+        continue;
+      }
+      if (version != kLinkVersion) {
+        // Another version of OpenGP: it cannot link with this one, but the
+        // player should know it is there.
+        std::string name = "an older OpenGP";
+        if (version > kLinkVersion) name = "a newer OpenGP";
+        if (version >= 2 && static_cast<std::size_t>(r) >= kBeaconVersionAt + kBeaconVersionSize) {
+          const char* v = reinterpret_cast<const char*>(data + kBeaconVersionAt);
+          name = "OpenGP " + std::string(v, strnlen(v, kBeaconVersionSize));
+        }
+        std::lock_guard lock(mutex_);
+        if (!incompatible_.count(ip)) net_log("link: %s at %s cannot link with this one", name.c_str(), ipv4_string(ip).c_str());
+        if (incompatible_.size() < 16 || incompatible_.count(ip)) incompatible_[ip] = {name, now};
+        continue;
+      }
+      Beacon b;
+      if (!read_beacon(data, static_cast<std::size_t>(r), game_, &b) || b.nonce == nonce_) continue;
       std::lock_guard lock(mutex_);
       if (b.cabinet == socket_cabinet_) {
         if (!b.leaving) clash_seen_ = now;
         continue;
       }
       Peer& p = peers_[b.cabinet];
+      const bool known = found(b.cabinet, now);
+      // A number belongs to the cabinet that has it until that one leaves or
+      // goes quiet, so a second cabinet given the same number by mistake
+      // cannot take it over or send it away. This is no guard against a
+      // hostile computer on the network, which sees the random number in
+      // every beacon: linked cabinets trust their network.
+      if (known && p.nonce != b.nonce) continue;
       if (b.leaving) {
-        if (found(b.cabinet, now)) net_log("link: cabinet %d left", b.cabinet);
+        if (known) net_log("link: cabinet %d left", b.cabinet);
         p = {};
         continue;
       }
-      if (!found(b.cabinet, now)) net_log("link: found cabinet %d at %s", b.cabinet, ipv4_string(ip).c_str());
-      p.ip = ip;
+      if (!known) {
+        net_log("link: found cabinet %d at %s", b.cabinet, ipv4_string(ip).c_str());
+        p = {};
+        p.nonce = b.nonce;
+      }
+      // A cabinet on this computer is heard both on the loopback interface
+      // and by broadcast: connect to it on the loopback interface.
+      if (!known || !is_loopback(p.ip) || is_loopback(ip)) p.ip = ip;
+      if (!p.from(ip)) {
+        const auto slot = std::find(p.addresses.begin(), p.addresses.end(), 0u);
+        if (slot != p.addresses.end()) *slot = ip;
+      }
       p.listening = b.listening;
       p.seen = now;
     }
@@ -556,17 +681,13 @@ class Network::Link {
   // (broadcasts get lost, on Wi-Fi especially).
   void send(u16 listening, bool leaving) {
     u8 data[kBeaconSize];
-    write_beacon(data, {socket_cabinet_, listening, nonce_, leaving}, game_);
+    write_beacon(data, {socket_cabinet_, listening, nonce_, leaving}, game_, options_.version);
     auto send_to = [&](u32 ip, u16 port) {
       const sockaddr_in to = host_address({ip, port});
       ::sendto(socket_, reinterpret_cast<const char*>(data), sizeof(data), 0, reinterpret_cast<const sockaddr*>(&to),
                sizeof(to));
     };
     const Clock::time_point now = Clock::now();
-    if (options_.lan && now >= next_networks_) {
-      broadcasts_ = broadcast_addresses();  // networks come and go
-      next_networks_ = now + std::chrono::seconds(10);
-    }
     std::array<u32, kCabinets + 1> found_at{};
     {
       std::lock_guard lock(mutex_);
@@ -594,13 +715,20 @@ class Network::Link {
   u8 outgoing_ = 0, incoming_ = 0;
   bool changed_ = false;
   std::array<Peer, kCabinets + 1> peers_{};
+  struct Incompatible {
+    std::string version;
+    Clock::time_point seen;
+  };
+  std::map<u32, Incompatible> incompatible_;  // by address
   Clock::time_point clash_seen_{};
   std::string error_;
+  std::vector<Subnet> networks_;  // this computer's, with linking on the local network
 
   // The thread's own.
   HostSocket socket_ = kNoSocket;  // bound to this cabinet's beacon port
   int socket_cabinet_ = 0;         // ... for this number
   std::vector<u32> broadcasts_;    // where the beacons go on the local network
+  std::set<u32> refused_;          // addresses whose beacons were refused (in the log once)
   Clock::time_point next_beacon_{}, next_open_{}, next_networks_{};
   std::thread thread_;
   std::once_flag stopped_;
@@ -659,7 +787,22 @@ void Network::take_incoming(Socket& listener) {
     socklen_t from_len = sizeof(from);
     const HostSocket h = ::accept(listener.host, reinterpret_cast<sockaddr*>(&from), &from_len);
     if (h == kNoSocket) break;
+    // Only from an address the beacons are taken from (Link::allows), so that
+    // nothing else holds a place a cabinet needs.
+    if (const u32 ip = ntohl(from.sin_addr.s_addr); !link_->allows(ip)) {
+      net_log("link: a connection from %s is not from a local network; closed", ipv4_string(ip).c_str());
+      close_host(h);
+      continue;
+    }
+    // A few cabinets connect at a time: anything past that is turned away.
+    if (listener.incoming.size() >= kMaxIncoming) {
+      net_log("link: too many connections waiting; one from %s closed", ipv4_string(ntohl(from.sin_addr.s_addr)).c_str());
+      close_host(h);
+      continue;
+    }
     set_nonblocking(h);
+    set_no_inherit(h);
+    set_no_delay(h);
     Socket::Incoming in;
     in.host = h;
     in.from = {ntohl(from.sin_addr.s_addr), ntohs(from.sin_port)};
@@ -684,6 +827,22 @@ void Network::take_incoming(Socket& listener) {
         drop = true;
       }
     }
+    if (!drop && in.cabinet && !in.ready) {
+      // The cabinet it says it is must be one whose beacons came from that
+      // address (or one on this computer); until it is known, it waits.
+      Link::Peer peer;
+      if (link_->peer(in.cabinet, &peer)) {
+        in.ready = peer.from(in.from.ip) || is_loopback(in.from.ip);
+        if (!in.ready) {
+          net_log("link: a connection from %s says it is cabinet %d, which is elsewhere", ipv4_string(in.from.ip).c_str(),
+                  in.cabinet);
+          drop = true;
+        }
+      } else if (now - in.since > kHelloTimeout) {
+        drop = true;
+      }
+    }
+    if (!drop && in.ready && now - in.since > kAcceptTimeout) drop = true;  // the game never took it
     if (drop) {
       close_host(in.host);
       it = listener.incoming.erase(it);
@@ -694,6 +853,14 @@ void Network::take_incoming(Socket& listener) {
 }
 
 Network::Socket* Network::find(u32 fd) { return fd < kSockets ? sockets_[fd].get() : nullptr; }
+
+bool Network::sends_without_delay(u32 fd) const {
+  const Socket* s = fd < kSockets ? sockets_[fd].get() : nullptr;
+  if (!s || s->host == kNoSocket) return false;
+  int on = 0;
+  socklen_t size = sizeof(on);
+  return ::getsockopt(s->host, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<char*>(&on), &size) == 0 && on != 0;
+}
 
 u32 Network::fail(u32 error) {
   last_error_ = error;
@@ -814,7 +981,8 @@ u32 Network::connect(u32 fd, u32 address, u32 length) {
     // again later, but after another error (a network hiccup, or macOS's
     // Local Network permission not given yet) it gives up on that cabinet.
     const Endpoint host{peer.ip, host_port(link_->options().port, cabinet, to.port)};
-    if (host_connect(*s, fd, to, host) != SSC_SUCCESS) return fail(SSC_ECONNREFUSED);
+    if (host_connect(*s, fd, to, host, kLinkConnectWaitMs) != SSC_SUCCESS) return fail(SSC_ECONNREFUSED);
+    set_no_delay(s->host);
     u8 hello[kHelloSize];
     write_hello(hello, own, link_->game());
     if (::send(s->host, reinterpret_cast<const char*>(hello), static_cast<int>(kHelloSize), kSendFlags) !=
@@ -835,7 +1003,7 @@ u32 Network::connect(u32 fd, u32 address, u32 length) {
 
 // A host connection for the game's connection to `to`: waits for it, up to
 // the game's timeout. Returns SSC_SUCCESS or the error.
-u32 Network::host_connect(Socket& s, u32 fd, Endpoint to, Endpoint host) {
+u32 Network::host_connect(Socket& s, u32 fd, Endpoint to, Endpoint host, u32 max_wait_ms) {
   const sockaddr_in a = host_address(host);
   if (::connect(s.host, reinterpret_cast<const sockaddr*>(&a), sizeof(a)) != 0) {
     const int error = host_error();
@@ -846,7 +1014,8 @@ u32 Network::host_connect(Socket& s, u32 fd, Endpoint to, Endpoint host) {
     PollFd pfd{};
     pfd.fd = s.host;
     pfd.events = POLLOUT;
-    const int ready = host_poll(&pfd, 1, static_cast<int>(std::min<u32>(s.connect_timeout_ms, kMaxWaitMs)));
+    // The game's thread waits (holding the hardware), so never for long.
+    const int ready = host_poll(&pfd, 1, static_cast<int>(std::min<u32>({s.connect_timeout_ms, static_cast<u32>(kMaxWaitMs), max_wait_ms})));
     if (ready <= 0) {
       net_log("connect(%u, %s:%u): timed out", fd, ipv4_string(to.ip).c_str(), to.port);
       return SSC_ETIMEDOUT;
@@ -916,7 +1085,7 @@ u32 Network::accept(u32 fd, u32 address, u32 length_address) {
   if (s->link_listener) {
     // Another cabinet, once its hello has come; it is at its game address.
     take_incoming(*s);
-    const auto in = std::find_if(s->incoming.begin(), s->incoming.end(), [](const auto& i) { return i.cabinet != 0; });
+    const auto in = std::find_if(s->incoming.begin(), s->incoming.end(), [](const auto& i) { return i.ready; });
     if (in == s->incoming.end()) return fail(SSC_EWOULDBLOCK);
     h = in->host;
     cabinet = in->cabinet;
@@ -928,6 +1097,7 @@ u32 Network::accept(u32 fd, u32 address, u32 length_address) {
     h = ::accept(s->host, reinterpret_cast<sockaddr*>(&a), &a_len);
     if (h == kNoSocket) return fail(status_for(host_error()));  // usually nobody waiting
     set_nonblocking(h);
+    set_no_inherit(h);
     from = {ntohl(a.sin_addr.s_addr), ntohs(a.sin_port)};
   }
   const u32 client = new_socket();
@@ -965,12 +1135,48 @@ u32 Network::send(u32 fd, u32 data, u32 length) {
     last_error_ = SSC_SUCCESS;
     return length;
   }
-  const auto r = ::send(s->host, reinterpret_cast<const char*>(d.data()), static_cast<int>(length), kSendFlags);
-  if (r < 0) return fail(status_for(host_error()));
-  if (log_enabled() && s->sent == 0 && r > 0) net_log("send(%u): the first %d bytes", fd, static_cast<int>(r));
-  s->sent += static_cast<u64>(r);
+  if (s->type != kGuestStream) {
+    const auto r = ::send(s->host, reinterpret_cast<const char*>(d.data()), static_cast<int>(length), kSendFlags);
+    if (r < 0) return fail(status_for(host_error()));
+    last_error_ = SSC_SUCCESS;
+    return static_cast<u32>(r);
+  }
+  // A stream: the game takes any answer as all of it sent (the link's
+  // messages would lose their framing), so what the host cannot take now
+  // waits here, in order, and goes with the next send, receive or select.
+  if (const u32 error = flush(*s); error != SSC_SUCCESS) return fail(error);
+  std::size_t done = 0;
+  if (s->queued.empty()) {
+    const auto r = ::send(s->host, reinterpret_cast<const char*>(d.data()), static_cast<int>(length), kSendFlags);
+    if (r < 0 && !would_block(host_error())) return fail(status_for(host_error()));
+    done = r > 0 ? static_cast<std::size_t>(r) : 0;
+  }
+  if (done < length) {
+    if (s->queued.size() + (length - done) > kMaxQueued) {
+      net_log("send(%u): the other end has not read for too long; closed", fd);
+      close_host(s->host);
+      s->host = kNoSocket;
+      s->queued.clear();
+      update_link();
+      return fail(SSC_ENOTCONN);
+    }
+    s->queued.append(reinterpret_cast<const char*>(d.data()) + done, length - done);
+  }
+  if (log_enabled() && s->sent == 0 && length > 0) net_log("send(%u): the first %u bytes", fd, length);
+  s->sent += length;
   last_error_ = SSC_SUCCESS;
-  return static_cast<u32>(r);
+  return length;
+}
+
+// Sends what a stream connection still holds, as much as the host takes.
+u32 Network::flush(Socket& s) {
+  while (!s.queued.empty() && s.host != kNoSocket) {
+    const auto r = ::send(s.host, s.queued.data(), static_cast<int>(std::min<std::size_t>(s.queued.size(), 1 << 20)),
+                          kSendFlags);
+    if (r < 0) return would_block(host_error()) ? SSC_SUCCESS : status_for(host_error());
+    s.queued.erase(0, static_cast<std::size_t>(r));
+  }
+  return SSC_SUCCESS;
 }
 
 u32 Network::recv(u32 fd, u32 data, u32 length) {
@@ -987,6 +1193,8 @@ u32 Network::recv(u32 fd, u32 data, u32 length) {
     last_error_ = SSC_SUCCESS;
     return static_cast<u32>(n);
   }
+  if (s->host == kNoSocket) return fail(SSC_ENOTCONN);
+  flush(*s);
   const auto r = ::recv(s->host, reinterpret_cast<char*>(d.data()), static_cast<int>(length), 0);
   if (r < 0) return fail(status_for(host_error()));
   if (log_enabled() && s->received == 0 && r > 0) net_log("recv(%u): the first %d bytes", fd, static_cast<int>(r));
@@ -1024,14 +1232,15 @@ u32 Network::select(u32 count, u32 read_set, u32 write_set, u32 except_set, u32 
     if (s->link_listener && s->listening) {
       // Ready once a cabinet's hello has come.
       take_incoming(*s);
-      if (r && std::any_of(s->incoming.begin(), s->incoming.end(), [](const auto& i) { return i.cabinet != 0; }))
+      if (r && std::any_of(s->incoming.begin(), s->incoming.end(), [](const auto& i) { return i.ready; }))
         mark(out[0], fd), ++ready;
       continue;
     }
     if (s->host == kNoSocket) continue;
+    flush(*s);
     PollFd p{};
     p.fd = s->host;
-    p.events = static_cast<short>((r ? POLLIN : 0) | (w ? POLLOUT : 0) | (e ? POLLPRI : 0));
+    p.events = static_cast<short>((r ? POLLIN : 0) | (w ? POLLOUT : 0) | (e ? kPollPri : 0));
     polled.push_back(p);
     polled_fd.push_back(fd);
   }
@@ -1049,7 +1258,7 @@ u32 Network::select(u32 count, u32 read_set, u32 write_set, u32 except_set, u32 
       const u32 fd = polled_fd[i];
       if (is_set(in[0], fd) && (ev & (POLLIN | POLLHUP | POLLERR))) mark(out[0], fd), ++ready;
       if (is_set(in[1], fd) && (ev & (POLLOUT | POLLERR))) mark(out[1], fd), ++ready;
-      if (is_set(in[2], fd) && (ev & POLLPRI)) mark(out[2], fd), ++ready;
+      if (is_set(in[2], fd) && (ev & kPollPri) != 0) mark(out[2], fd), ++ready;
     }
   }
 

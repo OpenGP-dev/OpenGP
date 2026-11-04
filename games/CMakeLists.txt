@@ -55,14 +55,9 @@ function(opengp_toml_string out_var text key)
 endfunction()
 
 # Hand-written code the games share, compiled into each game's executable
-# against that game's generated header.
-set(OPENGP_GAMES_COMMON
-  ${CMAKE_CURRENT_SOURCE_DIR}/common/main.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/common/arcade.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/common/cabinet.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/common/camera_use.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/common/game_log.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/common/sdk_hle.cpp)
+# against that game's generated header (the list the installer uses too).
+include(${PROJECT_SOURCE_DIR}/cmake/game_sources.cmake)
+list(TRANSFORM OPENGP_GAME_COMMON_SOURCES PREPEND ${CMAKE_CURRENT_SOURCE_DIR}/common/ OUTPUT_VARIABLE OPENGP_GAMES_COMMON)
 
 # opengp_game(<dir>): builds the game in <dir> if its main.dol is present.
 function(opengp_game dir)
@@ -94,7 +89,8 @@ function(opengp_game dir)
   target_link_libraries(${dir}_recomp PUBLIC ppc_runtime)
   opengp_generated_code_options(${dir}_recomp)
 
-  add_executable(${executable} ${src}/patches.cpp ${src}/status.cpp ${OPENGP_GAMES_COMMON})
+  list(TRANSFORM OPENGP_GAME_OWN_SOURCES PREPEND ${src}/ OUTPUT_VARIABLE own_sources)
+  add_executable(${executable} ${own_sources} ${OPENGP_GAMES_COMMON})
   target_link_libraries(${executable} PRIVATE ${dir}_recomp opengp_app opengp_warnings)
   target_include_directories(${executable} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/common)
   target_compile_definitions(${executable} PRIVATE

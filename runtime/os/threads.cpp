@@ -7,6 +7,7 @@
 #include <string>
 #include <thread>
 
+#include "os/crash.h"
 #include "os/thread_priority.h"
 #include "ppc/dispatch.h"
 #include "ppc/hooks.h"
@@ -17,7 +18,7 @@ namespace os {
 
 namespace {
 
-// OSContext layout (Dolphin SDK <dolphin/os/OSContext.h>).
+// The SDK's OSContext layout, as the games' own code uses it (offsets only).
 constexpr u32 CTX_GPR = 0x000;
 constexpr u32 CTX_CR = 0x080;
 constexpr u32 CTX_LR = 0x084;
@@ -222,6 +223,7 @@ HostThread* ThreadManager::spawn(ppc::Context& from, u32 context) {
 void ThreadManager::thread_main(HostThread* t, u32 entry) {
   set_interactive_thread();
   set_thread_name(("guest " + std::to_string(t->id)).c_str());
+  prepare_thread_for_crashes();
   t_self = t;
   {
     std::unique_lock lock(mutex_);

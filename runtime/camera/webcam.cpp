@@ -10,6 +10,8 @@
 #include <cstring>
 #include <tuple>
 
+#include "camera/exposure.h"
+
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -132,6 +134,12 @@ bool Webcam::choose(const std::string& name, std::string* error) {
 
 bool Webcam::picture(u8* rgb) {
   std::lock_guard lock(mutex_);
+  // The game's start-up check asks for one picture, and a grey one does:
+  // the webcam stays off until the game asks again (a photo, the test menu).
+  if (!asked_before_) {
+    asked_before_ = true;
+    return false;
+  }
   asked_ = std::chrono::steady_clock::now();
   if (!on_) {
     on_ = true;
@@ -169,6 +177,9 @@ void Webcam::run() {
     }
     SDL_Camera* camera = denied ? nullptr : open();
     bool first = true;
+    Warmup warmup;
+    warmup.start();
+    AutoGain gain;
     for (;;) {
       {
         std::lock_guard lock(mutex_);
@@ -198,6 +209,11 @@ void Webcam::run() {
       if (!converted) continue;
       crop_and_scale(converted, picture.data());
       SDL_DestroySurface(converted);
+      // Not while its exposure settles, and brightened in a dim room
+      // (exposure.h).
+      const double mean = mean_brightness(picture.data(), kPictureSize / 3);
+      if (!warmup.frame(mean, Warmup::Clock::now())) continue;
+      gain.apply(picture.data(), kPictureSize / 3, mean);
       {
         std::lock_guard lock(mutex_);
         latest_ = picture;

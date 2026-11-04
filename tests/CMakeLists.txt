@@ -76,6 +76,12 @@ if(TARGET opengp_input)
   add_test(NAME controls COMMAND test_controls)
 endif()
 
+if(TARGET opengp_audio)
+  add_executable(test_audio test_audio.cpp)
+  target_link_libraries(test_audio PRIVATE opengp_audio doctest opengp_warnings)
+  add_test(NAME audio COMMAND test_audio)
+endif()
+
 add_executable(test_camera test_camera.cpp)
 target_link_libraries(test_camera PRIVATE opengp_machine doctest opengp_warnings)
 add_test(NAME camera COMMAND test_camera)
@@ -87,3 +93,24 @@ add_test(NAME discord COMMAND test_discord)
 add_executable(test_link test_link.cpp)
 target_link_libraries(test_link PRIVATE opengp_machine doctest opengp_warnings)
 add_test(NAME link COMMAND test_link)
+
+add_executable(test_paths test_paths.cpp)
+target_link_libraries(test_paths PRIVATE opengp_settings gekkorecomp_lib doctest opengp_warnings)
+add_test(NAME paths COMMAND test_paths)
+
+add_executable(test_installer test_installer.cpp)
+target_link_libraries(test_installer PRIVATE opengp_installer_lib doctest opengp_warnings)
+if(WIN32)
+  target_link_libraries(test_installer PRIVATE ws2_32)
+endif()
+add_test(NAME installer COMMAND test_installer)
+# The download tests' server is on this computer: curl must not send its requests to a proxy.
+set_tests_properties(installer PROPERTIES ENVIRONMENT "no_proxy=127.0.0.1;NO_PROXY=127.0.0.1")
+
+# Crash reports: a probe crashes in several ways; each must leave a report.
+add_executable(crash_probe crash_probe.cpp)
+target_link_libraries(crash_probe PRIVATE opengp_machine opengp_warnings)
+add_test(NAME crash_reports
+         COMMAND ${CMAKE_COMMAND} -DPROBE=$<TARGET_FILE:crash_probe> -DDIR=${CMAKE_CURRENT_BINARY_DIR}/crash_reports
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/check_crash.cmake)
+set_tests_properties(crash_reports PROPERTIES ENVIRONMENT "OPENGP_NO_CRASH_DIALOG=1")

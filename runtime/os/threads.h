@@ -2,7 +2,7 @@
 //
 // Guest threads and exceptions.
 //
-// The Dolphin SDK schedules threads itself (SelectThread, run queues,
+// The GameCube SDK schedules threads itself (SelectThread, run queues,
 // priorities) and switches between them with OSSaveContext / OSLoadContext.
 // Recompiled code keeps guest registers in a host-side ppc::Context and its
 // call stack on the host stack, so a context switch cannot simply reload

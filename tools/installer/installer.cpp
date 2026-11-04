@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
+#include <chrono>
 #include <thread>
 
 #include "analysis.h"
@@ -26,9 +27,11 @@ namespace installer {
 
 namespace {
 
-std::string utf8(const fs::path& p) {
-  const std::u8string s = p.u8string();
-  return std::string(s.begin(), s.end());
+using os::utf8;
+
+// The last part of a program's output, for an error message.
+std::string tail(const std::string& output, std::size_t max = 600) {
+  return output.size() <= max ? output : "..." + output.substr(output.size() - max);
 }
 
 std::vector<std::string> strings(const toml::node* node) {
@@ -56,6 +59,20 @@ bool parse_file(const fs::path& path, toml::table* table, std::string* error) {
 }
 
 bool works(const std::string& cxx) { return run_process({cxx, "--version"}).exit_code == 0; }
+
+// Whether `cxx` is GCC 12 or Clang 16 or later (Apple's Clang counts by its
+// own numbers and is not checked): compiles a probe.
+bool new_enough(const Package& package, const std::string& cxx) {
+  const fs::path probe = package.home / "build" / "compiler-probe.cpp";
+  const std::string text =
+      "#if !defined(__apple_build_version__) && defined(__clang__) && __clang_major__ < 16\n#error Clang 16\n"
+      "#elif !defined(__clang__) && defined(__GNUC__) && __GNUC__ < 12\n#error GCC 12\n#endif\n";
+  if (!os::write_file_atomically(utf8(probe), text.data(), text.size())) return true;  // cannot tell
+  const bool ok = run_process({cxx, "-std=c++20", "-fsyntax-only", utf8(probe)}).exit_code == 0;
+  std::error_code ec;
+  fs::remove(probe, ec);
+  return ok;
+}
 
 #ifdef _WIN32
 // The copies of curl and tar that come with Windows 10 and later (tar is
@@ -91,6 +108,17 @@ bool load_package(const fs::path& home, Package* package, std::string* error) {
   p.system_libs = strings(build["system_libs"].node());
   p.executable_suffix = build["executable_suffix"].value_or(std::string());
   p.link_group = build["link_group"].value_or(true);
+  // A package from 1.0.0 lists neither: these are its sources.
+  const auto common = build["common_sources"];
+  const auto own = build["game_sources"];
+  p.common_sources = common ? strings(common.node())
+                            : std::vector<std::string>{"main.cpp",       "arcade.cpp",   "cabinet.cpp",
+                                                       "camera_use.cpp", "game_log.cpp", "sdk_hle.cpp"};
+  p.game_sources = own ? strings(own.node()) : std::vector<std::string>{"patches.cpp", "status.cpp"};
+  if (p.common_sources.empty() || p.game_sources.empty()) {
+    if (error) *error = utf8(p.sdk / "package.toml") + ": no game sources listed";
+    return false;
+  }
   for (const std::string& dir : strings(t["games"].node())) {
     GameInfo g;
     g.dir = p.sdk / "games" / dir;
@@ -123,14 +151,34 @@ bool find_compiler(const Package& package, const std::string& requested, const R
   if (!package.toolchain_url.empty()) {
     const fs::path dir = package.home / "toolchain";
     const fs::path compiler = dir / package.toolchain_dir / package.toolchain_cxx;
-    if (!fs::exists(compiler)) {
-      std::error_code ec;
+    std::error_code ec;
+    if (!fs::exists(compiler, ec)) {
+      // curl and tar run inside the toolchain folder with relative names:
+      // Windows' tar reads its arguments in the system's code page, so a
+      // package folder named with other characters would not reach it.
+      // A folder it cannot write to (Program Files) would otherwise show up
+      // as a failed download, blamed on the internet connection.
+      if (!check_writable(package.home, error)) return false;
       fs::create_directories(dir, ec);
-      const fs::path archive = dir / "download.zip";
-      report.line("Downloading the compiler (once): " + package.toolchain_url);
-      if (run_process({system_tool("curl"), "-fL", "--retry", "3", "-o", utf8(archive), package.toolchain_url}).exit_code !=
-          0) {
-        if (error) *error = "cannot download " + package.toolchain_url;
+      // Named after the toolchain, so a download interrupted for one version
+      // is never resumed with another's bytes.
+      const std::string archive_name = package.toolchain_dir + ".zip";
+      const fs::path archive = dir / archive_name;
+      report.line("Downloading the compiler (once, about 190 MB): " + package.toolchain_url);
+      // -C - resumes a download that was interrupted.
+      const std::vector<std::string> curl = {system_tool("curl"), "-fL", "--retry", "3", "-C", "-",
+                                             "-o", archive_name, package.toolchain_url};
+      ProcessResult download = run_process(curl, utf8(dir));
+      if (download.exit_code == 33) {
+        // 33: the server, or a proxy on the way, ignored the request to resume
+        // (and would every time): download it again from the beginning.
+        fs::remove(archive, ec);
+        download = run_process(curl, utf8(dir));
+      }
+      if (download.exit_code != 0) {
+        if (error)
+          *error = "cannot download " + package.toolchain_url + " (check the internet connection and run OpenGP again):\n" +
+                   tail(download.output);
         return false;
       }
       report.line("Checking the download");
@@ -140,24 +188,47 @@ bool find_compiler(const Package& package, const std::string& requested, const R
         if (error) *error = "the download's SHA-256 is " + sha + ", expected " + package.toolchain_sha256;
         return false;
       }
+      // Unpacked into a folder of its own first, and moved into place only
+      // when complete: an interrupted unpack is never taken for a compiler.
       report.line("Unpacking the compiler");
-      std::vector<std::string> tar = {system_tool("tar"), "-xf", utf8(archive), "-C", utf8(dir)};
+      const fs::path unpacking = dir / "unpacking";
+      fs::remove_all(unpacking, ec);
+      fs::create_directories(unpacking, ec);
+      std::vector<std::string> tar = {system_tool("tar"), "-xf", archive_name, "-C", "unpacking"};
       for (const std::string& e : package.toolchain_exclude) tar.insert(tar.end(), {"--exclude", e});
-      const ProcessResult r = run_process(tar);
-      fs::remove(archive, ec);
-      if (r.exit_code != 0 || !fs::exists(compiler)) {
-        if (error) *error = "cannot unpack the compiler: " + r.output;
+      const ProcessResult r = run_process(tar, utf8(dir));
+      std::string why = r.exit_code != 0 ? tail(r.output) : std::string();
+      if (r.exit_code == 0) {
+        fs::remove_all(dir / package.toolchain_dir, ec);
+        // A virus scanner looking at the new files can hold the folder for a
+        // moment, which makes Windows refuse to move it: try for a while.
+        for (int attempt = 0; attempt < 40; ++attempt) {
+          fs::rename(unpacking / package.toolchain_dir, dir / package.toolchain_dir, ec);
+          if (!ec) break;
+          std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        }
+        if (ec) why = "cannot move it into place: " + ec.message();
+      }
+      fs::remove_all(unpacking, ec);
+      if (!fs::exists(compiler, ec)) {
+        // The download is kept (checked): the next run only unpacks again.
+        if (error) *error = "cannot unpack the compiler into " + utf8(dir) + ":\n" + why;
         return false;
       }
+      fs::remove(archive, ec);
     }
     *cxx = utf8(compiler);
     return true;
   }
+  std::string too_old;
   for (const std::string& c : package.cxx_candidates) {
-    if (works(c)) {
-      *cxx = c;
-      return true;
+    if (!works(c)) continue;
+    if (!new_enough(package, c)) {
+      if (too_old.empty()) too_old = c;
+      continue;
     }
+    *cxx = c;
+    return true;
   }
   if (error) {
     *error = "no C++ compiler found (tried";
@@ -165,7 +236,9 @@ bool find_compiler(const Package& package, const std::string& requested, const R
 #ifdef __APPLE__
     *error += "). Install Apple's command line tools: xcode-select --install";
 #else
-    *error += "). Install GCC 12 or later, or Clang 16 or later (e.g. sudo apt install g++).";
+    *error += "). Install GCC 12 or later, or Clang 16 or later: on Ubuntu 22.04, sudo apt install g++-12; on "
+              "newer systems, sudo apt install g++.";
+    if (!too_old.empty()) *error += " (" + too_old + " is too old.)";
 #endif
   }
   return false;
@@ -183,6 +256,49 @@ const GameInfo* identify_image(const Package& package, const std::string& image)
   return nullptr;
 }
 
+bool check_writable(const fs::path& home, std::string* error) {
+  const fs::path test = home / "build" / "write-test";
+  std::string why;
+  if (os::write_file_atomically(utf8(test), "ok", 2, &why)) {
+    std::error_code ec;
+    fs::remove(test, ec);
+    return true;
+  }
+  // The folder once, in the system's style; the reason without the file's path.
+  fs::path shown = home.lexically_normal();
+  shown.make_preferred();
+  if (const auto colon = why.rfind(": "); why.rfind("cannot write ", 0) == 0 && colon != std::string::npos)
+    why = why.substr(colon + 2);
+  while (!why.empty() && (why.back() == '.' || why.back() == ' ')) why.pop_back();  // the system's full stop
+  if (error)
+    *error = "OpenGP cannot write to its folder, " + utf8(shown) + " (" + why +
+             "). Move the OpenGP folder somewhere you can write to, such as your Documents folder (not Program "
+             "Files), and open it again.";
+  return false;
+}
+
+std::string not_a_package_message(const std::string& error) {
+  return error +
+         "\n\nOpenGP must be run from its unpacked package folder: unpack the whole OpenGP archive first (on "
+         "Windows, right-click the zip and choose Extract All), then run OpenGP from the folder it makes.";
+}
+
+std::string why_not_supported(const Package& package, const std::string& image) {
+  std::error_code ec;
+  const fs::path path = os::utf8_path(image);
+  if (!fs::is_regular_file(path, ec)) return "no such file; skipped";
+  std::string ext = utf8(path.extension());
+  std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
+  if (ext == ".rvz" || ext == ".gcz" || ext == ".wia" || ext == ".ciso" || ext == ".wbfs")
+    return "a compressed image; convert it to .iso with Dolphin (see ISO/README.txt)";
+  disc::Image img;
+  if (!img.open(image, nullptr)) return "not a GameCube or Triforce disc image; skipped";
+  std::string supported;
+  for (const GameInfo& g : package.games) supported += (supported.empty() ? "" : " or ") + g.id;
+  return "its game is " + img.game_id() + ", not a supported release (OpenGP needs " + supported +
+         ", the USA releases); skipped";
+}
+
 std::vector<std::pair<const GameInfo*, std::string>> find_images(const Package& package,
                                                                    const std::vector<std::string>& given,
                                                                    const Reporter& report) {
@@ -191,9 +307,13 @@ std::vector<std::pair<const GameInfo*, std::string>> find_images(const Package& 
     return std::any_of(found.begin(), found.end(), [&](const auto& f) { return f.first == g; });
   };
   if (!given.empty()) {
-    for (const std::string& image : given) {
+    for (const std::string& name : given) {
+      // Remembered as an absolute path: the game may be started from anywhere.
+      std::error_code ec;
+      const fs::path absolute = fs::absolute(os::utf8_path(name), ec);
+      const std::string image = ec ? name : utf8(absolute.lexically_normal());
       const GameInfo* g = identify_image(package, image);
-      if (!g) report.line(image + ": not a disc image of a game OpenGP supports; skipped");
+      if (!g) report.line(image + ": " + why_not_supported(package, image));
       else if (!have(g)) found.emplace_back(g, image);
     }
     return found;
@@ -209,12 +329,20 @@ std::vector<std::pair<const GameInfo*, std::string>> find_images(const Package& 
     std::error_code ec;
     const fs::path dir = package.home / folder;
     if (!fs::is_directory(dir, ec)) continue;
-    for (const auto& entry : fs::recursive_directory_iterator(dir, ec)) {
-      std::string ext = entry.path().extension().string();
+    // Never throws: an unreadable folder in there is skipped.
+    for (fs::recursive_directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end;
+         !ec && it != end; it.increment(ec)) {
+      std::string ext = utf8(it->path().extension());
       std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
-      if (ext != ".iso" && ext != ".gcm") continue;
-      const std::string image = utf8(entry.path());
-      if (const GameInfo* g = identify_image(package, image); g && !have(g)) found.emplace_back(g, image);
+      const std::string image = utf8(it->path());
+      const std::string name = utf8(it->path().filename());
+      const bool compressed = ext == ".rvz" || ext == ".gcz" || ext == ".wia" || ext == ".ciso" || ext == ".wbfs";
+      if (ext != ".iso" && ext != ".gcm" && !compressed) continue;
+      if (const GameInfo* g = identify_image(package, image)) {
+        if (!have(g)) found.emplace_back(g, image);
+      } else {
+        report.line(name + ": " + why_not_supported(package, image));
+      }
     }
   }
   // The package's order: the main game first.
@@ -278,9 +406,9 @@ bool install_game(const Package& package, const GameInfo& game, const std::strin
   // 3. Compile: the hand-written sources first (quick, so problems show at once),
   // then the generated ones.
   const fs::path common = package.sdk / "games" / "common";
-  std::vector<fs::path> sources = {common / "main.cpp",     common / "arcade.cpp",     common / "cabinet.cpp",
-                                   common / "camera_use.cpp", common / "game_log.cpp", common / "sdk_hle.cpp",
-                                   game.dir / "patches.cpp",  game.dir / "status.cpp"};
+  std::vector<fs::path> sources;
+  for (const std::string& s : package.common_sources) sources.push_back(common / s);
+  for (const std::string& s : package.game_sources) sources.push_back(game.dir / s);
   std::vector<fs::path> generated;
   for (const auto& entry : fs::directory_iterator(work / "generated"))
     if (entry.path().extension() == ".cpp") generated.push_back(entry.path());
@@ -293,13 +421,15 @@ bool install_game(const Package& package, const GameInfo& game, const std::strin
   base.push_back("-DOPENGP_GAME_ID=\"" + game.id + "\"");
   base.push_back("-DOPENGP_GAME_TITLE=\"" + game.title + "\"");
   base.push_back("-DOPENGP_DOL_SHA1=\"" + game.dol_sha1 + "\"");
-  // A C string: forward slashes, which Windows accepts too.
-  const std::u8string symbols_path = (game.dir / "config" / "symbols.txt").generic_u8string();
+  // Relative to the package folder, where the game's executable goes, so that
+  // the package can be moved: forward slashes, which Windows accepts too.
+  const std::u8string symbols_path =
+      (game.dir / "config" / "symbols.txt").lexically_relative(package.home).generic_u8string();
   base.push_back("-DOPENGP_SYMBOLS=\"" + std::string(symbols_path.begin(), symbols_path.end()) + "\"");
   std::vector<std::vector<std::string>> commands;
   std::vector<std::string> objects;
   for (std::size_t i = 0; i < sources.size(); ++i) {
-    const std::string obj = utf8(work / "obj" / (std::to_string(i) + "_" + sources[i].stem().string() + ".o"));
+    const std::string obj = utf8(work / "obj" / (std::to_string(i) + "_" + utf8(sources[i].stem()) + ".o"));
     std::vector<std::string> c = base;
     c.insert(c.end(), {"-c", utf8(sources[i]), "-o", obj});
     commands.push_back(std::move(c));

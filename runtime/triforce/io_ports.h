@@ -23,8 +23,10 @@ using namespace gekko;
 struct Controls {
   bool test = false, service = false, coin = false;
   bool start = false, item = false, cancel = false;
-  u8 steering = 0x80;
-  u8 gas = 0, brake = 0;
+  // At full precision: the cabinet's analog inputs are 16-bit, and a wheel
+  // or pedal of 10 bits or more would lose steps at 8.
+  float steering = 0.0f;           // -1 (full left) to 1 (full right)
+  float gas = 0.0f, brake = 0.0f;  // 0 (released) to 1
 };
 using ControlsSource = std::function<Controls()>;
 

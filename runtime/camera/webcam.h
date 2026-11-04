@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // A webcam as the camera's picture source, through SDL3's camera API. The
-// webcam is on only while the game asks for pictures (its start-up check, the
-// player's photo, the test menu's camera page): the first request turns it on,
-// and it goes off a few seconds after the last. While it is on, a thread takes
-// its frames as they come and keeps the newest, cropped to 4:3 around its
-// centre and scaled down to 320x240. Until its first frame comes (a fraction
-// of a second) there is no picture, and the camera sends a grey one.
+// webcam is on only while the game asks for pictures (the player's photo, the
+// test menu's camera page): a request turns it on, and it goes off a few
+// seconds after the last. The game's start-up check asks once, and gets a grey
+// picture without the webcam. While it is on, a thread takes its frames as
+// they come and keeps the newest, cropped to 4:3 around its centre and scaled
+// down to 320x240, brightened if the room is dim. Until its exposure has
+// settled (exposure.h; a fraction of a second to two seconds) there is no
+// picture, and the camera sends a grey one.
 //
 // Some systems ask the player first (macOS): until they allow it, and if they
 // don't, there are no pictures.
@@ -57,6 +59,7 @@ class Webcam final : public Source {
   bool on_ = false;
   std::chrono::steady_clock::time_point asked_;  // the game's latest request
   std::vector<u8> latest_;  // kPictureSize bytes once there is a picture
+  bool asked_before_ = false;  // the game has asked for a picture this run
 };
 
 }  // namespace camera

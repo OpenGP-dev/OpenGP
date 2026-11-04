@@ -30,6 +30,10 @@ import re
 import struct
 import sys
 from collections import defaultdict
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from naming import handwritten_names  # noqa: E402
 
 SYMBOL = re.compile(r"^(\S+) = \.\w+:0x([0-9A-Fa-f]+); // type:function size:0x([0-9A-Fa-f]+)")
 SYMBOL_LINE = re.compile(r'^(?P<name>"[^"]*"|\S+) = (?P<sec>[^:;\s]+):0x(?P<addr>[0-9A-Fa-f]+);(?P<rest>.*)$')
@@ -158,8 +162,12 @@ def apply_names(pairs, dols, functions, symbols) -> None:
             used.add(m["name"].strip('"'))
             line_of.setdefault(int(m["addr"], 16), i)
     renamed = [0, 0]
+    reserved = handwritten_names()
+    used |= reserved
     for address, name in renames:
         if GENERATED.match(name) or not IDENTIFIER.match(name) or not GENERATED.match(names_b[address]):
+            continue
+        if names_b[address] in reserved:  # hand-written code uses this name
             continue
         m = ADDRESS_SUFFIX.match(name)
         if m and int(m["hex"], 16) in address_map:  # names ending in an address of A (Stub_NoOp_8012161C)

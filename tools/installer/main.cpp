@@ -1,23 +1,26 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// OpenGP's installer (see installer.h): builds the games from the player's
-// disc images.
+// OpenGP's installer for the command line (see installer.h): builds the games
+// from the player's disc images, as the launcher (the package's OpenGP) does.
 //
-//   OpenGP [IMAGE...] [--force] [--jobs N] [--cxx COMPILER] [--keep-build]
+//   opengp-cli [IMAGE...] [--force] [--jobs N] [--cxx COMPILER] [--keep-build]
 //
 // Without images it uses the images each game was built from before, then
 // those in ISO/ and private/ next to it. Each game is built on its own: a
 // missing image only skips that game. Games already built by this version
 // are skipped unless --force is given. On Windows an image can be dropped on
-// OpenGP.exe.
+// opengp-cli.exe.
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <string>
 #include <vector>
 
 #include "app/paths.h"
 #include "installer.h"
+#include "os/atomic_file.h"
+#include "os/utf8.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -28,13 +31,15 @@
 namespace {
 
 constexpr const char* kUsage =
-    "usage: OpenGP [IMAGE...] [--force] [--jobs N] [--cxx COMPILER] [--keep-build]\n"
+    "usage: opengp-cli [IMAGE...] [--force] [--jobs N] [--cxx COMPILER]\n"
+    "                      [--keep-build]\n"
     "\n"
     "Builds the games from your disc images (.iso / .gcm). Without images, it uses\n"
-    "the ones the games were built from before, then those in ISO/ and private/.\n";
+    "the ones the games were built from before, then those in ISO/ and private/.\n"
+    "OpenGP, the launcher next to it, does the same in a window.\n";
 
-// When OpenGP.exe was started from Explorer (a double click, or an image
-// dropped on it), its console closes when it exits: wait for a key first.
+// When opengp-cli.exe was started from Explorer (a double click, or an
+// image dropped on it), its console closes when it exits: wait for a key first.
 void pause_if_own_console() {
 #ifdef _WIN32
   DWORD pids[2];
@@ -46,17 +51,25 @@ void pause_if_own_console() {
 #endif
 }
 
-int run(int argc, char** argv) {
+int run(const std::vector<std::string>& args) {
   std::vector<std::string> images;
   std::string cxx;
   bool force = false;
   installer::BuildOptions options;
-  for (int i = 1; i < argc; ++i) {
-    const std::string a = argv[i];
+  const std::size_t argc = args.size();
+  for (std::size_t i = 1; i < argc; ++i) {
+    const std::string& a = args[i];
     if (a == "--force") force = true;
     else if (a == "--keep-build") options.keep_build = true;
-    else if (a == "--jobs" && i + 1 < argc) options.jobs = static_cast<unsigned>(std::atoi(argv[++i]));
-    else if (a == "--cxx" && i + 1 < argc) cxx = argv[++i];
+    else if (a == "--jobs" && i + 1 < argc) {
+      char* end = nullptr;
+      const long n = std::strtol(args[++i].c_str(), &end, 10);
+      if (*end != '\0' || n < 1 || n > 256) {
+        std::fprintf(stderr, "--jobs %s: give a number from 1 to 256\n", args[i].c_str());
+        return 2;
+      }
+      options.jobs = static_cast<unsigned>(n);
+    } else if (a == "--cxx" && i + 1 < argc) cxx = args[++i];
     else if (a == "-h" || a == "--help") {
       std::printf("%s", kUsage);
       return 0;
@@ -71,10 +84,16 @@ int run(int argc, char** argv) {
   std::string error;
   installer::Package package;
   if (!installer::load_package(app::executable_dir(), &package, &error)) {
-    std::fprintf(stderr, "%s\n(OpenGP must be run from its package folder.)\n", error.c_str());
+    std::fprintf(stderr, "%s\n", installer::not_a_package_message(error).c_str());
     return 1;
   }
   std::printf("OpenGP %s installer\n\n", package.version.c_str());
+  // Everything it makes goes in the package folder: say so at once if it
+  // cannot write there.
+  if (!installer::check_writable(package.home, &error)) {
+    std::fprintf(stderr, "%s\n", error.c_str());
+    return 1;
+  }
 
   installer::Reporter report;
   report.line = [](const std::string& s) {
@@ -93,7 +112,8 @@ int run(int argc, char** argv) {
     if (!have) std::printf("%s: no disc image found; skipped.\n", g.title.c_str());
   }
   if (found.empty()) {
-    std::printf("\nPut your disc images in the ISO folder next to OpenGP, or drop one on it (see docs/playing.md).\n");
+    std::printf(
+        "\nPut your disc images in the ISO folder next to opengp-cli, or drop one on it (see ISO/README.txt).\n");
     return 1;
   }
 
@@ -103,6 +123,13 @@ int run(int argc, char** argv) {
     std::printf("\n%s (%s)\n", game->title.c_str(), game->id.c_str());
     if (!force && installer::is_installed(package, *game)) {
       std::printf("Already built by this version (--force rebuilds it).\n");
+      // The image may have moved: the game uses this one from now on.
+      if (app::remembered_image(package.home / "user", game->id) != image) {
+        if (app::remember_image(package.home / "user", game->id, image, &error))
+          std::printf("%s will now use %s\n", game->title.c_str(), image.c_str());
+        else
+          std::fprintf(stderr, "%s\n", error.c_str());
+      }
       continue;
     }
     if (compiler.empty() && !installer::find_compiler(package, cxx, report, &compiler, &error)) {
@@ -114,14 +141,14 @@ int run(int argc, char** argv) {
       ++failures;
     }
   }
-  if (failures == 0) std::printf("\nDone. Start a game with its launcher (opengp-mkgp2 or opengp-mkgp1).\n");
+  if (failures == 0) std::printf("\nDone. Start a game with OpenGP, or with opengp-mkgp2 or opengp-mkgp1.\n");
   return failures ? 1 : 0;
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
-  const int code = run(argc, argv);
+  const int code = run(os::utf8_args(argc, argv));
   pause_if_own_console();
   return code;
 }

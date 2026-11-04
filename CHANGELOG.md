@@ -1,217 +1,69 @@
-# Changelog
+## 1.0.2
 
-## Unreleased
-
-### Even frame pacing
-
-- **Even frame pacing** (Video tab, off by default; `[video] even_pacing`) shows each frame on the
-  game's own 60 Hz tick, as a cabinet's display does, instead of as soon as it is drawn. The game
-  takes more time over some frames than others, so they used to come 12 to 21 ms apart; a FreeSync
-  or G-Sync monitor showed that unevenness as it came. Now they are presented at evenly spaced
-  times, for about half a frame (8 ms) more delay. See [docs/playing.md](docs/playing.md#even-frame-pacing).
-
-### Smoother
-
-From a profile of a whole playthrough of GP 2:
-
-- The busiest courses (Arena and Waluigi Stadium, the Mario courses, the flyovers before a race)
-  drop far fewer frames. OpenGP transforms the game's vertices on the CPU, over 80,000 a frame
-  there; each now takes about 40% less time, with exactly the same results.
-- Shorter pauses when loading between scenes and at the start of a course: the game's file name
-  lookup, memory copies and fills are done natively.
-- The game image is held in memory, as on a cabinet: no more stutters, or the odd freeze of a
-  second, while the game streams its music from the disc during a race.
-- No more 4-40 ms renderer stalls in races where the game reads the picture back (Arena and
-  Waluigi Stadium, the Mario courses), and shorter stalls when many textures load at once.
-- Fixed a memory leak: every race kept a 64 MB texture at 8x (one of the game's shadow maps).
-- The per-draw timers cost about half a millisecond a frame in busy races, even when nothing
-  was measuring; they are now nearly free.
-
-### Fixes
-
-- The rainbows of GP 2's Rainbow Coaster and Rainbow Downhill no longer nearly vanish at high
-  internal resolutions: they fade in with distance as they should.
-- Widescreen: GP 2 no longer leaves out objects in the side strips (scenery, item boxes, a blimp)
-  that then popped in at the edges of the 4:3 picture.
-- The webcam is on only while the game uses it: while your photo is taken, for a moment as the
-  game starts, and on the test menu's camera page. It used to stay on, light and all, for as long
-  as the game ran, taking about 5% of a CPU core for pictures nothing used.
-
-## 0.4.0 (2026-10-16)
-
-This release links cabinets for Versus races, on one computer or a local network, and shows what
-you are playing on Discord. It comes with installer packages for Windows, Linux and macOS.
-
-### Linked cabinets (milestone 12)
-
-- Up to four cabinets link for Versus races, as in an arcade: copies of OpenGP on one computer,
-  or on computers on a local network. Give each its own **Cabinet number** in the menu's Game tab
-  (`[link] cabinet`, or `--cabinet N`); on a local network, also turn on **Link over the local
-  network** (`[link] lan`, or `--lan`). Start a game on one cabinet, and players on the others
-  join it. Both games link, each with its own kind. See
-  [docs/playing.md](docs/playing.md#linked-cabinets).
-- The cabinets find each other by themselves, and connect only to cabinets playing the same game.
-  A cabinet looks for the others as it starts: while others are running, it waits on its LINK
-  screen until it has linked with them (up to 15 seconds). The Game tab shows who this cabinet is
-  linked with.
-- If a cabinet stops in the middle of a game, the others stop with "Link error occurred", as arcade
-  cabinets do: OpenGP restarts them after a few seconds.
-
-### Controls
-
-- **Use the controls in the background too** (Controls tab) lets every OpenGP window read the
-  controls, active or not, to drive several copies on one computer at once: gamepads everywhere,
-  the keyboard on Windows.
-
-### Discord Rich Presence (milestone 15)
-
-- While Discord runs on the same computer, your profile shows what you are playing, as "Playing
-  OpenGP": the game, and whether you are choosing a character or a course (or having your photo
-  taken); in a race, the cup, round and course, your character, your place and the lap, with the
-  race's time; then the place you finished, with the cup's trophy for a win. Both games, with their
-  own names for everything and pictures of the characters and courses. It is on by default; turn it
-  off in the menu's Game tab (**Show what you're playing**) or with `[discord] rich_presence` in
-  `user/settings.toml`. See [docs/playing.md](docs/playing.md#discord).
-- OpenGP talks to the Discord app through its local connection, without Discord's SDK, and sends
-  nothing anywhere else. `OPENGP_LOG_DISCORD=1` prints what it shows.
-
-### Fixes
-
-- Widescreen: the rain in GP 2's DK Cup (rounds 3 and 4) covers the whole screen instead of
-  stopping at the edges of the 4:3 picture, and so does the fade at the end of the attract mode's
-  demo race.
-- GP 2 no longer freezes on the loading screen before a race with Bowser's **Flaming Tender**
-  item. Its file is the last one in the disc image, and loading it reads a few bytes past the
-  image's end, which OpenGP refused; the game then waited forever. Those bytes now read as zeros,
-  as on a cabinet, where the image sits in a larger memory. Any read that still fails is printed.
-- If the game's picture stops for 10 seconds while it is not paused, OpenGP writes a hang report,
-  `user/hang-report.txt`: each of the game's threads with its call stack. See
-  [docs/playing.md](docs/playing.md#if-the-game-freezes).
-
-## 0.3.0 (2026-10-12)
-
-This release adds the cabinet's camera, from a webcam, and a pause. It is source only, with no
-installer packages: build it as [docs/building.md](docs/building.md) explains. It has been
-built and tested on Windows; the Linux and macOS builds have not been tested since milestone 10.
-
-### The camera (milestone 11)
-
-- The cabinet's camera, the NamCam2, can use a webcam: both games take the player's photo when a
-  game starts and show it on their character in the race. It is off by default; turn it on in
-  the menu's Game tab (**Photos from**), in `user/settings.toml` (`[camera] source`) or with
-  `--camera webcam`. A test pattern (`--camera test`) stands in without a webcam. See
-  [docs/playing.md](docs/playing.md#the-camera).
-- The media board's network works: the games' sockets run on host sockets, or on services OpenGP
-  answers itself. The camera is one, an HTTP server that sends a JPEG, so it needs no network
-  settings and opens no ports. Connections to other cabinets are refused until linked cabinets
-  (milestone 12); `OPENGP_LOG_NETWORK=1` shows what the games try.
-- With the camera on, the start-up device check finds it in about a second. On a cabinet it waits
-  40 seconds for the camera to power up.
-
-### The GP 2 decomp's findings (milestone 10)
-
-- Both games' symbol maps have the names of functions and globals from
-  [mkgp2-decomp](https://github.com/naari3/mkgp2-decomp): 3,427 functions and 488 objects in
-  GP 2, about 1,000 functions in GP. Backtraces and profiles show them.
-- `--game-log` prints the games' own debug messages, converted from Shift JIS.
-
-### Pause (milestone 14)
-
-- **P** (or the Pause key) pauses the game, and the menu (Esc) pauses it while it is open. The
-  whole machine stops: the game, its timers, its sound and the wheel's forces, and it carries on
-  as if no time had passed. Optionally, the game also pauses while its window is unfocused.
-  Pausing is only for playing solo: a game linked to other cabinets keeps running. See
-  [docs/playing.md](docs/playing.md#pausing).
-
-### Smaller changes
-
-- GP 2's attract mode has sound every time round. The game plays its first time round without
-  sound on purpose (it starts quiet and turns the sound on for the rounds after), which made it
-  seem broken.
-- Clearer wording in the menu's Game tab.
-
-Still missing before 1.0 are linked cabinets (milestone 12).
-
-## 0.2.0 (2026-10-06)
-
-This release adds installer packages for Windows, Linux and macOS. You download a package and put
-your disc images in it, and its installer builds the games on your computer. The packages contain
-no game code or data.
-
-| Package | Compiler the installer uses |
-|---------|-----------------------------|
-| `OpenGP-0.2.0-windows-x64.zip` | llvm-mingw, downloaded once, about 190 MB |
-| `OpenGP-0.2.0-linux-x64.tar.gz` | the system's `g++` or `clang++`, GCC 12 or Clang 16 or later |
-| `OpenGP-0.2.0-macos-arm64.tar.gz` | Apple's Clang from `xcode-select --install`, on Apple Silicon with macOS 13 or later |
-
-[docs/packaging.md](docs/packaging.md) explains how the packages work. The games have been played
-from the Windows and macOS packages. CI builds and tests the Linux package, but nobody has played
-from it yet.
-
-- The installer package holds the runtime and the recompiler, already built, and an installer
-  named `OpenGP`. The installer builds each game from your own disc image. You can install either
-  game on its own, and running the installer again after an update rebuilds them.
-- OpenGP runs on macOS with Apple Silicon. The renderer uses Metal, so MoltenVK is not needed. The
-  build converts the shaders to the Metal Shading Language, and the game's threads ask macOS for
-  its performance cores.
-- Some converted dumps have a placeholder header with the ID `RELSAB`. OpenGP now recognises
-  these images by their `main.dol`, so they work without being patched.
-- GCC 12 at `-O3` could drop the rounding to single precision from paired-single results in
-  recompiled code. `fp::keep_single` stops it.
-- A packaged game keeps `user/` next to its executable and remembers the image it was built from
-  in `user/images.toml`.
-- Both games share one launcher `main()`. Each game's ID, title and supported `main.dol` are in its
-  `game.toml`.
-- `--version` prints the version. `OPENGP_LOG_INTERP=1` lists code that falls back to the
-  interpreter. Neither game has any now, because the recompiler handles calls into the middle of
-  functions.
-
-Still missing are the NamCam2 camera, linked cabinets, which are next in milestone 10, and signed
-macOS packages. Until the packages are signed, open a macOS package once with right-click and
-Open, as [docs/packaging.md](docs/packaging.md) describes.
-
-## 0.1.0 (2026-10-04)
-
-The first release: both Mario Kart Arcade GP games are playable from start to finish.
-
-This is a **source release**. OpenGP contains no game code or data, and neither does this release:
-you build it yourself from your own copy of the games (see [Building](README.md#building) and
-[docs/game-files.md](docs/game-files.md)). Each build runs only with the disc image it was made for.
-
-### Games
-
-| Game | ID | Launcher |
-|------|----|----------|
-| Mario Kart Arcade GP 2 (USA) | `GGPE02` | `opengp-mkgp2` |
-| Mario Kart Arcade GP (USA) | `GGPE01` | `opengp-mkgp1` |
-
-Both are fully recompiled (7,612 and 7,504 functions), with nothing left to the interpreter in play.
-
-### What works
-
-- **Playing**: start-up device check, attract mode, coins or free play (`--free-play`, or the
-  menu), Mario Card creation and saving, character and cup selection, Grand Prix races at 60 fps,
-  results and continue.
-- **Controls**: keyboard, gamepads and steering wheels/pedals (SDL3), rebindable in the menu or
-  `user/controls.toml`; force feedback on wheels (spring, friction, road feel) and rumble on
-  gamepads.
-- **Graphics**: Vulkan, internal resolution up to 8x, widescreen (16:9 up to 32:9) with more of the
-  track on the sides and the 2D kept in shape, fullscreen.
-- **Sound**: the game's music and effects (its DSP audio microcode emulated at a high level).
-- **Mario Cards**: one file per card in `user/cards/<game>/`, chosen in the menu.
-- **Operator settings**: the game's own test menu (F2, or `--test-menu`), and the I/O test.
-- **Menu** (Esc): Mario Card, free play, video, sound and controls settings, saved to
-  `user/settings.toml`.
-
-### Not yet
-
-- The NamCam2 camera is disabled (no player photos).
-- Cabinets cannot be linked (no multiplayer between machines).
-- Played on Windows only. Linux builds and passes the tests in CI but has not been played; macOS
-  is untested (the renderer is Vulkan only, no Metal yet).
-- Only the USA releases are supported.
+- The command-line installer is now called `opengp-cli`, so it is no longer mistaken for the way to install OpenGP 
+- The menu no longer shows your full folder path: an **Open folder** button opens the card or controls folder instead
+- Plainer names and help text in the menu's settings, These now match the settings text from the launcher
+- Aspect ratio and resolution choices now name their sizes (16:9, 1080p, 4K and so on)
+- Gamepads without a Guide button (or where Steam takes it) open the menu with **Back** and **Start** held together
+- Key bindings now show the correct key labels on non-US keyboards
+- Fixed the default window size on high-DPI displays
+- Removed debug spam from the console (use `--verbose` to restore pre 1.0.2 behaviour)
+- Added a first-run hint for inserting a coin and opening the menu
+- Improved wheel and pedal precision
+- Fixed pedals reading as half-pressed until they were first moved
+- Fixed pedals binding to the wrong axis half when bound before they were first moved
+- The webcam no longer switches on at start-up: the game's camera check gets a picture without it
+- Fixed the first photo coming out darker than intended
+- Fixed audio drifting out of sync after changing the audio device
+- Fixed occasional audio stutter
+- Fixed a small periodic stutter on 60 and 120 Hz displays
 
 ### Known issues
 
 - Races need most of a CPU core: a PC busy with something else (another game) can drop below
   60 fps.
+- Linked races can still freeze for a moment now and then; this is being fixed for 1.0.3.
+- 1.0.2 cabinets link with 1.0.1 ones, but not with 1.0.0, run 1.0.1 or newer on every cabinet.
+
+## 1.0.1 (2/11/2026)
+
+- A new in-game menu in the OpenGP launcher's look: a pause card, with the settings in a dialog
+- GP 1: fixed objects popping in at the sides of the screen in widescreen
+- Fewer dropped frames on Windows: the game's timed events now arrive on time
+- Less GPU work at high internal resolutions, for the same picture
+- Fixed the picture staying blank or white after the GPU briefly ran out of memory
+- Fixed a possible freeze in effects that read the picture back
+- Fixed crashes and freezes caused by damaged disc images or bad game data
+- Linked play: less lag between computers, and cabinets are harder to disrupt by mistake
+- Linked cabinets only connect over the local network (virtual LANs such as Radmin VPN and Hamachi still work)
+- Fixed a brief freeze when a link connection was refused
+- Linked cabinets on mismatched versions now tell you why they can't connect
+- Fixed steering stuck at full lock when extra USB devices (pedals, handbrakes) were connected
+- Fixed inputs a device doesn't have reading as half-pressed
+- Steering wheels get fewer force-feedback updates: only forces that change are sent
+- Fixed menu keys carrying over into the game
+- Fixed a bug where binding certain keys broke the controls file
+- Menu sliders now stay within their range
+- "Restore defaults" now asks for confirmation
+- Fixed Mario Card progress being lost when saving failed, and the game now tells you
+- Fixed card and settings saves failing on Windows with OneDrive or antivirus running
+- A bad value in the settings file no longer resets everything
+- Settings and controls are now saved when you close the menu
+- A second copy of a game can no longer share a user folder with one that is running
+- Fixed the second-cabinet command not finding the game
+- Fixed the game not finding its image when launched from another folder
+- Fixed crashes and install failures when the folder path contains accented or non-Latin characters
+- Fixed the game ignoring or crashing on ISO files with non-ASCII names
+- Start-up errors are now shown in a message box
+- Crashes now write a crash report (on Windows, the game tells you where it is)
+- Linux: fixed the webcam staying on after a game restart
+- Linux: the installer finds GCC 12 and newer Clang versions, so Ubuntu 22.04 works
+- Improved compiler download feedback and recovery from interrupted installs
+- Clearer messages for unsupported or compressed disc images
+- Clearer errors for unwritable or zipped folders
+
+### Known issues
+
+- Races need most of a CPU core: a PC busy with something else (another game) can drop below
+  60 fps.
+

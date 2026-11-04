@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Based on Dolphin's DVD/AMMediaboard.cpp (Copyright Dolphin Emulator
+// Project, GPL-2.0-or-later).
 
 #include "triforce/mediaboard.h"
+
+#include "os/notice.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -8,6 +13,7 @@
 #include <filesystem>
 
 #include "hw/exi.h"
+#include "os/utf8.h"
 
 namespace triforce {
 
@@ -119,8 +125,8 @@ bool log_enabled() {
 // ---- Files -------------------------------------------------------------------------------------
 
 void MediaBoard::File::open(const std::string& path) {
-  f = std::fopen(path.c_str(), "rb+");
-  if (!f) f = std::fopen(path.c_str(), "wb+");
+  f = os::fopen_utf8(path, "rb+");
+  if (!f) f = os::fopen_utf8(path, "wb+");
   if (!f) mb_error("cannot open %s", path.c_str());
 }
 
@@ -138,9 +144,12 @@ void MediaBoard::File::read(u32 offset, u8* dst, u32 length) {
 
 void MediaBoard::File::write(u32 offset, const u8* src, u32 length) {
   if (!f) return;
-  std::fseek(f, static_cast<long>(offset), SEEK_SET);
-  std::fwrite(src, 1, length, f);
-  std::fflush(f);
+  if ((std::fseek(f, static_cast<long>(offset), SEEK_SET) != 0 || std::fwrite(src, 1, length, f) != length ||
+       std::fflush(f) != 0) &&
+      !warned) {
+    warned = true;
+    os::notify_player("The game's records cannot be saved: check that the user folder can be written to.");
+  }
 }
 
 // ---- Board -------------------------------------------------------------------------------------

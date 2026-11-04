@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Based on Dolphin's Boot_BS2Emu.cpp (CBoot::EmulatedBS2_GC, SetupGCMemory,
+// RunApploader), Copyright Dolphin Emulator Project, GPL-2.0-or-later.
 
 #include "os/boot.h"
 
@@ -8,6 +11,7 @@
 #include "ppc/interpreter.h"
 #include "ppc/memory.h"
 #include "ppc/ops.h"
+#include "ppc/timebase.h"
 
 namespace os {
 
@@ -22,25 +26,6 @@ constexpr u32 kApploaderFuncs = 0x80003100;  // where the entry writes init/main
 constexpr u32 kApploaderReport = 0x81300000;  // report callback (a blr)
 constexpr u32 kApploaderArgs = 0x81300004;    // main's three out-parameters
 constexpr u32 kConsoleTypeLatestDevkit = 0x10000006;
-constexpr u64 kTimebaseHz = 40500000;
-
-// Seconds since 2000-01-01 00:00 in local time (the GameCube epoch).
-u64 local_seconds_since_2000() {
-  const std::time_t now = std::time(nullptr);
-  std::tm local{}, utc{};
-#ifdef _WIN32
-  localtime_s(&local, &now);
-  gmtime_s(&utc, &now);
-#else
-  localtime_r(&now, &local);
-  gmtime_r(&now, &utc);
-#endif
-  local.tm_isdst = 0;
-  utc.tm_isdst = 0;
-  const auto offset = static_cast<long long>(std::difftime(std::mktime(&local), std::mktime(&utc)));
-  constexpr long long kUnixTo2000 = 946684800;
-  return static_cast<u64>(static_cast<long long>(now) + offset - kUnixTo2000);
-}
 
 // Runs one apploader function in the interpreter until it returns.
 void run_function(ppc::Context& ctx, u8* base, u32 address) {
@@ -50,7 +35,7 @@ void run_function(ppc::Context& ctx, u8* base, u32 address) {
 
 }  // namespace
 
-u64 boot_time_base() { return local_seconds_since_2000() * kTimebaseHz; }
+u64 boot_time_base() { return ppc::local_seconds_since_2000() * ppc::kTimebaseHz; }
 
 bool boot_disc(const disc::Image& disc, u8* base, u32 mem1_size, ppc::Context& ctx, BootResult* result,
                std::string* error) {

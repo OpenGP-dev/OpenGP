@@ -7,6 +7,7 @@
 #include "camera_use.h"
 #include "ppc_recomp_shared.h"
 #include "sdk_hle.h"
+#include "widescreen.h"
 
 namespace guest {
 
@@ -59,6 +60,14 @@ PPC_FUNC(StrPcb_StateTick) {
 PPC_FUNC(DVDConvertPathToEntrynum) {
   static constexpr sdk_hle::DvdFs kFs{-0x4D38, -0x4D44, -0x4D40, -0x4D34, 0x8040F510u};
   sdk_hle::convert_path_to_entrynum(ctx, base, kFs, __imp__DVDConvertPathToEntrynum);
+}
+
+// The culling frustum builder (GP 2's fn_80138184, called from the same
+// CObj_UpdatePerspParam and Scene3D_SetupProjection): widened in widescreen
+// (widescreen.h).
+PPC_FUNC(fn_8010948C) {
+  widescreen::widen_frustum(ctx);
+  __imp__fn_8010948C(ctx, base);
 }
 
 }  // namespace guest

@@ -13,18 +13,14 @@
 #include "os/atomic_file.h"
 #include "os/reboot.h"
 #include "triforce/card_folder.h"
+#include "test_temp.h"
 
 namespace fs = std::filesystem;
 
 namespace {
 
 // A fresh folder for a test's files.
-fs::path temp_dir(const char* name) {
-  const fs::path dir = fs::temp_directory_path() / "opengp_tests" / name;
-  fs::remove_all(dir);
-  fs::create_directories(dir);
-  return dir;
-}
+fs::path temp_dir(const char* name) { return opengp_test::temp_dir(name); }
 
 void write(const fs::path& path, const std::string& text) { std::ofstream(path, std::ios::binary) << text; }
 
@@ -76,12 +72,27 @@ TEST_CASE("settings: partial files, clamping and errors") {
   REQUIRE_MESSAGE(app::load_settings(path.string(), &s, &error), error);
   CHECK(s.cabinet == 4);
   CHECK(s.link_port == 1024);
+  // What the file leaves out keeps the values the first file gave.
+  CHECK(s.internal_resolution == 8);
+  CHECK(s.aspect == app::AspectRatio::Wide16x9);
+  CHECK(s.volume == 100);
 
-  write(path, "[video]\naspect_ratio = \"5:4\"\n");
-  CHECK_FALSE(app::load_settings(path.string(), &s, &error));
+  // A value it does not know: a warning, and the rest of the file counts.
+  write(path, "[video]\naspect_ratio = \"5:4\"\nvsync = false\n");
+  REQUIRE(app::load_settings(path.string(), &s, &error));
   CHECK(error.find("5:4") != std::string::npos);
+  CHECK(s.aspect == app::AspectRatio::Wide16x9);
+  CHECK_FALSE(s.vsync);
+  // A file that cannot be parsed at all.
   write(path, "[video\n");
   CHECK_FALSE(app::load_settings(path.string(), &s, &error));
+  CHECK_FALSE(error.empty());
+
+  // The window size's limits.
+  write(path, "[video]\nwindow_width = 10\nwindow_height = 99999\n");
+  REQUIRE(app::load_settings(path.string(), &s, &error));
+  CHECK(s.window_width == 320);
+  CHECK(s.window_height == 16384);
 }
 
 TEST_CASE("settings: widescreen sides") {
@@ -134,6 +145,48 @@ TEST_CASE("card folder") {
   cards.hold("Luigi");
   CHECK(cards.held() == "Luigi");
   CHECK_FALSE(cards.inserted());
+
+  // A name from settings.toml that is not a file name holds no card.
+  const std::vector<std::string> bad_names = {"", ".", "..", "../Luigi", "a/b", "a\tb", std::string(241, 'x')};
+  for (const std::string& bad : bad_names) {
+    CHECK_FALSE_MESSAGE(triforce::CardFolder::valid_name(bad), bad);
+    cards.hold(bad);
+    CHECK(cards.held().empty());
+    CHECK_FALSE(cards.exists(bad));
+  }
+  const std::vector<std::string> good_names = {"Card 1", "Mario's card", "Luigi", "COM10", "Console", ".hidden",
+                                               std::string(240, 'x')};
+  for (const std::string& good : good_names) CHECK_MESSAGE(triforce::CardFolder::valid_name(good), good);
+  // Names only Windows refuses: other systems keep them, as 1.0.0 did.
+  for (const char* windows :
+       {"a\\b", "C:x", "CON", "com1", "nul.txt", "trailing.", "trailing ", "Who?", "a\"b", "a*b", "a<b>", "a|b"}) {
+#ifdef _WIN32
+    CHECK_FALSE_MESSAGE(triforce::CardFolder::valid_name(windows), windows);
+#else
+    CHECK_MESSAGE(triforce::CardFolder::valid_name(windows), windows);
+#endif
+  }
+}
+
+TEST_CASE("card folder: only cards it can hold are listed") {
+  const fs::path dir = temp_dir("card_names");
+  triforce::CardFolder cards(dir.string());
+  write(dir / "Card 1.bin", std::string(69, 'x'));
+#ifndef _WIN32
+  write(dir / "..bin", std::string(69, 'x'));  // "."
+  write(dir / "a\tb.bin", std::string(69, 'x'));
+  // Names Windows refuses, which a Linux or macOS card can have.
+  write(dir / "Who?.bin", std::string(69, 'x'));
+  write(dir / "Mario: 1st.bin", std::string(69, 'x'));
+  CHECK(cards.list() == std::vector<std::string>{"Card 1", "Mario: 1st", "Who?"});
+#else
+  CHECK(cards.list() == std::vector<std::string>{"Card 1"});
+#endif
+  for (const std::string& name : cards.list()) {
+    CHECK(cards.exists(name));
+    cards.hold(name);
+    CHECK(cards.held() == name);
+  }
 }
 
 TEST_CASE("reboot files") {

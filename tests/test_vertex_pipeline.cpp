@@ -366,25 +366,38 @@ class Test {
 
 }  // namespace
 
+// The hashes change only on purpose. Last: draws whose triangles are all
+// culled leave no vertices, and draws whose alpha test always passes test
+// depth early, without the test in the shader (2026-10-18).
 TEST_CASE("the vertex pipeline's output does not change") {
-#if defined(__x86_64__) || defined(_M_X64)
+  const auto run = [](Test& t, u64* h) {
+    h[0] = t.frame(600, 0);    // 4:3
+    h[1] = t.frame(600, 107);  // 21:9
+    h[2] = t.frame(600, 0);
+    h[3] = t.frame(600, 249);
+    h[4] = t.frame(600, 0, true);  // mostly the game's usual vertex layout
+    h[5] = t.frame(600, 107, true);
+  };
   Test t(20261015);
   u64 h[6];
-  h[0] = t.frame(600, 0);    // 4:3
-  h[1] = t.frame(600, 107);  // 21:9
-  h[2] = t.frame(600, 0);
-  h[3] = t.frame(600, 249);
-  h[4] = t.frame(600, 0, true);  // mostly the game's usual vertex layout
-  h[5] = t.frame(600, 107, true);
+  run(t, h);
   CHECK(t.vertices() > 20000);
-  CHECK(h[0] == 0xE000BF8D6FC61D45ull);
-  CHECK(h[1] == 0x59003377BFFFE4D6ull);
-  CHECK(h[2] == 0xAA71767EAA8654E9ull);
-  CHECK(h[3] == 0x5B04D55130FBA291ull);
-  CHECK(h[4] == 0x344353EA177BDB73ull);
-  CHECK(h[5] == 0x8377997B4BF43976ull);
+  // Everywhere: the same input gives the same output.
+  Test again(20261015);
+  u64 h2[6];
+  run(again, h2);
+  for (int i = 0; i < 6; ++i) CHECK(h[i] == h2[i]);
+#if defined(__x86_64__) || defined(_M_X64)
+  // On x86-64, bit for bit what it was (the floating-point results differ
+  // on other CPUs, for example where the compiler fuses multiply-adds).
+  CHECK(h[0] == 0x25843781375B8E36ull);
+  CHECK(h[1] == 0x0885CA7572B84872ull);
+  CHECK(h[2] == 0xFCB3A7ED5E4B9D7Full);
+  CHECK(h[3] == 0x9B327121C4674E40ull);
+  CHECK(h[4] == 0x7BDDBBFA86390379ull);
+  CHECK(h[5] == 0x30536AB7D7B1B127ull);
 #else
-  MESSAGE("bit-exact values are for x86-64 only");
+  MESSAGE("bit-exact values are for x86-64 only; checked for determinism here");
 #endif
 }
 

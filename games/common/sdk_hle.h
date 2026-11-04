@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Native versions of Dolphin SDK functions that need each game's addresses
+// Native versions of GameCube SDK functions that need each game's addresses
 // (games/common/sdk_hle.cpp has the ones that don't).
 #pragma once
 

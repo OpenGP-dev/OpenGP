@@ -13,6 +13,7 @@
 #include <queue>
 
 #include "video/renderer.h"
+#include "os/utf8.h"
 
 namespace video {
 
@@ -358,7 +359,7 @@ bool write_png(const std::string& path, const Image& image) {
   chunk(out, "IDAT", zlib_compress(raw));
   chunk(out, "IEND", {});
 
-  std::FILE* f = std::fopen(path.c_str(), "wb");
+  std::FILE* f = os::fopen_utf8(path, "wb");
   if (!f) return false;
   const bool ok = std::fwrite(out.data(), 1, out.size(), f) == out.size();
   std::fclose(f);
