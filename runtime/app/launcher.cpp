@@ -650,6 +650,11 @@ int run(const Game& game, int argc, char** argv) {
     });
   }
   g_network = &machine.network();
+  static std::atomic<bool> brake_goes_back{settings.brake_goes_back};
+  if (game.set_menu_back) {
+    game.set_menu_back([] { return brake_goes_back.load() && !machine.network().linked() && machine.controls().brake >= 0.5f; },
+                       [] { return machine.controls().gas >= 0.5f; });
+  }
   machine.gpu().frontend().set_widescreen(widescreen_side(settings.aspect, 0, 0));
 
   static audio::WavWriter wav;
@@ -865,6 +870,7 @@ int run(const Game& game, int argc, char** argv) {
       if (g_audio_out && settings.volume != applied.volume) g_audio_out->set_volume(static_cast<float>(settings.volume) / 100.0f);
       if (game.set_free_play && settings.free_play != applied.free_play) game.set_free_play(machine.base(), settings.free_play);
       if (settings.card != applied.card) machine.cards().hold(settings.card);
+      brake_goes_back = settings.brake_goes_back;
       machine.gpu().frontend().set_widescreen(widescreen_side(settings.aspect, pw, ph));
       renderer.set_scale(internal_scale(settings.internal_resolution, ph));
       applied = settings;

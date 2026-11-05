@@ -44,6 +44,7 @@ struct Settings {
   bool free_play = false;
   bool pause_in_menu = true;         // the game pauses while the menu is open
   bool pause_in_background = false;  // ... and while its window is not the active one
+  bool brake_goes_back = true;       // the brake goes back a screen in the game's menus (not linked)
   std::string card = "Card 1";  // the Mario Card the player holds (a file in user/cards/); "" for none
   bool first_run_hint = true;   // show the hint about coins and the menu (once, then false)
 

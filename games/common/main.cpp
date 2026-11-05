@@ -10,6 +10,7 @@
 #include "cabinet.h"
 #include "camera_use.h"
 #include "game_log.h"
+#include "menu_back.h"
 #include "status.h"
 #include "ppc_recomp_shared.h"
 
@@ -28,5 +29,6 @@ int main(int argc, char** argv) {
   game.set_cabinet = cabinet::set;
   game.status = game_status::read;
   game.link_error = game_status::link_error;
+  game.set_menu_back = menu_back::set;
   return app::run(game, argc, argv);
 }

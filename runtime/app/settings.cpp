@@ -125,6 +125,7 @@ bool load_settings(const std::string& path, Settings* settings, std::string* err
   s.free_play = game["free_play"].value_or(s.free_play);
   s.pause_in_menu = game["pause_in_menu"].value_or(s.pause_in_menu);
   s.pause_in_background = game["pause_in_background"].value_or(s.pause_in_background);
+  s.brake_goes_back = game["brake_goes_back"].value_or(s.brake_goes_back);
   s.card = game["card"].value_or(s.card);
   s.first_run_hint = game["first_run_hint"].value_or(s.first_run_hint);
   const auto camera = root["camera"];
@@ -180,6 +181,10 @@ bool save_settings(const std::string& path, const Settings& s, std::string* erro
          "# Pause the game while the menu is open, and while its window is in the background.\n"
          "pause_in_menu = "
       << (s.pause_in_menu ? "true" : "false") << "\npause_in_background = " << (s.pause_in_background ? "true" : "false")
+      << "\n"
+         "# The brake goes back a screen in the game's menus (not in a linked game).\n"
+         "brake_goes_back = "
+      << (s.brake_goes_back ? "true" : "false")
       << "\n"
          "# The Mario Card you hold (user/cards/<game>/<name>.bin), or \"\" for none.\n"
          "card = "

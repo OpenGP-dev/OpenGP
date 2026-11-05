@@ -247,6 +247,19 @@ it as well.
 Every connected device works at once. Keys and d-pad steer gradually (a keyboard cannot hold the
 wheel half-way); sticks and wheels steer directly.
 
+### Going back in the menus
+
+On a cabinet, a choice can't be undone: once the class or the character is chosen, the game goes
+on to the next screen. In OpenGP, the **brake** goes back a screen, from character select on: to
+the class from the character, to the character (or the kart, with a Mario Card) from the cup or
+course, to the cup from the round, to the round from the items. The photo screen is skipped on
+the way back. Once you have pressed the gas on a screen, it goes on as usual.
+
+It doesn't work in a linked game, where the cabinets' menus keep in step, and it doesn't change the
+class screen (hold the VS cancel button there for Time Attack, as on a cabinet). Turn it off with
+**Brake goes back** (Game tab) or `brake_goes_back = false` in `settings.toml`. Only in Mario
+Kart Arcade GP 2 for now.
+
 ### Changing them
 
 In the menu's Settings, on the **Controls** page, choose the keyboard, gamepads or wheels and other

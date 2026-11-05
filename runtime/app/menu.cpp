@@ -585,6 +585,10 @@ void Menu::page_game(MenuModel& m) {
   w::row_toggle({"Pause when unfocused", "Pause the game when it's in the background (no effect in VS races).", !m.linked},
                 &s.pause_in_background);
 
+  w::section("Menus");
+  w::row_toggle({"Brake goes back", "Press the brake to go back a screen, to choose another class, character or course (no effect in VS races).", !m.linked},
+                &s.brake_goes_back);
+
   w::section("Discord");
   const char* discord_help = s.rich_presence && !m.discord ? "Discord isn't running on this computer."
                                                            : "Show what you are playing in Discord.";
