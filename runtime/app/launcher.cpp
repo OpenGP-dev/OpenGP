@@ -245,30 +245,31 @@ double display_clock_rate(SDL_Window* window, bool vsync) {
 }
 
 // The hint a new player gets once, a few seconds after the game starts: how
-// to put in a coin and start (by their own bindings), and how to open the
-// menu.
+// to open the menu and put in a coin (by their own bindings).
 std::string first_run_hint(const input::HostInput* in, bool free_play) {
   using Kind = input::HostInput::DeviceKind;
-  auto first = [in](Kind kind, std::string_view control) -> std::string {
-    if (!in) return "";
-    for (std::size_t c = 0; c < input::HostInput::kControlCount; ++c) {
-      if (control != input::HostInput::control_name(c)) continue;
-      const std::vector<std::string> labels = in->binding_labels(kind, c);
-      return labels.empty() ? "" : labels.front();
-    }
-    return "";
+  auto labels = [in](Kind kind, std::string_view control) -> std::vector<std::string> {
+    if (!in) return {};
+    for (std::size_t c = 0; c < input::HostInput::kControlCount; ++c)
+      if (control == input::HostInput::control_name(c)) return in->binding_labels(kind, c);
+    return {};
   };
-  const std::string coin = free_play ? "" : first(Kind::Keyboard, "coin");
-  const std::string start = first(Kind::Keyboard, "start");
-  std::string text;
-  if (!coin.empty()) text = "Press " + coin + " to insert a coin";
-  if (!start.empty()) text += (text.empty() ? "Press " : ", then ") + start + " to start";
+  auto first = [&](Kind kind, std::string_view control) -> std::string {
+    const std::vector<std::string> l = labels(kind, control);
+    return l.empty() ? "" : l.front();
+  };
+  // The coin key: C when it is bound (easier to find than 5), else the first.
+  const std::vector<std::string> coin_keys = labels(Kind::Keyboard, "coin");
+  std::string coin = coin_keys.empty() ? "" : coin_keys.front();
+  for (const std::string& k : coin_keys)
+    if (k == "C") coin = k;
   // The gamepad's buttons, when they are still the defaults.
-  const bool pad_defaults = (free_play || first(Kind::Gamepad, "coin") == "back") && first(Kind::Gamepad, "start") == "start";
-  if (!text.empty() && pad_defaults) text += free_play ? " (Start on a gamepad)" : " (Back and Start on a gamepad)";
-  if (!text.empty()) text += ". ";
-  text += pad_defaults ? "Esc (or Back + Start) opens the menu, with the settings and controls."
-                       : "Esc opens the menu, with the settings and controls.";
+  const bool pad_coin = first(Kind::Gamepad, "coin") == "back";
+  const bool pad_menu = pad_coin && first(Kind::Gamepad, "start") == "start";
+  std::string text = "Welcome to OpenGP. Use Escape on keyboard";
+  text += pad_menu ? " or Back + Start on gamepad to open the menu." : " to open the menu.";
+  if (!free_play && !coin.empty()) text += " Use " + coin + (pad_coin ? " or Back" : "") + " to insert a coin.";
+  text += " Have fun!";
   return text;
 }
 

@@ -580,44 +580,43 @@ void Menu::page_game(MenuModel& m) {
     open_folder(cards.dir());
 
   w::section("Pause");
-  const std::string keys = pause_keys(m);
-  const std::string pause_help = m.linked ? "A linked game can't pause." : keys.empty() ? "" : keys + " pauses and resumes the game.";
-  w::row_toggle({"Pause while this menu is open", m.linked ? "A linked game can't pause." : "", !m.linked}, &s.pause_in_menu);
-  w::row_toggle({"Pause when the window is in the background", pause_help.c_str(), !m.linked}, &s.pause_in_background);
+  w::row_toggle({"Pause while the menu is open", "Pause the game while the in-game menu is open (no effect in VS races).", !m.linked},
+                &s.pause_in_menu);
+  w::row_toggle({"Pause when unfocused", "Pause the game when it's in the background (no effect in VS races).", !m.linked},
+                &s.pause_in_background);
 
   w::section("Discord");
-  const char* discord_help = !s.rich_presence ? "" : m.discord ? "On your Discord profile: the game, character, cup, course and place."
-                                                              : "Discord isn't running on this computer.";
-  w::row_toggle({"Show what you're playing", discord_help}, &s.rich_presence);
+  const char* discord_help = s.rich_presence && !m.discord ? "Discord isn't running on this computer."
+                                                           : "Show what you are playing in Discord.";
+  w::row_toggle({"Discord Rich Presence", discord_help}, &s.rich_presence);
 
   w::section("Arcade");
-  w::row_toggle({"Free play", "Play without coins."}, &s.free_play);
+  w::row_toggle({"Free play", "Enables Free Play mode."}, &s.free_play);
 }
 
 void Menu::page_video(MenuModel& m) {
   Settings& s = *m.settings;
-  if (w::row_toggle({"Full screen", "F11 or Alt+Enter switches too."}, &s.fullscreen)) {}
+  if (w::row_toggle({"Full screen", "F11 or Alt+Enter switches in the game too."}, &s.fullscreen)) {}
   take_focus();
 
-  static const std::vector<std::string> kAspects = {"Fit the window", "4:3 (original)", "16:9", "16:10", "21:9"};
+  static const std::vector<std::string> kAspects = {"Auto", "4:3 (Original)", "16:9 (Widescreen)", "16:10", "21:9 (Ultrawide)"};
   static constexpr AspectRatio kAspectValues[] = {AspectRatio::Auto, AspectRatio::Original, AspectRatio::Wide16x9,
                                                   AspectRatio::Wide16x10, AspectRatio::Wide21x9};
   int aspect = 0;
   for (int i = 0; i < 5; ++i)
     if (kAspectValues[i] == s.aspect) aspect = i;
-  if (w::row_choice({"Aspect ratio", "Widescreen expands the view; some 2D elements keep their shape, some stretch to fit."}, &aspect, kAspects))
+  if (w::row_choice({"Aspect ratio", "Set the aspect ratio of the game."}, &aspect, kAspects))
     s.aspect = kAspectValues[aspect];
 
-  std::vector<std::string> resolutions;
-  resolutions.push_back("Match the window");
-  for (u32 scale = 1; scale <= video::Renderer::kMaxScale; ++scale)
-    resolutions.push_back(std::to_string(scale) + "x (" + std::to_string(640 * scale) + "x" + std::to_string(480 * scale) + ")");
+  static_assert(video::Renderer::kMaxScale == 8, "one name per scale");
+  static const std::vector<std::string> resolutions = {
+      "Auto", "1\xC3\x97 (Original)", "2\xC3\x97 (720p)", "3\xC3\x97 (1080p)", "4\xC3\x97 (1440p)", "5\xC3\x97", "6\xC3\x97 (4K)", "7\xC3\x97", "8\xC3\x97 (5K)"};
   int resolution = static_cast<int>(std::min<u32>(s.internal_resolution, video::Renderer::kMaxScale));
-  if (w::row_choice({"Resolution", "How sharply the game draws, as a multiple of the cabinet's own."}, &resolution, resolutions))
+  if (w::row_choice({"Resolution", "How sharply the game draws, as a multiple of the cabinet's 640\xC3\x97" "528."}, &resolution, resolutions))
     s.internal_resolution = static_cast<u32>(resolution);
 
-  w::row_toggle({"VSync", "Waits for the display's refresh: no tearing."}, &s.vsync);
-  w::row_toggle({"Even frame pacing", "Shows each frame on the game's own 60 Hz tick, as the cabinet's display does: evenly spaced, so smoother with FreeSync or G-Sync, and about half a frame later."}, &s.even_pacing);
+  w::row_toggle({"VSync", "Lock the frame rate to your monitor. May cause input delay and screen tearing."}, &s.vsync);
+  w::row_toggle({"Frame pacing (experimental)", "Syncs frame times to those of the original cabinet: smoother with FreeSync or G-Sync, but adds a slight delay."}, &s.even_pacing);
   w::row_text({"Renderer", ""}, m.video_info.c_str());
 }
 
@@ -700,24 +699,20 @@ void Menu::page_controls(MenuModel& m) {
   w::divider();
   if (kind == Kind::Keyboard) {
     float speed = in.steer_speed();
-    if (w::row_slider({"Turn speed", "How fast keys turn the wheel, in full turns a second."}, &speed, 0.5f, 10.0f, 0.5f, "%.1f"))
+    if (w::row_slider({"Steering speed", "How fast keys turn the wheel. Simulates analogue steering."}, &speed, 0.5f, 10.0f, 0.5f, "%.1f"))
       in.set_steer_speed(speed);
   } else {
     float deadzone = in.deadzone(kind) * 100.0f;
-    if (w::row_slider({"Stick dead zone", "How far a stick or wheel moves before the game reads it."}, &deadzone, 0, 50, 1, "%.0f%%"))
+    if (w::row_slider({"Dead zone", "How far a stick or wheel moves before the game reads the input."}, &deadzone, 0, 50, 1, "%.0f%%"))
       in.set_deadzone(kind, deadzone / 100.0f);
     float strength = in.force_feedback() * 100.0f;
-    if (w::row_slider({"Force feedback", "Wheels get the road's forces; gamepads rumble when they are strong."}, &strength, 0, 200, 5, "%.0f%%"))
+    if (w::row_slider({"Force feedback", "Adjusts rumble intensity."}, &strength, 0, 200, 5, "%.0f%%"))
       in.set_force_feedback(strength / 100.0f);
   }
   bool background = in.background_input();
-  if (w::row_toggle({"Use the controls in the background too",
-                     input::HostInput::background_keyboard()
-                         ? "Every OpenGP window reacts, active or not: for driving several copies at once."
-                         : "Gamepads reach every OpenGP window, active or not (the keyboard only the active one)."},
-                    &background))
+  if (w::row_toggle({"Background input", "Allows the game to be controlled while the window is not in focus."}, &background))
     in.set_background_input(background);
-  if (w::row_button({"Bindings", "Every device goes back to OpenGP's defaults."}, "Restore defaults")) confirm_ = Confirm::RestoreDefaults;
+  if (w::row_button({"Bindings", "Every device goes back to OpenGP's defaults."}, "Restore the defaults")) confirm_ = Confirm::RestoreDefaults;
   if (w::row_button({"Controls file", "Your bindings are kept in controls.toml."}, "Open folder"))
     open_folder(os::utf8(os::utf8_path(in.path()).parent_path()));
 }
@@ -728,12 +723,12 @@ void Menu::page_camera(MenuModel& m) {
     w::info_box("Changes take effect when the game restarts.");
     w::gap(4);
   }
-  static const std::vector<std::string> kSources = {"Off", "Webcam", "Test pattern"};
+  static const std::vector<std::string> kSources = {"Disabled", "Enabled", "Colour bars (test)"};
   static constexpr CameraSource kSourceValues[] = {CameraSource::Off, CameraSource::Webcam, CameraSource::TestPattern};
   int source = 0;
   for (int i = 0; i < 3; ++i)
     if (kSourceValues[i] == s.camera) source = i;
-  if (w::row_choice({"Photos from", "The game takes your photo for your character."}, &source, kSources)) s.camera = kSourceValues[source];
+  if (w::row_choice({"Camera", "Enable or disable the camera."}, &source, kSources)) s.camera = kSourceValues[source];
   take_focus();
   if (s.camera == CameraSource::Webcam) {
     std::vector<std::string> names;
@@ -759,11 +754,11 @@ void Menu::page_link(MenuModel& m) {
     w::info_box("Changes take effect when the game restarts.");
     w::gap(4);
   }
-  static const std::vector<std::string> kNumbers = {"The game's setting", "1", "2", "3", "4"};
+  static const std::vector<std::string> kNumbers = {"Use Machine Value (test menu)", "1", "2", "3", "4"};
   int cabinet = std::clamp(s.cabinet, 0, 4);
   if (w::row_choice({"Cabinet number", "Give each OpenGP its own number, 1 to 4."}, &cabinet, kNumbers)) s.cabinet = cabinet;
   take_focus();
-  w::row_toggle({"Link over the local network", "With copies of OpenGP on other computers, not just this one."}, &s.lan);
+  w::row_toggle({"Link using LAN", "Automatically links cabinets using copies of OpenGP on your local network."}, &s.lan);
 
   // Who it sees, with a dot: green linked, blue looking, red trouble.
   std::string linked, found;
