@@ -1,3 +1,7 @@
+## 1.0.3 (7/11/2026)
+
+- Fixed the periodic freezes in linked races: the cabinets now keep in step (a cabinet runs a fraction of a percent faster or slower to follow the one that leads the race), and one that falls a frame behind catches up without freezing the race
+
 ## 1.0.2
 
 - The command-line installer is now called `opengp-cli`, so it is no longer mistaken for the way to install OpenGP 

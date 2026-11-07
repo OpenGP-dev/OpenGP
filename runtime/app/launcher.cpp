@@ -878,10 +878,16 @@ int run(const Game& game, int argc, char** argv) {
     auto match_display = [&] {
       const auto now = std::chrono::steady_clock::now();
       if (now < next_clock_check) return;
-      next_clock_check = now + std::chrono::seconds(1);
-      const double rate = machine.network().linked() ? 1.0 : display_clock_rate(window, settings.vsync);
+      // A linked race's pacing changes more often than the display does.
+      next_clock_check = now + (machine.network().linked() ? std::chrono::milliseconds(250) : std::chrono::milliseconds(1000));
+      // Linked: what the game asks for to stay in step with the host (most
+      // 0.2% off real time), never the display's.
+      const bool linked = machine.network().linked();
+      const double rate = linked ? std::clamp(hw::g_link_clock_rate.load(std::memory_order_relaxed), 0.997, 1.003)
+                                 : display_clock_rate(window, settings.vsync);
       if (std::fabs(rate - machine.hardware().clock_rate()) < 1e-7) return;
       machine.hardware().set_clock_rate(rate);
+      if (linked) return;
       const SDL_DisplayMode* mode = window ? SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window)) : nullptr;
       std::fprintf(stderr, "[video] the game's clock runs at %.3f%% to match the display (%d/%d, %.3f Hz)\n",
                    rate * 100.0, mode ? mode->refresh_rate_numerator : 0, mode ? mode->refresh_rate_denominator : 0,

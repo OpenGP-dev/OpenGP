@@ -119,7 +119,7 @@ The game's clock is NTSC's 59.94 Hz, a little slower than a 60 Hz display: at re
 frame in a thousand would be shown twice, a small hitch every 17 seconds. With vsync on, on a
 display within half a percent of 60 Hz or a multiple of it, OpenGP runs the game 0.1% faster to
 match it (the console says so); the sound speeds up the same, which no one hears. Linked races
-run at real speed.
+follow the leading cabinet instead (see [Linked cabinets](#linked-cabinets)).
 
 ## Mario Cards
 
@@ -204,6 +204,11 @@ Game tab says which cabinets this one is linked with, and if another cabinet has
 A linked game can't pause (see [Pausing](#pausing)). If a cabinet stops in the middle of a game,
 the others stop too with "Please call an attendant / Link error occurred", as arcade cabinets
 do: OpenGP restarts them after a few seconds.
+
+In a GP 2 race the cabinets play in step, the one that started the game leading. Computers'
+clocks are never quite the same, so each of the others runs its game a fraction of a percent
+faster or slower to keep up with it (`games/common/link_pace.h`), and the leading cabinet lets a
+cabinet that is a frame behind catch up without stopping: before 1.0.3 it froze a frame each time.
 
 ## Discord
 
