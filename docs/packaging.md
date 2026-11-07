@@ -260,6 +260,13 @@ Some settings must change together:
 8. Tag the merge `v<version>`, the same version as in `CMakeLists.txt`, and push the tag. The
    workflow builds the packages again and attaches them to a draft release; it fails if the tag
    and the version differ. Check the draft, then publish it.
+9. Put the release on the launcher: `python tools/copy_release_to_launcher.py v<version>`. The
+   launcher updates itself and OpenGP from the latest release of
+   [opengp-launcher](https://github.com/OpenGP-dev/opengp-launcher), whose tag is the launcher's
+   version (`LAUNCHER_REF`) and whose files are OpenGP's packages. The script replaces that
+   release's packages, name and notes with this release's, keeping its tag; until it runs, the
+   launcher does not offer the new version. The launcher release's tag does not change when only
+   OpenGP does, as the launcher's version has not.
 
 An internal release is tagged like any other, but its draft release is left unpublished, or
 deleted.
