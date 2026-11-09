@@ -226,9 +226,9 @@ struct Thread {
   std::string name;
   u64 cpu = 0;         // CPU cycles used, at the last look (QueryThreadCycleTime: precise, unlike GetThreadTimes)
   u64 cpu_second = 0;  // ... at the start of this second
-  bool busy = false;   // used the CPU since the last look: sample it
-  bool own = false;    // the profiler's own (not sampled)
-  u64 stack_base = 0;  // the top of its stack
+  bool busy = false;            // used the CPU since the last look: sample it
+  bool own = false;             // the profiler's own (not sampled)
+  const NT_TIB* tib = nullptr;  // its stack's top and committed bottom
   bool seen = false;
 };
 
@@ -263,8 +263,9 @@ std::string thread_name(HANDLE h, DWORD id) {
   return name.empty() ? "thread " + std::to_string(id) : name;
 }
 
-// The top of a thread's stack, from its TEB (NT_TIB::StackBase).
-u64 stack_base(HANDLE h) {
+// A thread's TEB, whose NT_TIB has its stack's bounds: StackBase (the top) and
+// StackLimit (the bottom of the committed part; the guard page is below it).
+const NT_TIB* thread_tib(HANDLE h) {
   struct BasicInformation {
     LONG exit_status;
     void* teb;
@@ -276,8 +277,8 @@ u64 stack_base(HANDLE h) {
   static const auto query = reinterpret_cast<Query>(
       reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationThread")));
   BasicInformation info{};
-  if (!query || query(h, 0, &info, sizeof(info), nullptr) != 0 || !info.teb) return 0;
-  return reinterpret_cast<const NT_TIB*>(info.teb)->StackBase ? reinterpret_cast<u64>(reinterpret_cast<const NT_TIB*>(info.teb)->StackBase) : 0;
+  if (!query || query(h, 0, &info, sizeof(info), nullptr) != 0 || !info.teb) return nullptr;
+  return static_cast<const NT_TIB*>(info.teb);
 }
 
 constexpr std::size_t kStackCopy = 64 * 1024;    // of a stopped thread's stack, from its stack pointer
@@ -389,7 +390,7 @@ void Monitor::run() {
           t.name = thread_name(h, entry.th32ThreadID);
           t.index = s.add_thread(entry.th32ThreadID, t.name);
           t.own = t.name.rfind("profile", 0) == 0 || t.name == "console log";
-          t.stack_base = stack_base(h);
+          t.tib = thread_tib(h);
           t.cpu = t.cpu_second = thread_cycles(h);
           it = threads.emplace(entry.th32ThreadID, std::move(t)).first;
         }
@@ -473,10 +474,18 @@ void Monitor::run() {
         if (SuspendThread(t.handle) == static_cast<DWORD>(-1)) continue;
         const bool ok = GetThreadContext(t.handle, &context);
         std::size_t size = 0;
-        if (ok && t.stack_base > context.Rsp) {
-          size = static_cast<std::size_t>(std::min<u64>(t.stack_base - context.Rsp, kStackCopy));
-          std::memcpy(copy.data(), reinterpret_cast<const void*>(context.Rsp), size);
-          copied_bytes += size;
+        // While a thread grows its stack its stack pointer can be below the
+        // committed part, in the guard page: reading that here would take the
+        // guard-page fault the thread was about to take itself, and kill the
+        // game. Only copy above StackLimit (the committed bottom).
+        if (ok && t.tib) {
+          const u64 base = reinterpret_cast<u64>(t.tib->StackBase);
+          const u64 limit = reinterpret_cast<u64>(t.tib->StackLimit);
+          if (base > context.Rsp && context.Rsp >= limit) {
+            size = static_cast<std::size_t>(std::min<u64>(base - context.Rsp, kStackCopy));
+            std::memcpy(copy.data(), reinterpret_cast<const void*>(context.Rsp), size);
+            copied_bytes += size;
+          }
         }
         ResumeThread(t.handle);
         QueryPerformanceCounter(&stop_end);
