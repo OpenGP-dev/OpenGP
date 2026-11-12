@@ -127,6 +127,9 @@ class Renderer {
   void render(const gx::Frame& frame, Image* capture = nullptr, bool present = true);
 
   const char* driver() const;
+  u32 live_textures() const { return static_cast<u32>(textures_.size()); }
+  u32 live_pipelines() const { return static_cast<u32>(tev_pipelines_.size() + clear_pipelines_.size()); }
+  u64 live_texture_bytes() const;
 
  private:
   struct Texture {

@@ -51,13 +51,20 @@ class HostInput {
   // reads them.
   bool take_pause_press();
 
+  // Live performance overlay, bound like the cabinet's controls.
+  enum ProfilerAction : u32 { kProfilerOverlay = 1u << 0 };
+  u32 take_profiler_actions();
+
   // Plays the cabinet's outputs (wheel forces) on the devices.
   void set_outputs(const triforce::Outputs& outputs);
 
   // ---- Seeing and changing the bindings (the menu) ----
 
   enum class DeviceKind { Keyboard, Gamepad, Joystick };
-  static constexpr std::size_t kControlCount = 12;
+  // The cabinet's controls come first, then the profiler's.
+  static constexpr std::size_t kCabinetControlCount = 12;
+  static constexpr std::size_t kProfilerFirst = kCabinetControlCount;
+  static constexpr std::size_t kControlCount = 13;
   // A control's name in the file ("gas") and in the menu ("Gas").
   static const char* control_name(std::size_t control);
   static const char* control_label(std::size_t control);

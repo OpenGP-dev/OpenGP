@@ -51,7 +51,11 @@ class Frontend {
   void set_output(FrameOutput* output) { output_ = output; }
   // Waits while the output is too far behind (see FrameOutput::wait_for_room).
   void wait_for_output() {
-    if (output_) output_->wait_for_room();
+    if (!output_) return;
+    const auto start = std::chrono::steady_clock::now();
+    output_->wait_for_room();
+    stats_.wait_ns.fetch_add(static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now() - start).count()), std::memory_order_relaxed);
   }
 
   // Widescreen: widens the EFB by `side` pixels on the left and right, from
@@ -90,7 +94,7 @@ class Frontend {
   // texture and transform times.
   struct Stats {
     std::atomic<u64> draw_ns{0}, state_ns{0}, texture_ns{0}, transform_ns{0}, vertices{0};
-    std::atomic<u64> readback_ns{0}, readbacks{0};  // EFB reads that waited for the renderer
+    std::atomic<u64> wait_ns{0}, readback_ns{0}, readbacks{0};  // EFB reads that waited for the renderer
   };
   const Stats& stats() const { return stats_; }
 

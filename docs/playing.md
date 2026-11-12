@@ -53,6 +53,9 @@ ask first.
 | Controls | The keys, buttons and axes for each control; steering speed, dead zones, force feedback |
 | Camera | The webcam (or the test pattern) the game takes your photo with |
 | Linked cabinets | This cabinet's number and the link over the local network |
+| Performance | Live frame times, drops, CPU and GPU usage, audio queue; optional F7 overlay |
+
+The [performance display](profiling.md) keeps its measurements in memory and does not record a profile.
 
 The settings are the launcher's: the launcher's Settings edit the same file. The camera and the
 link settings take effect when the game next starts; the page says so while a change waits.
@@ -246,6 +249,19 @@ it as well.
 
 Every connected device works at once. Keys and d-pad steer gradually (a keyboard cannot hold the
 wheel half-way); sticks and wheels steer directly.
+
+### Going back in the menus
+
+On a cabinet, a choice can't be undone: once the class or the character is chosen, the game goes
+on to the next screen. In OpenGP, the **brake** goes back a screen, from character select on: to
+the class from the character, to the character (or the kart, with a Mario Card) from the cup or
+course, to the cup from the round, to the round from the items. The photo screen is skipped on
+the way back. Once you have pressed the gas on a screen, it goes on as usual.
+
+It doesn't work in a linked game, where the cabinets' menus keep in step, and it doesn't change the
+class screen (hold the VS cancel button there for Time Attack, as on a cabinet). Turn it off with
+**Brake goes back** (Game tab) or `brake_goes_back = false` in `settings.toml`. Only in Mario
+Kart Arcade GP 2 for now.
 
 ### Changing them
 

@@ -55,6 +55,9 @@ struct Game {
   // Whether the game has stopped because it lost its link to the other
   // cabinets, read from guest memory while the game runs.
   std::function<bool(const u8* base)> link_error;
+  // Going back through the game's menus: `back` says whether the player wants
+  // to go back now, `decide` whether they are pressing the games' "Decide".
+  std::function<void(std::function<bool()> back, std::function<bool()> decide)> set_menu_back;
 };
 
 // Runs the game; returns the process exit code.

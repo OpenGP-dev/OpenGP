@@ -52,7 +52,6 @@ add_library(opengp_machine STATIC
   os/crash.cpp
   os/notice.cpp
   os/printf.cpp
-  os/profiler.cpp
   os/reboot.cpp
   os/thread_priority.cpp
   os/threads.cpp
@@ -167,7 +166,7 @@ target_link_libraries(opengp_app
   PRIVATE opengp_warnings)
 target_compile_definitions(opengp_app PRIVATE OPENGP_VERSION="${PROJECT_VERSION}")
 if(OPENGP_BUILD_VIDEO)
-  target_sources(opengp_app PRIVATE app/menu.cpp app/menu_theme.cpp app/menu_widgets.cpp)
+  target_sources(opengp_app PRIVATE app/menu.cpp app/menu_theme.cpp app/menu_widgets.cpp app/profiler.cpp)
   target_link_libraries(opengp_app PUBLIC opengp_video opengp_input opengp_audio opengp_webcam imgui)
   target_compile_definitions(opengp_app PRIVATE OPENGP_VIDEO)
   # The menu's typeface (thirdparty/fonts/mplus-rounded-1c), embedded.

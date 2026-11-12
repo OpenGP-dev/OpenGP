@@ -38,7 +38,6 @@
 #include "os/crash.h"
 #include "os/notice.h"
 #include "os/printf.h"
-#include "os/profiler.h"
 #include "os/reboot.h"
 #include "os/thread_priority.h"
 #include "os/verbose.h"
@@ -51,6 +50,7 @@
 #include <SDL3/SDL_main.h>
 
 #include "app/menu.h"
+#include "app/profiler.h"
 #include "audio/host.h"
 #include "camera/webcam.h"
 #include "input/host.h"
@@ -69,7 +69,7 @@ constexpr const char* kUsage =
     "          [--headless] [--no-video] [--screenshot FRAME]... [--screenshot-every N]\n"
     "          [--input SCRIPT] [--input-file PATH] [--free-play] [--test-menu]\n"
     "          [--no-audio] [--volume PERCENT] [--audio-dump PATH] [--game-log]\n"
-    "          [--camera off|webcam|test] [--cabinet 1-4] [--lan] [--verbose] [--version]\n";
+    "          [--camera off|webcam|test] [--cabinet 1-4] [--lan] [--profile-overlay] [--verbose] [--version]\n";
 
 struct Options {
   std::vector<std::string> args;  // as given, for restarts (without --reboot and --frame-offset)
@@ -80,6 +80,7 @@ struct Options {
   std::string user_dir;  // UTF-8
   int timeout_s = -1, status_s = -1;  // status: -1 is every 5 s with --verbose, else none
   bool headless = false, use_video = true, use_audio = true;
+  bool profile_overlay = false;
   bool game_log = false;  // print the game's debug messages
   std::set<u64> screenshots;
   u64 screenshot_every = 0;
@@ -125,6 +126,7 @@ int parse_options(const std::vector<std::string>& args, Options& o) {
     else if (a == "--scale" && has_value) o.scale = static_cast<u32>(std::clamp(std::atoi(argv[++i]), 1, 8));
     else if (a == "--screenshot" && has_value) o.screenshots.insert(std::strtoull(argv[++i], nullptr, 10));
     else if (a == "--screenshot-every" && has_value) o.screenshot_every = std::strtoull(argv[++i], nullptr, 10);
+    else if (a == "--profile-overlay") o.profile_overlay = true;
     else if (a == "--headless") o.headless = true;
     else if (a == "--test-menu") o.test_menu = true;
     else if (a == "--no-video") o.use_video = false;
@@ -650,6 +652,11 @@ int run(const Game& game, int argc, char** argv) {
     });
   }
   g_network = &machine.network();
+  static std::atomic<bool> brake_goes_back{settings.brake_goes_back};
+  if (game.set_menu_back) {
+    game.set_menu_back([] { return brake_goes_back.load() && !machine.network().linked() && machine.controls().brake >= 0.5f; },
+                       [] { return machine.controls().gas >= 0.5f; });
+  }
   machine.gpu().frontend().set_widescreen(widescreen_side(settings.aspect, 0, 0));
 
   static audio::WavWriter wav;
@@ -735,7 +742,6 @@ int run(const Game& game, int argc, char** argv) {
   auto watch_for_hangs = [&user_dir, &header] {
     app::start_hang_watch(machine, names, user_dir / "hang-report.txt", header);
   };
-  os::start_profiler_from_env();
 
   std::thread([timeout_s = o.timeout_s, status_s = o.status_s >= 0 ? o.status_s : os::verbose() ? 5 : 0, print_status] {
     using clock = std::chrono::steady_clock;
@@ -865,6 +871,7 @@ int run(const Game& game, int argc, char** argv) {
       if (g_audio_out && settings.volume != applied.volume) g_audio_out->set_volume(static_cast<float>(settings.volume) / 100.0f);
       if (game.set_free_play && settings.free_play != applied.free_play) game.set_free_play(machine.base(), settings.free_play);
       if (settings.card != applied.card) machine.cards().hold(settings.card);
+      brake_goes_back = settings.brake_goes_back;
       machine.gpu().frontend().set_widescreen(widescreen_side(settings.aspect, pw, ph));
       renderer.set_scale(internal_scale(settings.internal_resolution, ph));
       applied = settings;
@@ -914,6 +921,17 @@ int run(const Game& game, int argc, char** argv) {
     model.camera_info = camera_info;
     model.webcams = [] { return camera::Webcam::names(); };
     model.quit = [&quit] { quit("quit from the menu"); };
+    Profiler profiler;
+    bool profiler_overlay = o.profile_overlay;
+    if (use_menu) menu.set_profiler_overlay(profiler_overlay);
+    model.overlay = profiler_overlay;
+    model.toggle_overlay = [&] {
+      profiler_overlay = !profiler_overlay;
+      model.overlay = profiler_overlay;
+      if (use_menu) menu.set_profiler_overlay(profiler_overlay);
+    };
+    auto next_performance_status = std::chrono::steady_clock::now();
+    GameStatus performance_status;
     // Even frame pacing: the retraces that say when to show each frame, and
     // when the last one was shown (steady clock, ns).
     hw::ViDevice* const vi = machine.hardware().device<hw::ViDevice>();
@@ -1013,6 +1031,8 @@ int run(const Game& game, int argc, char** argv) {
         machine.set_controls(menu.is_open() ? triforce::Controls{} : controls);
         // A paused game's wheel forces stop too.
         host_input.set_outputs(paused ? triforce::Outputs{} : machine.outputs());
+        const u32 actions = host_input.take_profiler_actions();
+        if (!menu.is_open() && (actions & input::HostInput::kProfilerOverlay)) model.toggle_overlay();
       }
       settings.card = applied.card = machine.cards().held();  // the game may have given the player a new card
       apply_settings();
@@ -1090,7 +1110,8 @@ int run(const Game& game, int argc, char** argv) {
       const auto render_start = std::chrono::steady_clock::now();
       os::g_main_activity.set("drawing a frame");
       renderer.render(*frame, shoot ? &shot : nullptr, !paced);
-      g_render_ns.fetch_add(elapsed_ns(render_start));
+      const u64 render_ns = elapsed_ns(render_start);
+      g_render_ns.fetch_add(render_ns);
       if (paced) {
         // After the last frame's retrace too: one frame a retrace.
         const u64 due = vi->next_retrace_ns(std::max(frame->finished_ns, shown_ns));
@@ -1100,6 +1121,34 @@ int run(const Game& game, int argc, char** argv) {
       if (frame->xfb) {
         g_rendered.fetch_add(1);
         last_present = std::chrono::steady_clock::now();
+        if (last_present >= next_performance_status) {
+          next_performance_status = last_present + std::chrono::seconds(1);
+          if (game.status) game.status(machine.base(), &performance_status);
+          profiler.sample_system_cpu();
+        }
+        Profiler::FrameInfo info;
+        info.finished_ns = frame->finished_ns;
+        info.present_ns = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            last_present.time_since_epoch()).count());
+        info.retrace = vi ? vi->retrace_count() : 0;
+        info.idle_ns = machine.threads().idle_ns();
+        const auto& counters = machine.gpu().frontend().stats();
+        info.wait_ns = counters.wait_ns.load(std::memory_order_relaxed) +
+                       counters.readback_ns.load(std::memory_order_relaxed);
+        info.render_ns = render_ns;
+        info.active = !paused && !menu.is_open();
+        if (g_audio_out) {
+          info.audio_ms = g_audio_out->queue_ms();
+          info.audio_underruns = g_audio_out->underruns();
+        }
+        info.textures = renderer.live_textures();
+        info.pipelines = renderer.live_pipelines();
+        info.texture_bytes = renderer.live_texture_bytes();
+        info.scene = performance_status.activity;
+        if (!performance_status.mode.empty()) info.scene += " · " + performance_status.mode;
+        info.course = performance_status.course;
+        profiler.on_frame(info);
+        model.profile = profiler.live();
       }
       queue.give_back(std::move(frame));
       if (shoot && shot.width) {

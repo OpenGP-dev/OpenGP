@@ -8,6 +8,7 @@
 #include "cabinet.h"
 #include "camera_use.h"
 #include "link_pace.h"
+#include "menu_back.h"
 #include "ppc_recomp_shared.h"
 #include "sdk_hle.h"
 #include "widescreen.h"
@@ -121,5 +122,39 @@ PPC_FUNC(fn_80138184) {
   widescreen::widen_frustum(ctx);
   __imp__fn_80138184(ctx, base);
 }
+
+// A race starts: going back in the menus after it stays in its play.
+PPC_FUNC(RaceScene_Init) {
+  menu_back::forget();
+  __imp__RaceScene_Init(ctx, base);
+}
+
+// Going back through the menus (menu_back.h). The screens' numbers: 0x09 the
+// Mario Card, 0x0B the class, 0x0D the character, 0x0F the kart (with a
+// card), 0x13 the photo, 0x15 the cup, 0x17 and 0x19 the course, 0x1B the
+// round, 0x21 and 0x22 the items (with a card).
+namespace {
+constexpr gekko::u32 kStarts[] = {0x09};
+constexpr gekko::u32 kStops[] = {0x0B, 0x0D, 0x0F, 0x15, 0x17, 0x19, 0x1B, 0x21, 0x22};
+constexpr gekko::u32 kBack[] = {0x0D, 0x0F, 0x13, 0x15, 0x17, 0x19, 0x1B, 0x21, 0x22};
+constexpr menu_back::Menus kMenus{0x806CED74, kStarts, kStops, kBack};
+}  // namespace
+
+#define MENU_SCREEN_UPDATE(name)                                    \
+  PPC_FUNC(name) {                                                  \
+    __imp__##name(ctx, base);                                       \
+    ctx.gpr[3] = menu_back::after_update(base, kMenus, ctx.gpr[3]); \
+  }
+MENU_SCREEN_UPDATE(fn_801BA498)                // the Mario Card
+MENU_SCREEN_UPDATE(clFlowClass_Update)
+MENU_SCREEN_UPDATE(clFlowChara_Update)
+MENU_SCREEN_UPDATE(clFlowKart_Update)
+MENU_SCREEN_UPDATE(FrameSelection_Update)      // the photo
+MENU_SCREEN_UPDATE(clFlowCup_Update)
+MENU_SCREEN_UPDATE(clFlowCourse_Update)
+MENU_SCREEN_UPDATE(clFlowRound_Update)
+MENU_SCREEN_UPDATE(clFlowItem_Update)
+MENU_SCREEN_UPDATE(clFlowItemSelect_Update)
+#undef MENU_SCREEN_UPDATE
 
 }  // namespace guest

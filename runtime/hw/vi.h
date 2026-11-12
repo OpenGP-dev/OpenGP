@@ -12,6 +12,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 
 #include "hw/hardware.h"
 
@@ -26,7 +27,7 @@ class ViDevice : public Device {
 
   // Physical address of the XFB (top field) the display shows.
   u32 xfb_address() const;
-  u64 retrace_count() const { return retraces_; }
+  u64 retrace_count() const { return retraces_.load(std::memory_order_relaxed); }
   // The host's steady clock (in nanoseconds) at the first retrace after
   // `after_ns`: DI0's or DI1's interrupt, both of which the SDK counts as a
   // retrace (one a field, 59.94 a second). The display shows the XFB the game
@@ -50,7 +51,7 @@ class ViDevice : public Device {
   std::array<u16, 0x80> regs_{};
   u64 origin_ = 0;  // time base at the start of frame 0
   std::array<Hardware::EventId, 4> events_{};
-  u64 retraces_ = 0;
+  std::atomic<u64> retraces_{0};
 };
 
 }  // namespace hw

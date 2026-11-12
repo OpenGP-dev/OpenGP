@@ -70,6 +70,16 @@ add_executable(test_settings test_settings.cpp)
 target_link_libraries(test_settings PRIVATE opengp_settings doctest opengp_warnings)
 add_test(NAME settings COMMAND test_settings)
 
+add_executable(test_performance test_performance.cpp ../runtime/app/profiler.cpp)
+target_include_directories(test_performance PRIVATE ../runtime)
+target_link_libraries(test_performance PRIVATE gekko_isa doctest opengp_warnings)
+add_test(NAME performance COMMAND test_performance)
+
+add_executable(test_menu_back test_menu_back.cpp ../games/common/menu_back.cpp)
+target_include_directories(test_menu_back PRIVATE ../games/common)
+target_link_libraries(test_menu_back PRIVATE ppc_runtime doctest opengp_warnings)
+add_test(NAME menu_back COMMAND test_menu_back)
+
 if(TARGET opengp_input)
   add_executable(test_controls test_controls.cpp)
   target_link_libraries(test_controls PRIVATE opengp_input doctest opengp_warnings)

@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "app/profiler.h"
 #include "app/settings.h"
 #include "input/host.h"
 #include "triforce/card_folder.h"
@@ -41,6 +42,10 @@ struct MenuModel {
   bool restart_needed = false;       // a camera or link setting differs from the running one
   std::function<void()> quit;
   std::function<void()> test_menu;  // restarts into the game's test menu (if it has one)
+  // Live performance information, kept in memory only.
+  Profiler::LiveStats profile;
+  bool overlay = false;
+  std::function<void()> toggle_overlay;
 };
 
 // A notice's kind: information, or a problem (a save that failed).
@@ -69,7 +74,11 @@ class Menu final : public video::Overlay {
   // Shows that the game is paused (while the menu is closed).
   void set_paused(bool paused) { paused_ = paused; }
 
-  // Whether there is anything to draw (the menu, a notice, or "Paused").
+  // Shows the live profiler overlay over the game while the menu is closed.
+  void set_profiler_overlay(bool on) { overlay_ = on; }
+
+  // Whether there is anything to draw (the menu, a notice, "Paused", or the
+  // profiler's overlay).
   bool visible() const;
 
   // Lays the menu out for the next presented frame.
@@ -82,8 +91,8 @@ class Menu final : public video::Overlay {
  private:
   using Clock = std::chrono::steady_clock;
   enum class Screen { Card, Settings };
-  enum class Page { Game, Video, Sound, Controls, Camera, Link };
-  static constexpr int kPageCount = 6;
+  enum class Page { Game, Video, Sound, Controls, Camera, Link, Profiler };
+  static constexpr int kPageCount = 7;
   enum class Confirm { None, Quit, TestMenu, RestoreDefaults };
   struct Notice {
     std::string text;
@@ -108,9 +117,11 @@ class Menu final : public video::Overlay {
   void page_controls(MenuModel& m);
   void page_camera(MenuModel& m);
   void page_link(MenuModel& m);
+  void page_profiler(MenuModel& m);
   void draw_confirm(MenuModel& m);
   void draw_hints(bool pages);
   void draw_paused(MenuModel& m);
+  void draw_profiler_overlay(MenuModel& m);
   void draw_notices();
 
   std::vector<std::string> webcams_;  // listed when the webcam list opens
@@ -120,6 +131,7 @@ class Menu final : public video::Overlay {
   bool initialised_ = false;
   bool open_ = false;
   bool paused_ = false;
+  bool overlay_ = false;  // the live profiler overlay, while the menu is closed
   bool focus_window_ = false;  // focus the screen's window on its next frame
   bool focus_item_ = false;    // focus the screen's first widget on its next frame
   bool show_focus_ = true;     // ... with its ring showing
