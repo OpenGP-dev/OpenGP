@@ -2,7 +2,9 @@
 
 #include "os/threads.h"
 
+#include <chrono>
 #include <cstdio>
+#include <string>
 #include <thread>
 
 #include "os/crash.h"
@@ -113,7 +115,12 @@ void ThreadManager::idle(ppc::Context& ctx) {
   const u64 delivered = exceptions_delivered_.load(std::memory_order_relaxed);
   if (delivered == idle_seen_) {
     ++idle_waits_;
+    const auto start = std::chrono::steady_clock::now();
     hw_.wait_for_interrupt(4);
+    idle_ns_.fetch_add(static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                            std::chrono::steady_clock::now() - start)
+                                            .count()),
+                       std::memory_order_relaxed);
     service_interrupts(ctx);
   }
   idle_seen_ = exceptions_delivered_.load(std::memory_order_relaxed);

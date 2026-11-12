@@ -53,6 +53,9 @@ ask first.
 | Controls | The keys, buttons and axes for each control; steering speed, dead zones, force feedback |
 | Camera | The webcam (or the test pattern) the game takes your photo with |
 | Linked cabinets | This cabinet's number and the link over the local network |
+| Performance | Live frame times, drops, CPU and GPU usage, audio queue; optional F7 overlay |
+
+The [performance display](profiling.md) keeps its measurements in memory and does not record a profile.
 
 The settings are the launcher's: the launcher's Settings edit the same file. The camera and the
 link settings take effect when the game next starts; the page says so while a change waits.

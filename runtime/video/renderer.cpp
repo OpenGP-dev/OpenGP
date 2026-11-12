@@ -157,6 +157,18 @@ Renderer::~Renderer() {
 
 const char* Renderer::driver() const { return device_ ? SDL_GetGPUDeviceDriver(device_) : "none"; }
 
+u64 Renderer::live_texture_bytes() const {
+  u64 bytes = 0;
+  for (const auto& [handle, t] : textures_) {
+    for (u32 l = 0, w = t.width, h = t.height; l < std::max(t.levels, 1u); ++l) {
+      bytes += u64{w} * h * 4;
+      w = std::max(1u, w / 2);
+      h = std::max(1u, h / 2);
+    }
+  }
+  return bytes;
+}
+
 SDL_GPUShader* Renderer::shader(const ShaderCode& code, bool fragment, u32 samplers, u32 uniforms) {
   SDL_GPUShaderCreateInfo info{};
   if (msl_) {

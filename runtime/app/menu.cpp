@@ -36,7 +36,7 @@ constexpr float kNoticeIn = 0.15f, kNoticeOut = 0.2f;  // seconds
 
 constexpr float kFadeIn = 0.15f;  // the menu's, seconds
 
-const char* const kPageNames[] = {"Game", "Video", "Sound", "Controls", "Camera", "Linked cabinets"};
+const char* const kPageNames[] = {"Game", "Video", "Sound", "Controls", "Camera", "Linked cabinets", "Performance"};
 
 // The keyboard keys bound to pause ("P / Pause"; with `first`, "P"), or ""
 // if none.
@@ -49,6 +49,20 @@ std::string pause_keys(const MenuModel& m, bool first = false) {
       if (keys.empty() || !first) keys += (keys.empty() ? "" : " / ") + key;
   }
   return keys;
+}
+
+// The first keyboard (or else gamepad) key bound to one of the profiler's
+// controls, for its page and overlay ("F7"), or "" if none.
+std::string profiler_key(const MenuModel& m, const char* control) {
+  if (!m.input) return "";
+  for (const auto kind : {input::HostInput::DeviceKind::Keyboard, input::HostInput::DeviceKind::Gamepad}) {
+    for (std::size_t c = input::HostInput::kProfilerFirst; c < input::HostInput::kControlCount; ++c) {
+      if (std::string_view(input::HostInput::control_name(c)) != control) continue;
+      const std::vector<std::string> labels = m.input->binding_labels(kind, c);
+      if (!labels.empty()) return labels.front();
+    }
+  }
+  return "";
 }
 
 // Opens a folder (UTF-8) in the system's file manager, making it first if
@@ -246,7 +260,7 @@ void Menu::notify(std::string message, NoticeKind kind) {
   if (notices_.size() > 4) notices_.erase(notices_.begin());
 }
 
-bool Menu::visible() const { return open_ || paused_ || !notices_.empty(); }
+bool Menu::visible() const { return open_ || paused_ || overlay_ || !notices_.empty(); }
 
 void Menu::apply_scale(float scale) {
   theme::apply_style(ImGui::GetStyle(), scale);
@@ -344,6 +358,7 @@ void Menu::update(MenuModel& m) {
   } else {
     popup_was_open_ = false;
     if (paused_) draw_paused(m);
+    if (overlay_) draw_profiler_overlay(m);
   }
   draw_notices();
   ImGui::Render();
@@ -455,6 +470,7 @@ void Menu::draw_settings(MenuModel& m) {
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(px(10), px(4)));
     for (int i = 0; i < kPageCount; ++i) {
       if (i == static_cast<int>(Page::Controls) && !m.input) continue;
+      if (i == static_cast<int>(Page::Profiler) && !m.toggle_overlay) continue;
       if (w::nav_item(kPageNames[i], static_cast<int>(page_) == i)) set_page(static_cast<Page>(i), m, GImGui->NavCursorVisible);
     }
     ImGui::PopStyleVar();
@@ -536,6 +552,9 @@ void Menu::draw_page(MenuModel& m) {
       break;
     case Page::Camera: page_camera(m); break;
     case Page::Link: page_link(m); break;
+    case Page::Profiler:
+      if (m.toggle_overlay) page_profiler(m);
+      break;
   }
 }
 
@@ -651,9 +670,9 @@ void Menu::page_controls(MenuModel& m) {
 
   // The cabinet's controls and what drives each.
   const float label_w = px(150), chip_h = px(30);
-  for (std::size_t control = 0; control < input::HostInput::kControlCount; ++control) {
+  auto binding_row = [&](std::size_t control) {
     // Keys cannot hold the wheel half-way: they steer with "steer left/right".
-    if (kind == Kind::Keyboard && input::HostInput::control_is_axis(control)) continue;
+    if (kind == Kind::Keyboard && input::HostInput::control_is_axis(control)) return;
     ImGui::PushID(static_cast<int>(control));
     const ImVec2 start = ImGui::GetCursorPos();
     {
@@ -698,7 +717,13 @@ void Menu::page_controls(MenuModel& m) {
       }
     }
     ImGui::PopID();
-  }
+  };
+  for (std::size_t control = 0; control < input::HostInput::kCabinetControlCount; ++control) binding_row(control);
+
+  w::divider();
+  w::section("Performance", "OpenGP's own: they work while playing, not in the menu.");
+  for (std::size_t control = input::HostInput::kProfilerFirst; control < input::HostInput::kControlCount; ++control)
+    binding_row(control);
 
   w::divider();
   if (kind == Kind::Keyboard) {
@@ -811,6 +836,41 @@ void Menu::page_link(MenuModel& m) {
 }
 
 // ---- Confirmations ----------------------------------------------------------------------------
+
+// Live information only: no recording, captures or file output.
+void Menu::page_profiler(MenuModel& m) {
+  const Profiler::LiveStats& p = m.profile;
+  char text[256];
+  w::section("Live performance");
+  std::snprintf(text, sizeof(text), "%.1f fps · game %.1f ms · busy %.1f ms · p99 %.1f ms",
+                static_cast<double>(p.fps), static_cast<double>(p.guest_ms), static_cast<double>(p.busy_ms),
+                static_cast<double>(p.p99_ms));
+  w::row_text({"Frame times", "Recent game frames; busy time excludes idle and renderer waits."}, text);
+  std::snprintf(text, sizeof(text), "%llu drops · %llu hitches", static_cast<unsigned long long>(p.drops),
+                static_cast<unsigned long long>(p.hitches));
+  w::row_text({"Drops", "Retraces without a new frame; hitches are frames much longer than the recent median."}, text);
+  if (p.system_cpu >= 0) std::snprintf(text, sizeof(text), "%.0f%%", static_cast<double>(p.system_cpu));
+  else std::snprintf(text, sizeof(text), "unavailable");
+  w::row_text({"Computer CPU", "The whole computer's CPU use."}, text);
+  std::snprintf(text, sizeof(text), "%u textures, %.0f MB · %u pipelines", p.textures, p.texture_mb, p.pipelines);
+  w::row_text({"GPU", "Game textures and pipelines in use; texture memory is an estimate."}, text);
+  std::snprintf(text, sizeof(text), "%.0f ms queued · %llu underruns", static_cast<double>(p.audio_ms),
+                static_cast<unsigned long long>(p.audio_underruns));
+  w::row_text({"Sound", "An underrun is a gap in the output queue."}, text);
+  if (!p.scene.empty() || !p.course.empty()) {
+    const std::string where = p.scene + (p.course.empty() ? "" : " · " + p.course);
+    w::row_text({"Scene", ""}, where.c_str());
+  }
+  w::gap(6);
+  take_focus();
+  if (m.toggle_overlay) {
+    bool overlay = m.overlay;
+    std::string help = "Show live information over the game.";
+    const std::string key = profiler_key(m, "profile_overlay");
+    if (!key.empty()) help += " " + key + " shows and hides it.";
+    if (w::row_toggle({"Performance overlay", help.c_str()}, &overlay)) m.toggle_overlay();
+  }
+}
 
 void Menu::draw_confirm(MenuModel& m) {
   const char* const kId = "##confirm";
@@ -962,6 +1022,92 @@ void Menu::draw_paused(MenuModel& m) {
       theme::pop_font();
     }
   }
+}
+
+// The live numbers over the game, while it plays: frame times and a graph,
+// drops and hitches, and the computer's load.
+void Menu::draw_profiler_overlay(MenuModel& m) {
+  const Profiler::LiveStats& p = m.profile;
+  const ImGuiIO& io = ImGui::GetIO();
+  ImDrawList* dl = ImGui::GetForegroundDrawList();
+  const float margin = px(14), pad = px(12), graph_h = px(38);
+  const float width = std::min(px(336), io.DisplaySize.x - 2 * margin);
+
+  std::string keys;
+  auto add_key = [&](const char* control, const char* what) {
+    const std::string key = profiler_key(m, control);
+    if (!key.empty()) keys += (keys.empty() ? "" : " · ") + key + " " + what;
+  };
+  add_key("profile_overlay", "hide");
+  const bool scene = !p.scene.empty() || !p.course.empty();
+  const int lines = 5 + (scene ? 1 : 0) + (keys.empty() ? 0 : 1);
+  const float height = pad * 2 + static_cast<float>(lines) * px(18) + graph_h + px(6);
+
+  const ImVec2 min(margin, margin), max(min.x + width, min.y + height);
+  dl->AddRectFilled(min, max, theme::alpha(theme::kAsphaltDeep, 0.82f), px(10));
+  dl->AddRect(min, max, theme::alpha(theme::kLine, 0.9f), px(10), 0, 1.0f);
+
+  float y = min.y + pad;
+  auto line = [&](const char* text, float size, ImU32 colour, theme::Weight weight = theme::Weight::Regular) {
+    theme::push_font(weight, size);
+    dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(min.x + pad, y), colour, text);
+    y += px(18);
+    theme::pop_font();
+  };
+
+  line("Performance", theme::kBody, theme::kChalk, theme::Weight::Bold);
+
+  char text[200];
+  if (p.fps > 0)
+    std::snprintf(text, sizeof(text), "%.1f fps · frame %.1f ms · busy %.1f · p99 %.1f", static_cast<double>(p.fps),
+                  static_cast<double>(p.guest_ms), static_cast<double>(p.busy_ms), static_cast<double>(p.p99_ms));
+  else
+    std::snprintf(text, sizeof(text), "frame %.1f ms · busy %.1f ms · p99 %.1f ms", static_cast<double>(p.guest_ms),
+                  static_cast<double>(p.busy_ms), static_cast<double>(p.p99_ms));
+  line(text, theme::kBody, theme::kChalk);
+
+  // The last frames' game times: a line at 16.7 ms (one frame a retrace).
+  {
+    const float x = min.x + pad, w = width - 2 * pad;
+    dl->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + graph_h), theme::alpha(theme::kBlack, 0.35f), px(4));
+    float top = 33.4f;
+    for (const float v : p.graph) top = std::max(top, v);
+    const float unit = graph_h / top;
+    const float target = y + graph_h - 16.683f * unit;
+    dl->AddLine(ImVec2(x, target), ImVec2(x + w, target), theme::alpha(theme::kGreen, 0.45f), 1.0f);
+    if (p.graph.size() > 1) {
+      std::vector<ImVec2> points;
+      points.reserve(p.graph.size());
+      const float dx = w / static_cast<float>(p.graph.size() - 1);
+      for (std::size_t i = 0; i < p.graph.size(); ++i)
+        points.emplace_back(x + dx * static_cast<float>(i), y + graph_h - std::min(p.graph[i], top) * unit);
+      dl->AddPolyline(points.data(), static_cast<int>(points.size()),
+                      p.p99_ms > 20.0f ? theme::kMarquee : theme::kBlue, 0, px(1.5f));
+    }
+    y += graph_h + px(6);
+  }
+
+  if (p.system_cpu >= 0)
+    std::snprintf(text, sizeof(text), "Drops %llu · hitches %llu · CPU %.0f%%",
+                  static_cast<unsigned long long>(p.drops), static_cast<unsigned long long>(p.hitches),
+                  static_cast<double>(p.system_cpu));
+  else
+    std::snprintf(text, sizeof(text), "Drops %llu · hitches %llu",
+                  static_cast<unsigned long long>(p.drops), static_cast<unsigned long long>(p.hitches));
+  line(text, theme::kBody, theme::kDim);
+
+  std::snprintf(text, sizeof(text), "%u textures (%.0f MB) · %u pipelines · audio %.0f ms", p.textures, p.texture_mb,
+                p.pipelines, static_cast<double>(p.audio_ms));
+  line(text, theme::kBody, theme::kDim);
+
+  std::snprintf(text, sizeof(text), "%llu audio underruns", static_cast<unsigned long long>(p.audio_underruns));
+  line(text, theme::kBody, p.audio_underruns ? theme::kMarquee : theme::kDim);
+
+  if (scene) {
+    const std::string where = p.scene + (p.course.empty() ? "" : " · " + p.course);
+    line(where.c_str(), theme::kBody, theme::kChalk);
+  }
+  if (!keys.empty()) line(keys.c_str(), theme::kSmall, theme::kFaint);
 }
 
 void Menu::draw_notices() {

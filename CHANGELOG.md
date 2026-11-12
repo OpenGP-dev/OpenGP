@@ -1,7 +1,14 @@
-## 1.0.4 (Unreleased)
+## 1.0.4 (12/11/2026)
 
 - GP 2: the brake goes back through this play's menu screens to change a class, character, kart, cup, course or round. **Brake goes back** is on by default in the Game tab and can be turned off.
 - Going back skips the photo screen and stops working once the gas confirms a choice on the current screen. Menu history resets when a race starts. This feature is disabled in linked play and does not apply to GP 1.
+
+- Added a live Performance page and an optional overlay (F7, rebindable in Controls): frame times, drops, hitches, computer CPU usage, GPU textures, sound queue and scene information. No profile recording or stack sampling is included.
+
+### Known issues
+
+- Graphics fixes remain outstanding: reported Yoshi Park 2 Trick House flicker, widescreen HUD/banner and screen-effect distortions, and the macOS GP 2 rainbow fade. Solid-white highlights still need confirmation against the existing texture fix.
+- Brake-back is GP 2 only and disabled in linked play. Return to title and Restart race are not included.
 
 ## 1.0.3 (7/11/2026)
 

@@ -50,6 +50,35 @@ TEST_CASE("the defaults are written the first time and read back") {
   CHECK(in.bindings(Kind::Joystick, control("steer")) == Names{"axis0"});
 }
 
+TEST_CASE("performance overlay defaults survive an older controls file without recording actions") {
+  const fs::path path = temp_file("old-performance.toml");
+  std::ofstream(path) << "[keyboard]\ngas = [\"W\"]\n";
+  HostInput in;
+  std::string error;
+  REQUIRE(in.load(path.string(), &error));
+  CHECK(in.bindings(Kind::Keyboard, control("profile_overlay")) == Names{"F7"});
+  for (std::size_t c = 0; c < HostInput::kControlCount; ++c) {
+    CHECK(std::string(HostInput::control_name(c)) != "profile_toggle");
+    CHECK(std::string(HostInput::control_name(c)) != "profile_mark");
+    CHECK(std::string(HostInput::control_name(c)) != "profile_capture");
+  }
+  SDL_Event e{};
+  e.type = SDL_EVENT_KEY_DOWN;
+  e.key.scancode = SDL_SCANCODE_F7;
+  in.handle_event(e);
+  CHECK(in.take_profiler_actions() == HostInput::kProfilerOverlay);
+  CHECK(in.take_profiler_actions() == 0);
+  e.key.repeat = true;
+  in.handle_event(e);
+  CHECK(in.take_profiler_actions() == 0);
+  e.key.repeat = false;
+  for (const auto key : {SDL_SCANCODE_F8, SDL_SCANCODE_F9, SDL_SCANCODE_F10}) {
+    e.key.scancode = key;
+    in.handle_event(e);
+    CHECK(in.take_profiler_actions() == 0);
+  }
+}
+
 TEST_CASE("changed bindings survive saving") {
   const fs::path path = temp_file("changed.toml");
   std::ofstream(path) << "[keyboard]\ngas = [\"Left Shift\"]\n[joystick]\ngas = [\"-axis2\"]\nbrake = [\"axis1+\", \"hat0up\"]\n";
